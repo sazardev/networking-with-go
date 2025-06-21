@@ -381,8 +381,109 @@ flowchart TD
 
 ---
 
-**Try it yourself:**
-- Run the [Goroutine Stress Test](../../exercises/part2/08-goroutine-stress/main.go) and monitor your system’s RAM and CPU usage. You’ll see how efficient Go really is!
+## 🛰️ Deep Dive: How Go Processes a Network Message (End-to-End)
+
+> "Let’s follow a network message as it travels from the outside world, through the Go runtime, into your code, and back out again!"
+
+---
+
+### 🌐 Step-by-Step: From Network to Go and Back
+
+1. **Network Packet Arrives:**
+   - A client sends a TCP/UDP packet to your server’s IP and port.
+2. **Operating System Receives Packet:**
+   - The OS kernel (Windows, Linux, Mac) receives the packet and checks which process is listening on the destination port.
+3. **Go Runtime and net.Listener:**
+   - Your Go program, using `net.Listen` (TCP) or `net.ListenPacket` (UDP), has registered a socket with the OS.
+   - The OS delivers the packet to your Go process via a file descriptor.
+4. **Go Scheduler Wakes Goroutine:**
+   - The goroutine blocked on `Accept()` or `ReadFrom()` is woken up by the Go runtime.
+5. **Your Go Code Handles the Data:**
+   - Your handler function reads the data, processes it (e.g., parses a request, updates state, prepares a response).
+6. **Response Sent:**
+   - Your code writes a response using `Write()` or `WriteTo()`. The Go runtime passes this to the OS, which sends it back to the client.
+7. **Concurrency:**
+   - Each client can be handled in its own goroutine, so many requests are processed in parallel.
+
+---
+
+### 🖥️ Full Lifecycle Diagram (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Network
+    participant OS as Operating System
+    participant Go as Go Runtime
+    participant Goroutine as Goroutine (Your Handler)
+
+    Client->>Network: Send TCP/UDP Packet
+    Network->>OS: Deliver Packet to Host
+    OS->>Go: Pass Packet to Go Socket (fd)
+    Go->>Goroutine: Wake up on Accept()/ReadFrom()
+    Goroutine->>Goroutine: Process Data (parse, compute, etc.)
+    Goroutine->>Go: Write Response
+    Go->>OS: Pass Response to OS
+    OS->>Network: Send Packet to Client
+    Network->>Client: Deliver Response
+```
+
+---
+
+### 📝 Example: Minimal TCP Echo Server (with Comments)
+
+```go
+package main
+import (
+    "fmt"
+    "net"
+)
+
+func main() {
+    // 1. Listen on TCP port 9000
+    ln, err := net.Listen("tcp", ":9000")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Listening on :9000...")
+    for {
+        // 2. Accept new connection (blocks until a client connects)
+        conn, err := ln.Accept()
+        if err != nil {
+            fmt.Println("Accept error:", err)
+            continue
+        }
+        // 3. Handle each client in a new goroutine
+        go func(c net.Conn) {
+            defer c.Close()
+            buf := make([]byte, 1024)
+            for {
+                n, err := c.Read(buf) // 4. Read data from client
+                if err != nil {
+                    break // Client closed connection
+                }
+                fmt.Printf("Received: %s", string(buf[:n]))
+                c.Write(buf[:n]) // 5. Echo back to client
+            }
+        }(conn)
+    }
+}
+```
+
+**What happens in this code?**
+- `net.Listen` tells the OS to listen for TCP connections on port 9000.
+- The main goroutine blocks on `Accept()`, waiting for new clients.
+- When a client connects, a new goroutine is started to handle it.
+- The handler goroutine reads data, prints it, and echoes it back.
+- The Go runtime and OS handle all the low-level details: sockets, scheduling, and memory.
+
+---
+
+### 🧠 Key Takeaways
+- Go’s networking is built on top of OS sockets, but the Go runtime makes it easy and safe.
+- Goroutines allow you to handle many clients at once, without manual thread management.
+- The Go scheduler and runtime handle all the complexity—your code stays clean and simple.
+- You can build high-performance, concurrent network servers with just a few lines of Go!
 
 ---
 
