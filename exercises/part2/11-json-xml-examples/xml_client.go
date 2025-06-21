@@ -10,18 +10,6 @@ import (
 	"net/http"
 )
 
-type Product struct {
-	XMLName xml.Name `xml:"product"`
-	ID      int      `xml:"id"`
-	Name    string   `xml:"name"`
-	Tags    []string `xml:"tags>tag"`
-}
-
-type ProductList struct {
-	XMLName  xml.Name  `xml:"products"`
-	Products []Product `xml:"product"`
-}
-
 func main() {
 	// Fetch products (GET)
 	resp, err := http.Get("http://localhost:8081/products")

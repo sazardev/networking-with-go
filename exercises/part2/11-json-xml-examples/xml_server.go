@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"io"
 	"net/http"
-	"sync"
 )
 
 type Product struct {
@@ -26,7 +25,6 @@ var (
 		{ID: 1, Name: "Widget", Tags: []string{"gadget", "tool"}},
 		{ID: 2, Name: "Gizmo", Tags: []string{"device"}},
 	}
-	mu sync.Mutex
 )
 
 // getProducts handles GET /products and returns the list as XML.

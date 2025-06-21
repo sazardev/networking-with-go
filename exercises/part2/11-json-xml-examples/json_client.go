@@ -10,12 +10,6 @@ import (
 	"net/http"
 )
 
-type User struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
 func main() {
 	// Fetch users (GET)
 	resp, err := http.Get("http://localhost:8080/users")
