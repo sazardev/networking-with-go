@@ -211,14 +211,14 @@ func main() {
 ```mermaid
 flowchart TD
     subgraph Goroutines
-        G1[Goroutine 1]
-        G2[Goroutine 2]
-        G3[...]
-        G100k[Goroutine 100,000]
+        G1["Goroutine 1"]
+        G2["Goroutine 2"]
+        G3["..."]
+        G100k["Goroutine 100,000"]
     end
-    Goroutines --> Scheduler[Go Scheduler]
-    Scheduler --> Threads[Few OS Threads (2, 4, 8...)]
-    Threads --> CPU[CPU Cores]
+    Goroutines --> Scheduler["Go Scheduler"]
+    Scheduler --> Threads["Few OS Threads\n(2, 4, 8, ...)"]
+    Threads --> CPU["CPU Cores"]
 ```
 
 **Fun fact:**
@@ -230,10 +230,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    G1[Goroutine 1] --> CH[Channel]
-    G2[Goroutine 2] --> CH
-    G3[Goroutine 3] --> CH
-    CH --> Main[Main Goroutine]
+    G1["Goroutine 1"] --> CH["Channel"]
+    G2["Goroutine 2"] --> CH
+    G3["Goroutine 3"] --> CH
+    CH --> Main["Main Goroutine"]
 ```
 
 **Explanation:**
@@ -247,11 +247,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Main[Main Goroutine\nListens on :8082]
-    Main -->|Accepts connection| C1[Goroutine for Client 1]
-    Main -->|...| Cn[Goroutine for Client n]
-    C1 -->|Handles Client 1| End1[...]
-    Cn -->|Handles Client n| Endn[...]
+    Main["Main Goroutine\nListens on :8082"]
+    Main -->|"Accepts connection"| C1["Goroutine for Client 1"]
+    Main -->|"..."| Cn["Goroutine for Client n"]
+    C1 -->|"Handles Client 1"| End1["..."]
+    Cn -->|"Handles Client n"| Endn["..."]
 ```
 
 **Explanation:**
@@ -265,10 +265,10 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Broadcaster[Broadcast Goroutine\nSends messages] --> CH[Channel]
-    CH --> R1[Receiver 1]
-    CH --> R2[Receiver 2]
-    CH --> R3[Receiver 3]
+    Broadcaster["Broadcast Goroutine\nSends messages"] --> CH["Channel"]
+    CH --> R1["Receiver 1"]
+    CH --> R2["Receiver 2"]
+    CH --> R3["Receiver 3"]
 ```
 
 **Explanation:**
