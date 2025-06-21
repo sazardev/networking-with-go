@@ -1,0 +1,25 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, coverage, and build output
+*.test
+*.out
+*.log
+coverage/
+bin/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Dependency directories
+vendor/
+
+# OS generated files
+Thumbs.db
