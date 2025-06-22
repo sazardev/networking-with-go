@@ -85,9 +85,68 @@ See: [`main.go`](../../exercises/part2/13-chat-server-gorilla/main.go)
 
 ---
 
-## 🧪 Practical Exercise Files
-- [Minimal WebSocket Chat Server (Gorilla)](../../exercises/part2/13-chat-server-gorilla/main.go)
-- [Minimal WebSocket Chat Client (Gorilla)](../../exercises/part2/13-chat-client-gorilla/main.go)
+## 🚀 Ejemplo avanzado: Chat WebSocket con usuario y hora (Gorilla)
+
+En este ejemplo, cada usuario elige su nombre antes de conectarse. Los mensajes enviados incluyen el nombre del remitente y la hora de envío, lo que hace el chat más realista y útil.
+
+### ¿Cómo funciona?
+1. El cliente solicita el nombre de usuario antes de conectarse.
+2. Al enviar un mensaje, el cliente envía un objeto JSON con el usuario y el texto.
+3. El servidor agrega la hora de envío y reenvía el mensaje a todos los clientes conectados.
+4. Todos los clientes ven los mensajes con el nombre del remitente y la hora.
+
+```mermaid
+sequenceDiagram
+    participant UserA as Usuario A
+    participant UserB as Usuario B
+    participant Server as Servidor
+    UserA->>Server: Conectar (envía nombre)
+    UserB->>Server: Conectar (envía nombre)
+    UserA->>Server: {"user": "Ana", "msg": "¡Hola!"}
+    Server-->>UserA: {"user": "Ana", "msg": "¡Hola!", "time": "10:01"}
+    Server-->>UserB: {"user": "Ana", "msg": "¡Hola!", "time": "10:01"}
+    UserB->>Server: {"user": "Luis", "msg": "¡Hola Ana!"}
+    Server-->>UserA: {"user": "Luis", "msg": "¡Hola Ana!", "time": "10:02"}
+    Server-->>UserB: {"user": "Luis", "msg": "¡Hola Ana!", "time": "10:02"}
+```
+
+---
+
+### 📂 Archivos de ejercicio
+- [Servidor avanzado de chat (Gorilla)](../../exercises/part2/13-chat-server-advanced-gorilla/main.go)
+- [Cliente avanzado de chat (Gorilla)](../../exercises/part2/13-chat-client-advanced-gorilla/main.go)
+
+---
+
+### 🏃‍♂️ Cómo usarlo
+1. Instala gorilla/websocket: `go get github.com/gorilla/websocket`
+2. Ejecuta el servidor: `go run exercises/part2/13-chat-server-advanced-gorilla/main.go`
+3. Ejecuta el cliente: `go run exercises/part2/13-chat-client-advanced-gorilla/main.go`
+4. Escribe tu nombre de usuario cuando lo pida el cliente.
+5. Escribe mensajes y observa cómo aparecen con tu nombre y la hora en todos los clientes conectados.
+
+---
+
+### 🧑‍💻 Formato de mensaje
+Los mensajes entre cliente y servidor usan JSON:
+```json
+{
+  "user": "Ana",
+  "msg": "¡Hola!",
+  "time": "2025-06-22T10:01:00"
+}
+```
+- `user`: Nombre del remitente
+- `msg`: Texto del mensaje
+- `time`: Hora de envío (formato ISO8601)
+
+---
+
+### 📝 Explicación del código
+- El servidor espera que cada cliente envíe su nombre al conectarse.
+- Cada mensaje recibido se marca con la hora actual y se reenvía a todos los clientes.
+- El cliente muestra los mensajes en formato: `[hora] usuario: mensaje`.
+- El código está completamente comentado y explicado en los archivos de ejercicio.
 
 ---
 
