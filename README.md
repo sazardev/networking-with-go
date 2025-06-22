@@ -23,46 +23,46 @@ This is the ultimate, fun, and hands-on guide to mastering network programming w
 ## 📚 Table of Contents
 
 ### Part 1: Networking Theory and Concepts 🧠
-1. [Introduction to Networking](#introduction-to-networking) 🌍
-2. [History and Evolution of Computer Networks](#history-and-evolution-of-computer-networks) 🕰️
-3. [Types of Networks: LAN, WAN, MAN, PAN](#types-of-networks-lan-wan-man-pan) 🏢🏠
-4. [Network Topologies and Architectures](#network-topologies-and-architectures) 🕸️
-5. [The OSI and TCP/IP Models](#the-osi-and-tcpip-models) 🏗️
-6. [Understanding IP Addressing and Subnetting](#understanding-ip-addressing-and-subnetting) 🧮
-7. [Ports, Sockets, and Endpoints](#ports-sockets-and-endpoints) 🔌
-8. [TCP vs UDP: Concepts and Use Cases](#tcp-vs-udp-concepts-and-use-cases) ⚡
-9. [Common Network Protocols (HTTP, FTP, DNS, etc.)](#common-network-protocols-http-ftp-dns-etc) 📡
-10. [Network Security Fundamentals](#network-security-fundamentals) 🛡️
-11. [Firewalls, NAT, and VPNs](#firewalls-nat-and-vpns) 🔥
-12. [Network Troubleshooting and Tools](#network-troubleshooting-and-tools) 🛠️
-13. [Performance, Latency, and Bandwidth](#performance-latency-and-bandwidth) 🏎️
+1. [Introduction to Networking](docs/part1/01-introduction-to-networking.md) 🌍
+2. [History and Evolution of Computer Networks](docs/part1/02-history-and-evolution-of-computer-networks.md) 🕰️
+3. [Types of Networks: LAN, WAN, MAN, PAN](docs/part1/03-types-of-networks.md) 🏢🏠
+4. [Network Topologies and Architectures](docs/part1/04-network-topologies-and-architectures.md) 🕸️
+5. [The OSI and TCP/IP Models](docs/part1/05-osi-and-tcpip-models.md) 🏗️
+6. [Understanding IP Addressing and Subnetting](docs/part1/06-understanding-ip-addressing-and-subnetting.md) 🧮
+7. [Ports, Sockets, and Endpoints](docs/part1/07-ports-sockets-and-endpoints.md) 🔌
+8. [TCP vs UDP: Concepts and Use Cases](docs/part1/08-tcp-vs-udp-concepts-and-use-cases.md) ⚡
+9. [Common Network Protocols (HTTP, FTP, DNS, etc.)](docs/part1/09-common-network-protocols.md) 📡
+10. [Network Security Fundamentals](docs/part1/10-network-security-fundamentals.md) 🛡️
+11. [Firewalls, NAT, and VPNs](docs/part1/11-firewalls-nat-and-vpns.md) 🔥
+12. [Network Troubleshooting and Tools](docs/part1/12-network-troubleshooting-and-tools.md) 🛠️
+13. [Performance, Latency, and Bandwidth](docs/part1/13-performance-latency-and-bandwidth.md) 🏎️
 
 ### Part 2: Unified Networking Topics (Theory + Practice) 💻
-14. [Setting Up Your Go Development Environment](#setting-up-your-go-development-environment) 🛠️
-15. [Go Language Basics for Networking](#go-language-basics-for-networking) 📘
-16. [Go Networking Packages Overview](#go-networking-packages-overview) 📦
-17. [Working with IP, Ports, and Addresses: Concepts and Go Implementation](#working-with-ip-ports-and-addresses-concepts-and-go-implementation) 🏷️
-18. [TCP in Depth: Protocol Theory and Go Implementation](#tcp-in-depth-protocol-theory-and-go-implementation) 🔗
-19. [UDP in Depth: Protocol Theory and Go Implementation](#udp-in-depth-protocol-theory-and-go-implementation) 📡
-20. [Error Handling and Debugging: Concepts and Go Implementation](#error-handling-and-debugging-concepts-and-go-implementation) 🐞
-21. [Concurrency in Networking: Theory and Go Implementation](#concurrency-in-networking-theory-and-go-implementation) 🧵
-22. [Context and Cancellation: Concepts and Go Implementation](#context-and-cancellation-concepts-and-go-implementation) ⏹️
-23. [HTTP: Protocol Theory and Go Implementation](#http-protocol-theory-and-go-implementation) 🌐
-24. [Handling JSON and XML over HTTP: Concepts and Go Implementation](#handling-json-and-xml-over-http-concepts-and-go-implementation) 📄
-25. [WebSockets: Real-Time Communication Theory and Go Implementation](#websockets-real-time-communication-theory-and-go-implementation) 🔊
-26. [Chat Applications: Design, Protocols, and Go Implementation](#chat-applications-design-protocols-and-go-implementation) 💬
-27. [File Transfer Applications: Protocols and Go Implementation](#file-transfer-applications-protocols-and-go-implementation) 📁
-28. [Proxy Servers and Clients: Concepts and Go Implementation](#proxy-servers-and-clients-concepts-and-go-implementation) 🕵️
-29. [DNS: Theory and Go Implementation](#dns-theory-and-go-implementation) 🏷️
-30. [NAT Traversal and P2P Networking: Concepts and Go Implementation](#nat-traversal-and-p2p-networking-concepts-and-go-implementation) 🔄
-31. [Authentication and Authorization: Security Theory and Go Implementation](#authentication-and-authorization-security-theory-and-go-implementation) 🔑
-32. [Security in Go Networking: TLS, Encryption, and Best Practices](#security-in-go-networking-tls-encryption-and-best-practices) 🔒
-33. [Logging and Monitoring: Concepts and Go Implementation](#logging-and-monitoring-concepts-and-go-implementation) 📊
-34. [Testing and Debugging Go Network Applications: Theory and Practice](#testing-and-debugging-go-network-applications-theory-and-practice) 🧪
-35. [Performance Optimization: Concepts and Go Implementation](#performance-optimization-concepts-and-go-implementation) 🚀
-36. [Deploying Go Network Applications: Best Practices](#deploying-go-network-applications-best-practices) 🚢
-37. [Real-World Projects and Case Studies](#real-world-projects-and-case-studies) 🏆
-38. [Further Resources and Next Steps](#further-resources-and-next-steps) 📚
+14. [Setting Up Your Go Development Environment](docs/part2/01-setting-up-your-go-development-environment.md) 🛠️
+15. [Go Language Basics for Networking](docs/part2/02-go-language-basics-for-networking.md) 📘
+16. [Go Networking Packages Overview](docs/part2/03-go-networking-packages-overview.md) 📦
+17. [Working with IP, Ports, and Addresses: Concepts and Go Implementation](docs/part2/04-working-with-ip-ports-and-addresses.md) 🏷️
+18. [TCP in Depth: Protocol Theory and Go Implementation](docs/part2/05-tcp-in-depth-protocol-theory-and-go-implementation.md) 🔗
+19. [UDP in Depth: Protocol Theory and Go Implementation](docs/part2/06-udp-in-depth-protocol-theory-and-go-implementation.md) 📡
+20. [Error Handling and Debugging: Concepts and Go Implementation](docs/part2/07-error-handling-and-debugging.md) 🐞
+21. [Concurrency in Networking: Theory and Go Implementation](docs/part2/08-concurrency-in-networking.md) 🧵
+22. [Context and Cancellation: Concepts and Go Implementation](docs/part2/09-context-and-cancellation.md) ⏹️
+23. [HTTP: Protocol Theory and Go Implementation](docs/part2/10-http-protocol-theory-and-go-implementation.md) 🌐
+24. [Handling JSON and XML over HTTP: Concepts and Go Implementation](docs/part2/11-handling-json-and-xml-over-http.md) 📄
+25. [WebSockets: Real-Time Communication Theory and Go Implementation](docs/part2/12-websockets-real-time-communication.md) 🔊
+26. [Chat Applications: Design, Protocols, and Go Implementation](docs/part2/13-chat-applications.md) 💬
+27. [File Transfer Applications: Protocols and Go Implementation](docs/part2/14-file-transfer-applications.md) 📁
+28. [Proxy Servers and Clients: Concepts and Go Implementation](docs/part2/15-proxy-servers-and-clients.md) 🕵️
+29. [DNS: Theory and Go Implementation](docs/part2/16-dns-theory-and-go-implementation.md) 🏷️
+30. [NAT Traversal and P2P Networking: Concepts and Go Implementation](docs/part2/17-nat-traversal-and-p2p-networking.md) 🔄
+31. [Authentication and Authorization: Security Theory and Go Implementation](docs/part2/18-authentication-and-authorization.md) 🔑
+32. [Security in Go Networking: TLS, Encryption, and Best Practices](docs/part2/19-security-in-go-networking.md) 🔒
+33. [Logging and Monitoring: Concepts and Go Implementation](docs/part2/20-logging-and-monitoring.md) 📊
+34. [Testing and Debugging Go Network Applications: Theory and Practice](docs/part2/21-testing-and-debugging.md) 🧪
+35. [Performance Optimization: Concepts and Go Implementation](docs/part2/22-performance-optimization.md) 🚀
+36. [Deploying Go Network Applications: Best Practices](docs/part2/23-deploying-go-network-applications.md) 🚢
+37. [Real-World Projects and Case Studies](docs/part2/24-real-world-projects-and-case-studies.md) 🏆
+38. [Further Resources and Next Steps](docs/part2/25-further-resources-and-next-steps.md) 📚
 
 ### 🚀 Advanced & Specialized Networking Topics
 39. [gRPC and Protocol Buffers in Go](#grpc-and-protocol-buffers-in-go) ⚡
