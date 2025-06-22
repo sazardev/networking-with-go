@@ -1,6 +1,6 @@
 // xml_server.go
 // HTTP server that serves a list of products as XML and receives new products via POST.
-package main
+package xmlserver
 
 import (
 	"encoding/xml"

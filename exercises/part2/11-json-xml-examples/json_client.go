@@ -1,6 +1,6 @@
 // json_client.go
 // HTTP client that fetches users and posts a new user to the JSON server.
-package main
+package jsonclient
 
 import (
 	"bytes"

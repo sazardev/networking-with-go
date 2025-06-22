@@ -11,10 +11,8 @@ import (
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		select {
-		case <-ctx.Done():
-			fmt.Println("Goroutine: context cancelled!")
-		}
+		<-ctx.Done()
+		fmt.Println("Goroutine: context cancelled!")
 	}()
 	fmt.Println("Main: sleeping 1s...")
 	time.Sleep(1 * time.Second)

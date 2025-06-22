@@ -1,6 +1,6 @@
 // json_server.go
 // HTTP server that serves a list of users as JSON and receives new users via POST.
-package main
+package jsonserver
 
 import (
 	"encoding/json"

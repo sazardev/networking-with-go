@@ -24,9 +24,9 @@ func main() {
 			log.Println("Accept error:", err)
 			continue
 		}
-		go func(c tls.Conn) {
+		go func(c *tls.Conn) {
 			defer c.Close()
 			c.Write([]byte("Hello, secure world!\n"))
-		}(*conn.(*tls.Conn))
+		}(conn.(*tls.Conn))
 	}
 }
