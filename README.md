@@ -65,25 +65,25 @@ This is the ultimate, fun, and hands-on guide to mastering network programming w
 38. [Further Resources and Next Steps](docs/part2/25-further-resources-and-next-steps.md) 📚
 
 ### 🚀 Advanced & Specialized Networking Topics
-39. [gRPC and Protocol Buffers in Go](#grpc-and-protocol-buffers-in-go) ⚡
-40. [WebRTC and P2P Communication in Go](#webrtc-and-p2p-communication-in-go) 📹
-41. [MQTT, AMQP, and IoT Messaging Protocols](#mqtt-amqp-and-iot-messaging-protocols) 📲
-42. [SDN (Software Defined Networking) and OpenFlow with Go](#sdn-software-defined-networking-and-openflow-with-go) 🕹️
-43. [Network Function Virtualization (NFV) in Go](#network-function-virtualization-nfv-in-go) 🧩
-44. [Deep Packet Inspection and Packet Manipulation](#deep-packet-inspection-and-packet-manipulation) 🔬
-45. [Custom Protocol Design and Implementation](#custom-protocol-design-and-implementation) 🛠️
-46. [Cloud Networking APIs and Automation with Go](#cloud-networking-apis-and-automation-with-go) ☁️
-47. [Zero Trust Networking and Microsegmentation](#zero-trust-networking-and-microsegmentation) 🚫
-48. [Network Simulation and Virtual Labs](#network-simulation-and-virtual-labs) 🧪
-49. [Automating Network Device Configuration](#automating-network-device-configuration) ⚙️
-50. [Observability and Tracing in Go Networking](#observability-and-tracing-in-go-networking) 🔎
-51. [Wireless Networking and Go](#wireless-networking-and-go) 📶
-52. [Mesh Networks and Dynamic Routing](#mesh-networks-and-dynamic-routing) 🕸️
-53. [High Availability and Load Balancing](#high-availability-and-load-balancing) ⚖️
-54. [Real-Time Networking for Games](#real-time-networking-for-games) 🎮
-55. [Blockchain and Cryptocurrency Networking](#blockchain-and-cryptocurrency-networking) ⛓️
-56. [Big Data, AI, and Streaming Networks](#big-data-ai-and-streaming-networks) 📈
-57. [Go Networking Performance Benchmarks](#go-networking-performance-benchmarks) 🏁
+39. [gRPC and Protocol Buffers in Go](docs/advanced/39-grpc-and-protocol-buffers-in-go.md) ⚡
+40. [WebRTC and P2P Communication in Go](docs/advanced/40-webrtc-and-p2p-communication-in-go.md) 📹
+41. [MQTT, AMQP, and IoT Messaging Protocols](docs/advanced/41-mqtt-amqp-and-iot-messaging-protocols.md) 📲
+42. [SDN (Software Defined Networking) and OpenFlow with Go](docs/advanced/42-sdn-software-defined-networking-and-openflow-with-go.md) 🕹️
+43. [Network Function Virtualization (NFV) in Go](docs/advanced/43-network-function-virtualization-nfv-in-go.md) 🧩
+44. [Deep Packet Inspection and Packet Manipulation](docs/advanced/44-deep-packet-inspection-and-packet-manipulation.md) 🔬
+45. [Custom Protocol Design and Implementation](docs/advanced/45-custom-protocol-design-and-implementation.md) 🛠️
+46. [Cloud Networking APIs and Automation with Go](docs/advanced/46-cloud-networking-apis-and-automation-with-go.md) ☁️
+47. [Zero Trust Networking and Microsegmentation](docs/advanced/47-zero-trust-networking-and-microsegmentation.md) 🚫
+48. [Network Simulation and Virtual Labs](docs/advanced/48-network-simulation-and-virtual-labs.md) 🧪
+49. [Automating Network Device Configuration](docs/advanced/49-automating-network-device-configuration.md) ⚙️
+50. [Observability and Tracing in Go Networking](docs/advanced/50-observability-and-tracing-in-go-networking.md) 🔎
+51. [Wireless Networking and Go](docs/advanced/51-wireless-networking-and-go.md) 📶
+52. [Mesh Networks and Dynamic Routing](docs/advanced/52-mesh-networks-and-dynamic-routing.md) 🕸️
+53. [High Availability and Load Balancing](docs/advanced/53-high-availability-and-load-balancing.md) ⚖️
+54. [Real-Time Networking for Games](docs/advanced/54-real-time-networking-for-games.md) 🎮
+55. [Blockchain and Cryptocurrency Networking](docs/advanced/55-blockchain-and-cryptocurrency-networking.md) ⛓️
+56. [Big Data, AI, and Streaming Networks](docs/advanced/56-big-data-ai-and-streaming-networks.md) 📈
+57. [Go Networking Performance Benchmarks](docs/advanced/57-go-networking-performance-benchmarks.md) 🏁
 
 ### Part 3: Cybersecurity & Hacking 🕵️‍♂️💣
 58. [Introduction to Cybersecurity in Networking](docs/part3/01-introduction-to-cybersecurity-in-networking.md) 🛡️
