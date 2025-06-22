@@ -1,0 +1,3 @@
+# Bug Bounty and Responsible Disclosure
+
+// ...contenido y ejemplos de bug bounty y divulgación responsable...
