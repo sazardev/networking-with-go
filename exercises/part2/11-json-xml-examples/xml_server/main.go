@@ -1,6 +1,6 @@
-// xml_server.go
+// main.go
 // HTTP server that serves a list of products as XML and receives new products via POST.
-package xmlserver
+package main
 
 import (
 	"encoding/xml"
@@ -11,10 +11,10 @@ import (
 
 // Product represents a product with ID, Name, and a list of Tags (nested elements).
 type Product struct {
-	XMLName xml.Name `xml:"product"` // Root element for each product
-	ID      int      `xml:"id"`      // Product ID
-	Name    string   `xml:"name"`    // Product name
-	Tags    []string `xml:"tags>tag"`// Nested <tags><tag>...</tag></tags>
+	XMLName xml.Name `xml:"product"`  // Root element for each product
+	ID      int      `xml:"id"`       // Product ID
+	Name    string   `xml:"name"`     // Product name
+	Tags    []string `xml:"tags>tag"` // Nested <tags><tag>...</tag></tags>
 }
 
 // ProductList wraps a list of products for XML encoding.
@@ -36,7 +36,7 @@ var (
 // getProducts handles GET /products and returns the list as XML.
 func getProducts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml") // Set response type
-	mu.Lock()   // Lock to safely read products
+	mu.Lock()                                         // Lock to safely read products
 	defer mu.Unlock()
 	xml.NewEncoder(w).Encode(ProductList{Products: products}) // Encode as XML
 }
@@ -55,7 +55,7 @@ func addProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	mu.Lock() // Lock to safely modify products
 	defer mu.Unlock()
-	p.ID = len(products) + 1 // Assign a new ID
+	p.ID = len(products) + 1       // Assign a new ID
 	products = append(products, p) // Add to list
 	w.WriteHeader(http.StatusCreated)
 	xml.NewEncoder(w).Encode(p) // Respond with the created product

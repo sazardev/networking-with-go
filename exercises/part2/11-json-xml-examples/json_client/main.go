@@ -1,6 +1,6 @@
-// json_client.go
+// main.go
 // HTTP client that fetches users and posts a new user to the JSON server.
-package jsonclient
+package main
 
 import (
 	"bytes"
@@ -35,7 +35,7 @@ func main() {
 
 	// Add a new user (POST)
 	newUser := User{Name: "Charlie", Email: "charlie@example.com"}
-	data, _ := json.Marshal(newUser) // Encode new user as JSON
+	data, _ := json.Marshal(newUser)                                                                  // Encode new user as JSON
 	resp2, err := http.Post("http://localhost:8080/users", "application/json", bytes.NewBuffer(data)) // Send POST
 	if err != nil {
 		panic(err)

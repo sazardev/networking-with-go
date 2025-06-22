@@ -1,6 +1,6 @@
-// json_server.go
+// main.go
 // HTTP server that serves a list of users as JSON and receives new users via POST.
-package jsonserver
+package main
 
 import (
 	"encoding/json"
@@ -29,7 +29,7 @@ var (
 // getUsers handles GET /users and returns the list as JSON.
 func getUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json") // Set response type
-	mu.Lock()   // Lock to safely read users
+	mu.Lock()                                          // Lock to safely read users
 	defer mu.Unlock()
 	json.NewEncoder(w).Encode(users) // Encode users slice as JSON
 }
@@ -48,7 +48,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	}
 	mu.Lock() // Lock to safely modify users
 	defer mu.Unlock()
-	u.ID = len(users) + 1 // Assign a new ID
+	u.ID = len(users) + 1    // Assign a new ID
 	users = append(users, u) // Add to list
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(u) // Respond with the created user

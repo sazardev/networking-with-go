@@ -1,6 +1,6 @@
-// xml_client.go
+// main.go
 // HTTP client that fetches products and posts a new product to the XML server.
-package xmlclient
+package main
 
 import (
 	"bytes"
