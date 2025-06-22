@@ -121,23 +121,23 @@ This is the ultimate, fun, and hands-on guide to mastering network programming w
 90. [Emerging Threats and Future Trends in Network Security](docs/part3/32-emerging-threats-and-future-trends-in-network-security.md) 🔮
 
 ### Part APIs: Building Modern APIs & Backends with Go 🚦
-91. [API Fundamentals: REST, HTTP, and the Web](#api-fundamentals-rest-http-and-the-web) 🌐
-92. [Designing Clean URLs, Query Params, and Routing](#designing-clean-urls-query-params-and-routing) 🛣️
-93. [JSON, XML, and Data Serialization](#json-xml-and-data-serialization) 📦
-94. [Building RESTful APIs with net/http](#building-restful-apis-with-nethttp) 🏗️
-95. [Building APIs with Gin](#building-apis-with-gin) 🍸
-96. [Building APIs with Fiber](#building-apis-with-fiber) ⚡
-97. [Serving HTML, Templates, and Static Files](#serving-html-templates-and-static-files) 🖼️
-98. [Adding WebSockets to Your API](#adding-websockets-to-your-api) 🔊
-99. [Notifications, SSE, and Real-Time Updates](#notifications-sse-and-real-time-updates) 🔔
-100. [API Security: Tokens, Auth, and Best Practices](#api-security-tokens-auth-and-best-practices) 🔒
-101. [Rate Limiting, CORS, and API Gateways](#rate-limiting-cors-and-api-gateways) 🚦
-102. [API Documentation and OpenAPI/Swagger](#api-documentation-and-openapiswagger) 📄
-103. [Testing and Mocking APIs](#testing-and-mocking-apis) 🧪
-104. [Versioning, Deprecation, and Maintenance](#versioning-deprecation-and-maintenance) 🏷️
-105. [Prebuilt Solutions and API Boilerplates](#prebuilt-solutions-and-api-boilerplates) 🏁
-106. [API Performance, Monitoring, and Observability](#api-performance-monitoring-and-observability) 📈
-107. [Deploying and Scaling Go APIs](#deploying-and-scaling-go-apis) 🚀
+91. [API Fundamentals: REST, HTTP, and the Web](docs/part-apis/01-api-fundamentals-rest-http-and-the-web.md) 🌐
+92. [Designing Clean URLs, Query Params, and Routing](docs/part-apis/02-designing-clean-urls-query-params-and-routing.md) 🛣️
+93. [JSON, XML, and Data Serialization](docs/part-apis/03-json-xml-and-data-serialization.md) 📦
+94. [Building RESTful APIs with net/http](docs/part-apis/04-building-restful-apis-with-nethttp.md) 🏗️
+95. [Building APIs with Gin](docs/part-apis/05-building-apis-with-gin.md) 🍸
+96. [Building APIs with Fiber](docs/part-apis/06-building-apis-with-fiber.md) ⚡
+97. [Serving HTML, Templates, and Static Files](docs/part-apis/07-serving-html-templates-and-static-files.md) 🖼️
+98. [Adding WebSockets to Your API](docs/part-apis/08-adding-websockets-to-your-api.md) 🔊
+99. [Notifications, SSE, and Real-Time Updates](docs/part-apis/09-notifications-sse-and-real-time-updates.md) 🔔
+100. [API Security: Tokens, Auth, and Best Practices](docs/part-apis/10-api-security-tokens-auth-and-best-practices.md) 🔒
+101. [Rate Limiting, CORS, and API Gateways](docs/part-apis/11-rate-limiting-cors-and-api-gateways.md) 🚦
+102. [API Documentation and OpenAPI/Swagger](docs/part-apis/12-api-documentation-and-openapiswagger.md) 📄
+103. [Testing and Mocking APIs](docs/part-apis/13-testing-and-mocking-apis.md) 🧪
+104. [Versioning, Deprecation, and Maintenance](docs/part-apis/14-versioning-deprecation-and-maintenance.md) 🏷️
+105. [Prebuilt Solutions and API Boilerplates](docs/part-apis/15-prebuilt-solutions-and-api-boilerplates.md) 🏁
+106. [API Performance, Monitoring, and Observability](docs/part-apis/16-api-performance-monitoring-and-observability.md) 📈
+107. [Deploying and Scaling Go APIs](docs/part-apis/17-deploying-and-scaling-go-apis.md) 🚀
 
 #### 🧩 Advanced API Topics
 108. [Advanced API Rate Limiting and Anti-Abuse](#advanced-api-rate-limiting-and-anti-abuse) 🛡️
