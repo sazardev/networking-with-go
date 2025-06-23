@@ -139,6 +139,8 @@ This is the ultimate, fun, and hands-on guide to mastering network programming w
 106. [API Performance, Monitoring, and Observability](docs/part-apis/16-api-performance-monitoring-and-observability.md) 📈
 107. [Deploying and Scaling Go APIs](docs/part-apis/17-deploying-and-scaling-go-apis.md) 🚀
 
+[Previous: Network Troubleshooting and Tools](docs/part1/12-network-troubleshooting-and-tools.md) | [Next: Performance, Latency, and Bandwidth](docs/part1/13-performance-latency-and-bandwidth.md)
+
 #### 🧩 Advanced API Topics
 108. [Advanced API Rate Limiting and Anti-Abuse](#advanced-api-rate-limiting-and-anti-abuse) 🛡️
 109. [Advanced API Gateway and Service Mesh](#advanced-api-gateway-and-service-mesh) 🏰
