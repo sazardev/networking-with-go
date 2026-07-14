@@ -1,5 +1,5 @@
 ---
-id: "[3.40.0]"
+id: "[4.40.0]"
 title: "WebRTC and P2P Communication in Go"
 ---
 
@@ -92,17 +92,13 @@ sendOverSignalingChannel(*peerConnection.LocalDescription())
 
 On the receiving side, the remote peer calls `SetRemoteDescription` with the offer it received, generates an answer with `CreateAnswer`, and sends that answer back the same way. Once both sides have set each other's descriptions and ICE has found a working candidate pair, `OnICEConnectionStateChange` reports `connected` and the data channel (or media track) starts flowing directly between the two machines.
 
-<DeepDive title="Why signaling is not part of WebRTC">
-The standard deliberately leaves signaling transport undefined because every application's needs differ: a video-calling app might reuse its existing chat server's WebSocket connection, while a game might use its matchmaking service. WebRTC only standardizes what happens *after* both sides know how to reach each other.
-</DeepDive>
+<DeepDive title="Why signaling is not part of WebRTC">The standard deliberately leaves signaling transport undefined because every application's needs differ: a video-calling app might reuse its existing chat server's WebSocket connection, while a game might use its matchmaking service. WebRTC only standardizes what happens *after* both sides know how to reach each other.</DeepDive>
 
 ### When Direct Connection Is Not Possible
 
 ICE tries host candidates first (direct LAN or public IP), then server-reflexive candidates discovered via STUN (your public IP:port as seen from outside your NAT), and finally falls back to a TURN relay if no direct path works -- typically because both peers sit behind symmetric NATs that STUN cannot punch through. A TURN server is not optional infrastructure for a serious deployment; without one, a meaningful percentage of real-world connections (mobile networks, corporate NATs) will simply fail to connect.
 
-<Warning title="STUN alone is not enough for production">
-The public Google STUN server used above is fine for local testing, but production WebRTC deployments need their own STUN/TURN infrastructure (for example, `coturn`) with authentication, since an open relay is both a cost and an abuse vector.
-</Warning>
+<Warning title="STUN alone is not enough for production">The public Google STUN server used above is fine for local testing, but production WebRTC deployments need their own STUN/TURN infrastructure (for example, `coturn`) with authentication, since an open relay is both a cost and an abuse vector.</Warning>
 
 ### Where This Fits Outside the Browser
 

@@ -1,5 +1,5 @@
 ---
-id: "[5.10.0]"
+id: "[6.10.0]"
 title: "API Security: Tokens, Auth, and Best Practices"
 ---
 
@@ -101,9 +101,7 @@ func parseToken(tokenString string) (*Claims, error) {
 }
 ```
 
-<Warning title="Always check the signing method">
-`jwt.ParseWithClaims` calls back into your code specifically so you can verify `t.Method` before trusting the key. Without that check, a well-known JWT vulnerability lets an attacker submit a token with `alg: none` or swap the algorithm to trick a naive verifier into skipping signature validation entirely. Always assert the expected algorithm inside the key function, as shown above.
-</Warning>
+<Warning title="Always check the signing method">`jwt.ParseWithClaims` calls back into your code specifically so you can verify `t.Method` before trusting the key. Without that check, a well-known JWT vulnerability lets an attacker submit a token with `alg: none` or swap the algorithm to trick a naive verifier into skipping signature validation entirely. Always assert the expected algorithm inside the key function, as shown above.</Warning>
 
 ---
 
@@ -115,7 +113,8 @@ func requireAuth(next http.Handler) http.Handler {
 		header := r.Header.Get("Authorization")
 		token, found := strings.CutPrefix(header, "Bearer ")
 		if !found || token == "" {
-			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			http.Error(w,
+				"missing bearer token", http.StatusUnauthorized)
 			return
 		}
 

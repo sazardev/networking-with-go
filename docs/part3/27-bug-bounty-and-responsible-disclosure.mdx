@@ -1,5 +1,5 @@
 ---
-id: "[4.27.0]"
+id: "[5.27.0]"
 title: "Bug Bounty and Responsible Disclosure"
 ---
 
@@ -17,9 +17,7 @@ The core economic logic is straightforward: paying researchers to find and repor
 
 Every legitimate program publishes a scope: which domains, applications, or systems are in bounds, which testing techniques are explicitly allowed or forbidden (denial-of-service testing is almost universally excluded, for obvious reasons), and what qualifies as a reportable finding versus noise the program doesn't want reported (a missing security header on a low-risk page is rarely worth a report; remote code execution always is).
 
-<Warning title="Scope Is a Hard Boundary, Not a Suggestion">
-Testing outside a program's published scope, even with good intentions, can expose a researcher to the same legal risk as an unauthorized attacker, since the program's authorization only covers what it explicitly defines. Automated scanners are a particularly common source of accidental scope violations - always confirm a scanner's target list matches the program scope exactly before running it, and never point mass-scanning tools at a program's production infrastructure without explicit confirmation that it's permitted.
-</Warning>
+<Warning title="Scope Is a Hard Boundary, Not a Suggestion">Testing outside a program's published scope, even with good intentions, can expose a researcher to the same legal risk as an unauthorized attacker, since the program's authorization only covers what it explicitly defines. Automated scanners are a particularly common source of accidental scope violations - always confirm a scanner's target list matches the program scope exactly before running it, and never point mass-scanning tools at a program's production infrastructure without explicit confirmation that it's permitted.</Warning>
 
 ## The Disclosure Timeline
 
@@ -31,9 +29,7 @@ Testing outside a program's published scope, even with good intentions, can expo
 
 A good vulnerability report answers, without requiring the recipient to ask follow-up questions: what is the vulnerability, what is its impact if exploited, exactly how to reproduce it step by step (ideally with a minimal, safe proof-of-concept rather than a maximally damaging one), and what conditions are required for it to be exploitable in practice. Reports that are vague about impact or reproduction steps take dramatically longer to triage, and in competitive public bounty programs, slow triage often means someone else's clearer report on the same bug gets paid first.
 
-<DeepDive title="Safe Harbor Language">
-Mature bug bounty and VDP programs increasingly include explicit "safe harbor" language: a commitment that the organization will not pursue legal action against researchers who act in good faith and stay within the defined scope and rules, even if their testing technically violates the letter of a broader computer-access law. This protection exists specifically because ambiguity in older computer-crime statutes has, in the past, discouraged good-faith security research. Confirming a program's safe harbor commitment before testing, and keeping careful records of scope and timeline compliance, is sound practice for any researcher participating in a program.
-</DeepDive>
+<DeepDive title="Safe Harbor Language">Mature bug bounty and VDP programs increasingly include explicit "safe harbor" language: a commitment that the organization will not pursue legal action against researchers who act in good faith and stay within the defined scope and rules, even if their testing technically violates the letter of a broader computer-access law. This protection exists specifically because ambiguity in older computer-crime statutes has, in the past, discouraged good-faith security research. Confirming a program's safe harbor commitment before testing, and keeping careful records of scope and timeline compliance, is sound practice for any researcher participating in a program.</DeepDive>
 
 ## Common Pitfalls
 

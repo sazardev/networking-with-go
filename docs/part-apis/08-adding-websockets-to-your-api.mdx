@@ -1,5 +1,5 @@
 ---
-id: "[5.8.0]"
+id: "[6.8.0]"
 title: "Adding WebSockets to Your API"
 ---
 
@@ -67,9 +67,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 This is a plain echo server: it upgrades the connection, then loops reading a message and writing it straight back. `CheckOrigin` matters in production — the default policy rejects cross-origin upgrade requests, and you should replace it with an explicit allow-list rather than a function that always returns `true`.
 
-<Warning title="One writer at a time per connection">
-`gorilla/websocket` explicitly documents that a connection supports only one concurrent reader and one concurrent writer. If multiple goroutines might write to the same connection — common once you add broadcasting — you must serialize writes yourself, typically with a mutex or by funneling all writes through a single goroutine reading from a channel.
-</Warning>
+<Warning title="One writer at a time per connection">`gorilla/websocket` explicitly documents that a connection supports only one concurrent reader and one concurrent writer. If multiple goroutines might write to the same connection — common once you add broadcasting — you must serialize writes yourself, typically with a mutex or by funneling all writes through a single goroutine reading from a channel.</Warning>
 
 ---
 

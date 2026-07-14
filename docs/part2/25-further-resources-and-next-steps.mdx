@@ -1,5 +1,5 @@
 ---
-id: "[2.25.0]"
+id: "[3.25.0]"
 title: "Further Resources and Next Steps"
 ---
 
@@ -31,9 +31,13 @@ Rather than pointing at specific links that go stale, it's more durable to know 
 
 - **Official Go documentation:** The standard library reference (`net`, `net/http`, `crypto/tls`, `context`, `log/slog`, `testing`) is the single most reliable source for exact API behavior — always worth checking directly rather than relying on memory or secondhand explanations.
 - **The Go blog and release notes:** Each Go release's notes describe changes to the standard library and runtime that affect networking code directly (scheduler changes, new `net`/`crypto` capabilities, and so on).
-- **RFCs for the protocols covered:** RFC 793 (TCP), RFC 768 (UDP), RFC 1035 (DNS), RFC 7230-7235 (HTTP/1.1), RFC 6455 (WebSocket), and RFC 8446 (TLS 1.3) are the authoritative specifications behind everything built in this part. They're denser reading than this book, but they're the ground truth when a library's behavior seems surprising.
+- **RFCs for the protocols covered:** RFC 793 (TCP), RFC 768 (UDP), RFC 1035 (DNS), RFC 7230-7235 (HTTP/1.1), RFC 6455 (WebSocket), and RFC 8446 (TLS 1.3) are the authoritative specifications behind everything built in this part. They're denser reading than this book, but they're the ground truth when a library's behavior seems surprising — and skimming just the section headings of one is often enough to explain a behavior that felt mysterious in the standard library's documentation alone.
 - **Go proverbs and design philosophy:** Rob Pike's collected Go proverbs ("don't communicate by sharing memory; share memory by communicating," among others) explain *why* Go's concurrency and interface design look the way they do — useful context for writing idiomatic code rather than code that merely compiles.
 - **Community discussion:** Go's official forums, mailing lists, and conference talks are where hard-won operational experience — the kind that doesn't make it into documentation — tends to surface.
+
+<DeepDive title="The standard library's source is documentation too">`net`, `net/http`, and `crypto/tls` are themselves ordinary Go code, installed locally alongside the toolchain (`go doc -src net.Dial`, or just browsing `$(go env GOROOT)/src/net`) and written by people who cared about readability. When a function's doc comment leaves a question unanswered — exactly which error `Dial` returns for a specific failure, say — reading the implementation directly is often faster than searching for a blog post that may or may not still be accurate, and it's a habit that pays off well beyond networking code.</DeepDive>
+
+<Axiom>The fastest way to stop guessing how something works is to go read it.</Axiom>
 
 ---
 
@@ -47,6 +51,4 @@ Part 2 covered the topics needed by nearly any networked Go application. The res
 
 Each of those parts assumes the foundation built here — TCP/UDP fundamentals, concurrency patterns, HTTP basics, and the security and operational mindset from the closing chapters of Part 2. If any of the case studies in the previous chapter sparked an idea for a project, that's exactly the right instinct: the fastest way to solidify everything covered here is to build something a little larger than the exercises, and let the gaps in your understanding tell you what to read next.
 
----
-
-[Previous: Real-World Projects and Case Studies](24-real-world-projects-and-case-studies.md) | [Next: Introduction to Cybersecurity in Networking](../part3/01-introduction-to-cybersecurity-in-networking.md)
+A reasonable starting project, if nothing else comes to mind: take the load balancer from the previous chapter's case study and put it in front of two or three of the small servers built earlier in this part, deployed the way this part's deployment chapter described. Small as it is, it touches concurrency, HTTP, health checks, and deployment all at once — a fitting last exercise before moving on.

@@ -1,5 +1,5 @@
 ---
-id: "[4.12.0]"
+id: "[5.12.0]"
 title: "Implementing TLS/SSL in Go"
 ---
 
@@ -105,9 +105,7 @@ func main() {
 
 Note what's *not* in this code: `InsecureSkipVerify`. That field exists on `tls.Config` and disables certificate verification entirely — useful only for narrow, controlled testing scenarios, and one of the most common serious mistakes in Go TLS code. Setting it to `true` in anything reaching a real network makes the client accept a certificate from literally anyone, silently reintroducing the exact man-in-the-middle risk TLS exists to prevent.
 
-<Warning title="Never ship InsecureSkipVerify: true">
-Code with `tls.Config{InsecureSkipVerify: true}` will work perfectly in testing and then silently accept a forged certificate in production. If you need to trust a private or self-signed CA, add it to a custom `RootCAs` certificate pool (Chapter 4.13) instead of disabling verification altogether.
-</Warning>
+<Warning title="Never ship InsecureSkipVerify: true">Code with `tls.Config{InsecureSkipVerify: true}` will work perfectly in testing and then silently accept a forged certificate in production. If you need to trust a private or self-signed CA, add it to a custom `RootCAs` certificate pool (Chapter 4.13) instead of disabling verification altogether.</Warning>
 
 ---
 
@@ -126,7 +124,3 @@ Setting `ClientAuth: tls.RequireAndVerifyClientCert` on a server's `tls.Config` 
 ## Testing Your Own TLS Configuration
 
 Once a service is serving TLS, it's worth routinely checking what it actually negotiates, not just what you intended to configure — a dependency upgrade or a copy-pasted config can quietly change behavior. The `ConnectionState()` call used in the client example above is one way to do this from Go directly; the header-auditing tool from Chapter 4.7 could just as easily be extended to record the negotiated TLS version and certificate expiry (Chapter 4.13) for every service in a fleet, turning "we think everything is on TLS 1.3" into something you actually verify on a schedule rather than assume.
-
----
-
-[Previous: Further Cybersecurity Resources](11-further-cybersecurity-resources.md) | [Next: Certificate Management and PKI](13-certificate-management-and-pki.md)

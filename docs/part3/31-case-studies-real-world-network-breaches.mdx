@@ -1,5 +1,5 @@
 ---
-id: "[4.31.0]"
+id: "[5.31.0]"
 title: "Case Studies: Real-World Network Breaches"
 ---
 
@@ -27,9 +27,7 @@ The SolarWinds incident, publicly disclosed in December 2020, represents a diffe
 
 The WannaCry ransomware outbreak in May 2017 spread using EternalBlue, an exploit targeting a vulnerability in the SMBv1 file-sharing protocol that had been developed and later leaked publicly by a group known as the Shadow Brokers. Microsoft had released a patch for the underlying vulnerability roughly a month before the outbreak, but a large number of systems worldwide remained unpatched, allowing WannaCry to self-propagate across networks as a worm without any user interaction beyond an initially infected host being reachable over the network - a sharp contrast to the phishing-driven infection pattern of most ransomware. The outbreak was eventually slowed after a researcher identified and registered a domain name that functioned, apparently unintentionally by the malware's authors, as a kill switch. WannaCry is frequently cited alongside Equifax as another illustration of the gap between a patch being available and a patch actually being applied across a real fleet of systems.
 
-<DeepDive title="The Recurring Pattern Behind These Incidents">
-None of these five incidents required a genuinely novel or exotic technique. Default credentials, an under-segmented third-party connection, a known and already-patched vulnerability, a compromised trusted update channel, and a leaked exploit against an old protocol - every one of these is a pattern this book has already named and addressed directly: least privilege, segmentation, patch management, supply chain integrity, and protocol hygiene. The consistent lesson across large, well-documented breaches is less often "nobody could have predicted this" and more often "the fix was already known, and the gap was in consistently applying it."
-</DeepDive>
+<DeepDive title="The Recurring Pattern Behind These Incidents">None of these five incidents required a genuinely novel or exotic technique. Default credentials, an under-segmented third-party connection, a known and already-patched vulnerability, a compromised trusted update channel, and a leaked exploit against an old protocol - every one of these is a pattern this book has already named and addressed directly: least privilege, segmentation, patch management, supply chain integrity, and protocol hygiene. The consistent lesson across large, well-documented breaches is less often "nobody could have predicted this" and more often "the fix was already known, and the gap was in consistently applying it."</DeepDive>
 
 ## Summary
 

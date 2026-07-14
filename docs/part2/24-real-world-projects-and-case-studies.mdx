@@ -1,5 +1,5 @@
 ---
-id: "[2.24.0]"
+id: "[3.24.0]"
 title: "Real-World Projects and Case Studies"
 ---
 
@@ -15,6 +15,8 @@ Across this part of the book, a consistent set of building blocks has come up ag
 
 A few case studies make that concrete.
 
+<Axiom>Real-world systems are rarely built from new primitives — they're familiar primitives, composed under load.</Axiom>
+
 ---
 
 ## Case Study: A Chat Server Is a Simplified Slack
@@ -27,6 +29,10 @@ The chat application from earlier in this part — a WebSocket server broadcasti
 - **Observability:** Structured logs and connection-count metrics (from the logging and monitoring chapter) tell operators when the system is under stress before users start complaining.
 
 Nothing here required new networking concepts — it required combining the ones already covered with a data layer and an operational mindset.
+
+<Warning title="One slow reader can stall the whole broadcast">A naive broadcast loop that does `client.send <- msg` for every connected client blocks on the first client whose send channel is full — a slow network path or a client that stopped reading stalls delivery to everyone else waiting behind it in that same loop. Production chat servers give each client's outbound channel a bounded buffer and a non-blocking send: if the buffer is full, either drop the message for that one client and count it as a metric, or close that client's connection outright rather than let one laggard back up the whole fan-out.</Warning>
+
+<DeepDive title="Fan-out with a per-client writer goroutine">A common shape for the broadcast side: one goroutine per connected client, each reading from its own buffered channel and writing to its own socket, plus one shared broadcaster goroutine that fans an incoming message out to every client's channel with a `select` that also checks `default:` (drop instead of block). This isolates one client's slow network from every other client's connection — the same "own goroutine per connection, communicate over a channel" shape from the concurrency chapters, applied specifically to the many-writers-one-reader direction that broadcast requires.</DeepDive>
 
 ---
 
@@ -68,13 +74,22 @@ func (lb *loadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+<Warning title="Don't rebuild the proxy on every request">`httputil.NewSingleHostReverseProxy` is cheap enough to get away with calling it per request in a toy example, but it still allocates a new `ReverseProxy` (and its default `Director`) on every single call — wasted work under real load, and it throws away any per-backend customization (a custom `Transport` with connection pooling, a custom `ErrorHandler`) you'd want to configure once. Build one `*httputil.ReverseProxy` per backend when the backend list is constructed, store it on the `backend` struct, and have `ServeHTTP` just call `b.proxy.ServeHTTP(w, r)`.</Warning>
+
 A background goroutine periodically hits each backend's `/health` endpoint — the same health check pattern from the deployment chapter — and flips `healthy` accordingly:
 
 ```go
-func (lb *loadBalancer) healthCheckLoop() {
+func (lb *loadBalancer) healthCheckLoop(client *http.Client) {
 	for {
 		for _, b := range lb.backends {
-			resp, err := http.Get(b.url.String() + "/health")
+			req, err := http.NewRequest(
+				http.MethodGet, b.url.String()+"/health", nil,
+			)
+			if err != nil {
+				b.healthy.Store(false)
+				continue
+			}
+			resp, err := client.Do(req)
 			ok := err == nil && resp.StatusCode == http.StatusOK
 			b.healthy.Store(ok)
 			if resp != nil {
@@ -86,9 +101,25 @@ func (lb *loadBalancer) healthCheckLoop() {
 }
 ```
 
+<Warning title="A bare http.Get never times out on its own">The original `http.Get(url)` call has no deadline: if one backend accepts the TCP connection but then hangs without responding, that health check blocks until the OS-level connect/read limits kick in — far longer than the 5-second check interval — delaying every other backend's check behind it in the same loop. Passing a `client` built with `&http.Client{Timeout: 2 * time.Second}` (as used above) bounds each check, so one wedged backend can't stall health checking for the rest of the pool.</Warning>
+
+```go
+go lb.healthCheckLoop(&http.Client{Timeout: 2 * time.Second})
+```
+
+<DeepDive title="Why 'skip unhealthy' round robin can be uneven">The `pick` loop above increments a shared counter and skips unhealthy backends, which keeps it simple and lock-free, but it isn't perfectly fair: if one backend flaps between healthy and unhealthy, the requests that would have gone to it are absorbed unevenly by whichever backend happens to be next in the rotation at that moment, rather than spread evenly across the survivors. Production load balancers typically track a separate list of currently-healthy backends (rebuilt each time the health check loop runs) and round robin over just that list, or weight the selection by each backend's current connection count or response latency instead of pure rotation.</DeepDive>
+
 [Exercise: Round-Robin Load Balancer](../../exercises/part2/24-load-balancer/main.go)
 
 This is the reverse proxy chapter, the deployment chapter's health checks, and the concurrency chapter's background-goroutine pattern, combined into one small but genuinely useful piece of infrastructure — the same architecture, simplified, behind tools like NGINX or a cloud load balancer's backend pool.
+
+**Try it yourself:** add a `requests atomic.Uint64` counter to `backend`,
+increment it in `ServeHTTP` right before proxying, and expose a small
+`/stats` endpoint on the load balancer itself that prints each backend's
+URL, health, and request count as JSON. Watching those counters while you
+kill and restart one backend is a fast, concrete way to confirm the
+health-check loop and the `pick` skip-logic are actually working together
+correctly, rather than trusting they do.
 
 ---
 
@@ -96,11 +127,15 @@ This is the reverse proxy chapter, the deployment chapter's health checks, and t
 
 Combine the file transfer chapter's framing protocol with the DNS and NAT traversal chapters, and you have the outline of a peer-to-peer file sync tool: peers register with a rendezvous server, punch through NAT to reach each other directly, then exchange files using the length-prefixed framing protocol, with a checksum (as in the integrity section of the file transfer chapter) confirming each file arrived intact. Layer in TLS for the actual transfer and token-based authentication so only paired devices can sync with each other, and the shape is recognizably similar to consumer file-sync tools that avoid routing every transfer through a central server.
 
+<DeepDive title="Hole punching doesn't always work">The NAT traversal chapter's hole-punching technique fails outright against symmetric NATs, which assign a different external port to every destination the client talks to, defeating the "tell the peer which port to expect" trick the whole technique relies on. Production peer-to-peer tools handle this by falling back to a relay: if a direct connection attempt times out after a short window, both peers instead stream their data through a relay server they both already have a connection to (the same role the rendezvous server plays, extended to also forward bytes). It's slower and costs the relay operator bandwidth, but it's the difference between "works on most networks" and "works on every network," which is exactly the tradeoff protocols like WebRTC's TURN fallback make.</DeepDive>
+
 ---
 
 ## Case Study: A Monitoring Agent
 
 A small agent that runs on many machines, collects metrics (CPU, memory, open connections), and reports them to a central collector touches nearly every chapter in this part at once: a UDP or HTTP client sending data on a timer, `context.WithTimeout` bounding each send so a slow collector doesn't back up the agent, structured logging for its own operational events, and graceful shutdown so a restart doesn't lose the last batch of pending metrics. This is, in miniature, what tools like node_exporter or a cloud provider's monitoring agent actually do.
+
+<Warning title="Naive retries can turn a blip into an outage">An agent that retries a failed send immediately, on a fixed interval, across thousands of machines at once, synchronizes all of them into sending their retries at the same moment — a self-inflicted thundering herd that can turn a collector's brief hiccup into a sustained overload just from the retry traffic. The standard fix is exponential backoff with jitter: each retry waits roughly twice as long as the last, plus a random fraction, so retries from different agents spread out over time instead of arriving in lockstep: ```go func backoff(attempt int) time.Duration { base := time.Second * time.Duration(1<<attempt) // 1s, 2s, 4s, ... jitter := time.Duration(rand.Int63n(int64(base) / 2)) return base + jitter } ```</Warning>
 
 ---
 
@@ -117,7 +152,3 @@ None of them introduced a fundamentally new networking concept beyond what earli
 - A peer-to-peer sync tool is a file transfer protocol plus NAT traversal plus authentication and TLS.
 - A monitoring agent is an HTTP or UDP client plus scheduling, timeouts, and graceful shutdown.
 - Reading real systems this way — as combinations of familiar pieces — makes them far less intimidating to study or build yourself.
-
----
-
-[Previous: Deploying Go Network Applications](23-deploying-go-network-applications.md) | [Next: Further Resources and Next Steps](25-further-resources-and-next-steps.md)

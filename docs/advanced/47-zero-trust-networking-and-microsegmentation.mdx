@@ -1,5 +1,5 @@
 ---
-id: "[3.47.0]"
+id: "[4.47.0]"
 title: "Zero Trust Networking and Microsegmentation"
 ---
 
@@ -104,14 +104,10 @@ func main() {
 
 `tls.RequireAndVerifyClientCert` is what turns this from ordinary server-authenticated TLS (the kind protecting most HTTPS traffic, where only the server proves its identity) into mutual TLS: the handshake fails outright unless the client also presents a certificate signed by a CA in `ClientCAs`. Everything downstream of that handshake -- the `allowed` check -- is standard Go code with no special networking knowledge required, because the hard cryptographic identity problem was solved before the handler ever runs.
 
-<DeepDive title="This does not replace network controls, it complements them">
-mTLS proves *who* is calling; it does not, by itself, prevent an attacker who has compromised a legitimate service's private key from calling anything that service is allowed to call. Real zero trust deployments still combine this with least-privilege policy (narrow certificates scoped to specific services, short-lived certs rotated frequently, often via something like SPIFFE/SPIRE for automated identity issuance) and defense in depth at other layers.
-</DeepDive>
+<DeepDive title="This does not replace network controls, it complements them">mTLS proves *who* is calling; it does not, by itself, prevent an attacker who has compromised a legitimate service's private key from calling anything that service is allowed to call. Real zero trust deployments still combine this with least-privilege policy (narrow certificates scoped to specific services, short-lived certs rotated frequently, often via something like SPIFFE/SPIRE for automated identity issuance) and defense in depth at other layers.</DeepDive>
 
 ### Why This Is Not Just "More Firewalls"
 
 The traditional model asks "is this traffic coming from inside or outside?" -- a question about topology. Zero trust asks "do I have cryptographic proof of who is asking, and are they allowed to ask for exactly this?" -- a question about identity and policy, evaluated fresh at every connection. That shift is what lets zero trust architectures remain meaningful even when "inside the network" no longer reliably means anything -- when services span clouds, when employees work from anywhere, and when the old perimeter has, for most organizations, already effectively disappeared.
 
-<Warning title="Certificate management is the operational cost you are signing up for">
-mTLS everywhere means issuing, rotating, and revoking certificates for every service, at scale, without human intervention holding it together. Underestimating this operational burden is the most common reason zero trust rollouts stall -- plan for automated certificate lifecycle management from the start, not as an afterthought.
-</Warning>
+<Warning title="Certificate management is the operational cost you are signing up for">mTLS everywhere means issuing, rotating, and revoking certificates for every service, at scale, without human intervention holding it together. Underestimating this operational burden is the most common reason zero trust rollouts stall -- plan for automated certificate lifecycle management from the start, not as an afterthought.</Warning>

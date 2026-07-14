@@ -11,7 +11,11 @@ title: "History and Evolution of Computer Networks"
 
 ## The Humble Beginnings: Pre-Network Era
 
-Before networks, computers were solitary giants—massive, expensive, and locked away in research labs. Data transfer? Think punch cards, magnetic tapes, and a lot of sneaker-net (literally walking data from one machine to another). It was like sending messages by carrier pigeon in the digital age!
+Before networks, computers were solitary giants—massive, expensive, and locked away in research labs. Data transfer? Think punch cards, magnetic tapes, and a lot of sneaker-net (literally walking data from one machine to another). It was like sending messages by carrier pigeon in the digital age.
+
+It's worth pausing on *why* this was such a problem worth solving. In the 1960s a single mainframe computer could cost the equivalent of tens of millions of dollars today, and only a handful of universities and government labs had one. If a researcher at MIT wanted to use a program running on a machine at Berkeley, there was no way to simply "connect"—time on these machines was scarce, precious, and jealously guarded. The original motivation for networking wasn't cat videos or email; it was resource sharing. If computers could talk to each other, a research lab that needed extra computing power could borrow it from a machine sitting mostly idle across the country instead of buying its own multi-million-dollar mainframe.
+
+<Axiom>Every major leap in networking history was driven by scarcity: scarce computers, scarce bandwidth, scarce addresses. Necessity, not curiosity, built the internet.</Axiom>
 
 ---
 
@@ -19,7 +23,9 @@ Before networks, computers were solitary giants—massive, expensive, and locked
 
 ### 1960s: The Spark of an Idea
 - **Analogy:** Imagine scientists wanting to send secret notes across the country, but instead of paper, they use electric pulses.
-- **Key Players:** U.S. Department of Defense, universities, and visionaries like J.C.R. Licklider.
+- **Key Players:** The U.S. Department of Defense's ARPA (Advanced Research Projects Agency), universities, and visionaries like J.C.R. Licklider, who described an "Intergalactic Computer Network" years before it existed.
+
+<DeepDive title="Where packet switching actually came from">Packet switching—the idea of chopping messages into small, independently-routed packets—was proposed almost simultaneously and independently by Paul Baran in the United States (thinking about a communications network that could survive a nuclear strike, since there would be no single point to destroy) and Donald Davies in the United Kingdom (thinking purely about efficiency for a national data network). Neither man built the ARPANET, but both of their ideas shaped it. This is a good early lesson: good ideas in networking are rarely invented once by a single genius—they tend to be reinvented by multiple people solving different versions of the same problem.</DeepDive>
 
 ### 1969: ARPANET Goes Live
 - **Diagram:**
@@ -31,16 +37,16 @@ Before networks, computers were solitary giants—massive, expensive, and locked
 ```
 
 - **Fun Fact:** The first message ever sent was "LO" (they tried to type "LOGIN" but the system crashed—classic!).
-- **Impact:** ARPANET proved that computers could talk to each other over long distances, laying the foundation for everything to come.
+- **Impact:** ARPANET proved that computers could talk to each other over long distances using packet switching instead of a dedicated circuit, laying the foundation for everything to come. Crucially, it also proved something less obvious: that a network could be built from special-purpose routing computers (Interface Message Processors, the ancestors of today's routers) rather than requiring every mainframe to understand networking itself. That separation of concerns—"let the network do networking, let the computer do computing"—is still exactly how the internet is structured today.
 
 ---
 
 ## Building Blocks: Protocols and Expansion
 
 ### 1970s: The Protocol Revolution
-- **TCP/IP:** The language of the internet. Like inventing a universal translator for computers!
-- **Email:** The first "killer app"—suddenly, people could send digital letters across the globe.
-- **Ethernet:** Networking goes local, connecting computers in the same building (LANs).
+- **TCP/IP:** Designed by Vint Cerf and Bob Kahn starting in 1974, TCP/IP was the answer to a hard problem: ARPANET only knew how to connect networks that were built the same way. Cerf and Kahn wanted to connect *networks of networks*—radio networks, satellite links, and wired ARPANET segments—regardless of how each one worked internally. The trick was to design a protocol that didn't care what was underneath it, as long as each network could carry a packet from one point to another. That single design decision is why the internet today can run over fiber, Wi-Fi, satellite links, and even smoke signals in principle—TCP/IP simply doesn't care about the medium.
+- **Email:** The first "killer app"—suddenly, people could send digital letters across the globe. Ray Tomlinson chose the "@" symbol in 1971 specifically because it was a character that never appeared in a person's name, making "user@host" unambiguous.
+- **Ethernet:** Invented at Xerox PARC by Robert Metcalfe in 1973, Ethernet solved a different problem: connecting machines in the *same room or building* cheaply, without needing a telephone-company-grade dedicated line for every pair of machines. Networking goes local, connecting computers in the same building (LANs).
 
 ### 1980s: Networks Everywhere
 - **Explosion of LANs:** Offices, schools, and even homes start wiring up.
@@ -52,20 +58,22 @@ Before networks, computers were solitary giants—massive, expensive, and locked
         [Printer]
 ```
 
-- **The Internet Emerges:** ARPANET evolves, more networks join, and the term "Internet" is born.
+- **The Internet Emerges:** ARPANET evolves, more networks join, and on January 1, 1983—a date network engineers call "flag day"—every single machine on ARPANET was required to switch over from the older NCP protocol to TCP/IP simultaneously, or be cut off. There was no gradual rollout; it was an all-or-nothing coordinated flip across every connected site. The term "Internet" (originally just shorthand for "internetworking") sticks from around this point.
+
+<Warning title="A common misconception">People often assume "the internet" and "the World Wide Web" are the same thing. They are not: the internet is the underlying network of networks and the TCP/IP protocols that make it work, and it existed for over 20 years before the Web. The Web is just one application—arguably the most famous one—that runs on top of the internet, alongside email, file transfer, and countless others.</Warning>
 
 ---
 
 ## The Internet Age: Connecting the World
 
 ### 1990s: The World Wide Web
-- **Tim Berners-Lee:** Invents the web, URLs, and browsers. Suddenly, the internet is not just for scientists—it's for everyone!
+- **Tim Berners-Lee:** While working at CERN in 1989–1991, invented the Web, URLs, HTML, and the first browser—not to build a global entertainment platform, but to solve a mundane problem: physicists at CERN kept losing track of each other's documents and data. Suddenly, the internet is not just for scientists—it's for everyone.
 - **Analogy:** The web is like building roads and highways on top of the existing city, making it easy for anyone to travel (browse) anywhere.
-- **Dot-com Boom:** Businesses, memes, and cat videos explode onto the scene.
+- **Dot-com Boom:** Businesses race to get online, and by the late 1990s home internet access—via screeching, 56-kilobit dial-up modems—becomes common in households for the first time.
 
 ### 2000s: Broadband and Wireless
-- **Faster Connections:** DSL, cable, and fiber replace dial-up. No more screeching modems!
-- **Wi-Fi:** The internet goes mobile—coffee shops, airports, and homes become digital playgrounds.
+- **Faster Connections:** DSL, cable, and fiber replace dial-up, offering "always-on" connections instead of a phone call you had to dial every time you wanted to go online.
+- **Wi-Fi:** Standardized as IEEE 802.11 in the late 1990s and widely adopted through the 2000s, Wi-Fi lets Ethernet-style local networking happen without wires—coffee shops, airports, and homes become digital playgrounds.
 - **Diagram:**
 
 ```
@@ -81,61 +89,115 @@ Before networks, computers were solitary giants—massive, expensive, and locked
 ## The Modern Era: Ubiquity and Beyond
 
 ### 2010s–2020s: The Networked Everything
-- **Smartphones:** The internet in your pocket—anytime, anywhere.
-- **Cloud Computing:** Data and apps live in the sky (well, in data centers), accessible from anywhere.
-- **IoT:** Fridges, cars, and even toasters join the network party.
-- **Security:** As networks grow, so do the threats—cybersecurity becomes a top priority.
+- **Smartphones:** The internet in your pocket—anytime, anywhere—made possible by mobile data networks (3G, 4G, now 5G) that are themselves enormous packet-switched networks.
+- **Cloud Computing:** Data and apps live in the sky (well, in data centers), accessible from anywhere. In a real sense, cloud computing is a return to the original 1960s motivation for networking—sharing scarce, powerful computing resources—just at a scale the ARPANET pioneers could never have imagined.
+- **IoT:** Fridges, cars, and even light bulbs join the network, often each with their own IP address.
+- **Security:** As networks grow, so do the threats—cybersecurity becomes a top priority, and much of Part 1 of this book (later chapters) is devoted to exactly that.
 
 ### 2020s and Beyond: The Future
-- **5G and Beyond:** Lightning-fast, low-latency connections enable new tech like AR, VR, and autonomous vehicles.
-- **Quantum Networking:** The next frontier—spooky action at a distance!
+- **5G and Beyond:** Fast, low-latency mobile connections enable new tech like AR, VR, and remote-controlled vehicles.
+- **Quantum Networking:** An active research frontier—using quantum-entangled particles to detect eavesdropping or distribute unbreakable encryption keys.
+
+---
+
+## Then vs. Now: A Sense of Scale
+
+| Aspect | ARPANET (1969) | Today's Internet |
+|---|---|---|
+| Connected nodes | 4 | Billions of devices |
+| Typical link speed | 50 kbit/s | Gigabits per second (fiber, 5G) |
+| Addressing scheme | Manually assigned host numbers | IPv4 and IPv6, largely automatic (DHCP) |
+| Who could connect | A handful of government-funded research labs | Anyone with a device and a connection |
+| Primary use | Remote access to scarce mainframe computers | Everything: commerce, media, communication, IoT |
 
 ---
 
 ## Key Takeaways
-- Computer networks evolved from isolated machines to a global, interconnected web.
-- Each era brought new protocols, technologies, and ways for people to connect.
+- Computer networks evolved from isolated machines to a global, interconnected web, driven at every step by scarcity of computers, bandwidth, or trust.
+- Each era brought new protocols, technologies, and ways for people to connect—but almost every "new" idea (packet switching, resource sharing, layered protocols) traces back to a handful of decisions made in the 1960s and 70s.
 - The journey is ongoing—who knows what the next chapter will bring?
 
 ---
 
 ## Example: From ARPANET to Your Smartphone
 
-1. **ARPANET (1969):** Four computers, miles apart, send simple messages.
-2. **1980s LAN:** Your school connects all its computers to one printer.
-3. **1990s Web:** You browse the first websites on a clunky desktop.
-4. **2000s Wi-Fi:** You check email wirelessly at a café.
-5. **Today:** You video chat with friends worldwide from your phone.
+1. **ARPANET (1969):** Four computers, miles apart, send simple messages over a purpose-built experimental network.
+2. **1980s LAN:** Your school connects all its computers to one printer over Ethernet.
+3. **1990s Web:** You browse the first websites on a clunky desktop over a dial-up modem.
+4. **2000s Wi-Fi:** You check email wirelessly at a café over broadband.
+5. **Today:** You video chat with friends worldwide from a phone that carries more networking power than the entire original ARPANET.
 
 ---
 
 ## Visual Timeline
 
 ```
-1960s: [Mainframes]   
-   ↓
-1969: [ARPANET]   
-   ↓
-1970s: [TCP/IP, Email, Ethernet]   
-   ↓
-1980s: [LANs, Internet]   
-   ↓
-1990s: [WWW, Browsers]   
-   ↓
-2000s: [Broadband, Wi-Fi]   
-   ↓
-2010s: [Cloud, Mobile, IoT]   
-   ↓
-2020s: [5G, Quantum]
+1960s: [Mainframes, sneaker-net]
+   |
+1969: [ARPANET: 4 nodes]
+   |
+1974: [TCP/IP proposed]
+   |
+1983: [Flag Day: ARPANET switches to TCP/IP]
+   |
+1980s: [LANs, Ethernet, the "Internet" name sticks]
+   |
+1989-91: [World Wide Web invented at CERN]
+   |
+1990s: [Browsers, dial-up, dot-com boom]
+   |
+2000s: [Broadband, Wi-Fi]
+   |
+2010s: [Cloud, mobile, IoT]
+   |
+2020s: [5G, quantum networking research]
 ```
 
 ---
 
-## Fun Facts & Memes
-- The first webcam was invented to monitor a coffee pot at Cambridge University.
+## Fun Facts & History Notes
+- The first webcam was invented to monitor a coffee pot at Cambridge University, so researchers wouldn't walk over to find it empty.
 - The "@" symbol in email was chosen because it was rarely used in names.
-- If the internet were a country, it would be the third largest by population!
+- If the internet were a country, it would be among the largest in the world by population connected.
 
----
+### Seeing It in Code
 
-[Previous: Introduction to Networking](01-introduction-to-networking.md) | [Next: Types of Networks](03-types-of-networks.md)
+History left artifacts behind, and one of them is sitting on your machine right now: the network interfaces your operating system exposes are the direct descendants of the ARPANET's Interface Message Processors—dedicated hardware/software whose only job is to move packets in and out of a machine. Let's list yours.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func main() {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		fmt.Println("Error listing interfaces:", err)
+		return
+	}
+
+	msg := "Found %d network interface(s) on this machine:\n\n"
+	fmt.Printf(msg, len(interfaces))
+	for _, iface := range interfaces {
+		fmt.Println("Name:      ", iface.Name)
+		// iface.HardwareAddr is the MAC address, an Ethernet-era concept.
+		fmt.Println("Hardware:  ", iface.HardwareAddr)
+		fmt.Println("Flags:     ", iface.Flags)
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			fmt.Println("  (could not read addresses)")
+			continue
+		}
+		for _, addr := range addrs {
+			fmt.Println("  Address: ", addr.String())
+		}
+		fmt.Println("---")
+	}
+}
+```
+
+Running this with `go run main.go` will print something like a loopback interface (`lo` on Linux/Mac, `Loopback Pseudo-Interface` on Windows) alongside your real Wi-Fi or Ethernet adapter, each with a hardware (MAC) address and one or more IP addresses. The `HardwareAddr` field is a direct descendant of Ethernet's 1973 design: a globally-unique identifier burned into (or assigned to) the network card itself, decades before IP addresses became the way we usually think about "who a machine is" on a network. Every time this program runs, you are reading a small, still-active piece of 1970s networking history.

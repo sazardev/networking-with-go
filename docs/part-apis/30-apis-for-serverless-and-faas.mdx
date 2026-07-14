@@ -1,5 +1,5 @@
 ---
-id: "[5.30.0]"
+id: "[6.30.0]"
 title: "APIs for Serverless and FaaS"
 ---
 
@@ -98,17 +98,13 @@ This is the practical path most teams take: build the API the same way you would
 
 **Execution time limits.** Lambda functions have a hard maximum duration (commonly configured well under 15 minutes). Long-running work — the background jobs from an earlier chapter — belongs in a queue-driven worker running on a different Lambda invocation (or a container), not inline in the same function that answered the original API request.
 
-<Warning title="A database connection per invocation doesn't behave like a connection pool">
-If your Lambda function opens a new database connection on every cold start and thousands of concurrent invocations spin up under load, you can exhaust your database's connection limit almost immediately — a failure mode that simply doesn't exist with a single long-running server holding one pool. Use a proxy (like AWS RDS Proxy) or a connection-light data store, and keep connection setup in package-level initialization so warm invocations reuse it.
-</Warning>
+<Warning title="A database connection per invocation doesn't behave like a connection pool">If your Lambda function opens a new database connection on every cold start and thousands of concurrent invocations spin up under load, you can exhaust your database's connection limit almost immediately — a failure mode that simply doesn't exist with a single long-running server holding one pool. Use a proxy (like AWS RDS Proxy) or a connection-light data store, and keep connection setup in package-level initialization so warm invocations reuse it.</Warning>
 
 ## When serverless is, and isn't, the right fit
 
 FaaS is a strong fit for spiky, unpredictable traffic (you pay per invocation, not for idle capacity), for event-driven glue code (resizing an image when one lands in S3), and for endpoints that are hit rarely enough that a warm always-on server is wasteful. It's a weaker fit for latency-sensitive APIs that can't tolerate occasional cold-start delays, and for workloads that need long-lived in-memory state or very high, sustained throughput where a pool of always-warm servers is simply cheaper and more predictable.
 
-<DeepDive title="Provisioned concurrency trades cost for cold-start elimination">
-AWS Lambda's provisioned concurrency keeps a set number of execution environments pre-initialized and warm, effectively buying back the cold-start latency at the cost of paying for that idle capacity — a middle ground between a fully "pay only when invoked" function and a permanently running server. It's worth reaching for on latency-sensitive endpoints once cold starts show up as a real problem in your metrics, not as a default.
-</DeepDive>
+<DeepDive title="Provisioned concurrency trades cost for cold-start elimination">AWS Lambda's provisioned concurrency keeps a set number of execution environments pre-initialized and warm, effectively buying back the cold-start latency at the cost of paying for that idle capacity — a middle ground between a fully "pay only when invoked" function and a permanently running server. It's worth reaching for on latency-sensitive endpoints once cold starts show up as a real problem in your metrics, not as a default.</DeepDive>
 
 ## Local development and testing
 

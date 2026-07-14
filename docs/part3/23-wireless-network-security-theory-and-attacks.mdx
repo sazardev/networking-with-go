@@ -1,5 +1,5 @@
 ---
-id: "[4.23.0]"
+id: "[5.23.0]"
 title: "Wireless Network Security: Theory and Attacks"
 ---
 
@@ -17,9 +17,7 @@ title: "Wireless Network Security: Theory and Attacks"
 
 **WPA3** replaces the WPA2 handshake with Simultaneous Authentication of Equals (SAE), a protocol specifically designed to resist offline dictionary attacks even against comparatively weak passphrases, and adds forward secrecy so capturing one session's traffic doesn't compromise past or future sessions encrypted under the same password.
 
-<DeepDive title="KRACK: A Well-Documented Protocol-Level Flaw">
-In 2017, researchers publicly disclosed the Key Reinstallation Attack (KRACK), a flaw in the WPA2 four-way handshake itself rather than in any particular vendor's implementation - by manipulating handshake message retransmission, an attacker could force reinstallation of an already-in-use encryption key, resetting nonce counters and enabling packet decryption or injection in some configurations. It was fixed through software and firmware patches across essentially the entire Wi-Fi ecosystem rather than requiring a new protocol version, and it's a good illustration of how a flaw in the protocol's state machine, not its cryptographic primitives, can undermine an otherwise sound design.
-</DeepDive>
+<DeepDive title="KRACK: A Well-Documented Protocol-Level Flaw">In 2017, researchers publicly disclosed the Key Reinstallation Attack (KRACK), a flaw in the WPA2 four-way handshake itself rather than in any particular vendor's implementation - by manipulating handshake message retransmission, an attacker could force reinstallation of an already-in-use encryption key, resetting nonce counters and enabling packet decryption or injection in some configurations. It was fixed through software and firmware patches across essentially the entire Wi-Fi ecosystem rather than requiring a new protocol version, and it's a good illustration of how a flaw in the protocol's state machine, not its cryptographic primitives, can undermine an otherwise sound design.</DeepDive>
 
 ## Common Wireless Attacks
 
@@ -31,9 +29,7 @@ In 2017, researchers publicly disclosed the Key Reinstallation Attack (KRACK), a
 
 **Bluetooth and BLE risks** deserve a brief mention alongside Wi-Fi: many of the same categories of attack apply (unauthenticated pairing flows, protocol implementation bugs, and device impersonation), and BLE's ubiquity in IoT devices makes it directly relevant to the IoT security chapter that follows this one.
 
-<Warning title="Wireless Testing Requires Explicit Authorization">
-Capturing handshakes, deauthenticating clients, or standing up a rogue access point against any network you don't own or have explicit written authorization to test is illegal in most jurisdictions, independent of intent. Radio spectrum interference (deauth frames, jamming) can also affect devices and networks well outside your intended target due to how radio propagation works, which is an additional reason authorized scope needs to be precise and geographically bounded.
-</Warning>
+<Warning title="Wireless Testing Requires Explicit Authorization">Capturing handshakes, deauthenticating clients, or standing up a rogue access point against any network you don't own or have explicit written authorization to test is illegal in most jurisdictions, independent of intent. Radio spectrum interference (deauth frames, jamming) can also affect devices and networks well outside your intended target due to how radio propagation works, which is an additional reason authorized scope needs to be precise and geographically bounded.</Warning>
 
 ## Defending a Wireless Network
 

@@ -1,5 +1,5 @@
 ---
-id: "[5.33.0]"
+id: "[6.33.0]"
 title: "APIs for Advanced Observability"
 ---
 
@@ -115,9 +115,7 @@ func metricsMiddleware(next http.Handler) http.Handler {
 mux.Handle("/metrics", promhttp.Handler())
 ```
 
-<Warning title="Label cardinality can quietly take down your metrics backend">
-`r.URL.Path` is fine as a label only if your routes are a small, fixed set. If a raw path containing a user ID or UUID ever ends up as a label value (`/users/8f3a2b91-...`), Prometheus creates a new time series per unique value it sees — with enough distinct IDs, this can produce millions of series and overwhelm the metrics backend. Always normalize to the route pattern (`/users/{id}`), never the raw resolved path, before using it as a label.
-</Warning>
+<Warning title="Label cardinality can quietly take down your metrics backend">`r.URL.Path` is fine as a label only if your routes are a small, fixed set. If a raw path containing a user ID or UUID ever ends up as a label value (`/users/8f3a2b91-...`), Prometheus creates a new time series per unique value it sees — with enough distinct IDs, this can produce millions of series and overwhelm the metrics backend. Always normalize to the route pattern (`/users/{id}`), never the raw resolved path, before using it as a label.</Warning>
 
 ## Health and readiness endpoints
 
@@ -145,9 +143,7 @@ func readinessHandler(db *sql.DB) http.HandlerFunc {
 
 A liveness check should be nearly free — checking that the process can respond at all — because Kubernetes will restart the container if it fails, and a slow or dependency-heavy liveness check causes needless restarts under load. A readiness check should verify the dependencies this instance actually needs to serve traffic (a database connection, a downstream service), because failing readiness only removes the instance from the load balancer's rotation — a much cheaper, safer response to a temporary dependency issue than restarting the whole process.
 
-<DeepDive title="Readiness failing is normal; liveness failing should be rare">
-If your readiness check fails during a database failover, that's the system working correctly — traffic routes to instances that can actually serve it, and comes back once the database recovers. If your liveness check fails, something is wrong enough that killing and restarting the process is the right call. Mixing these up — putting a database check in liveness — turns a transient dependency blip into an unnecessary restart storm across every instance at once.
-</DeepDive>
+<DeepDive title="Readiness failing is normal; liveness failing should be rare">If your readiness check fails during a database failover, that's the system working correctly — traffic routes to instances that can actually serve it, and comes back once the database recovers. If your liveness check fails, something is wrong enough that killing and restarting the process is the right call. Mixing these up — putting a database check in liveness — turns a transient dependency blip into an unnecessary restart storm across every instance at once.</DeepDive>
 
 ## Alerting on symptoms, not causes
 

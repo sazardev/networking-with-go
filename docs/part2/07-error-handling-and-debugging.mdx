@@ -1,5 +1,5 @@
 ---
-id: "[2.7.0]"
+id: "[3.7.0]"
 title: "Error Handling and Debugging: Concepts and Go Implementation"
 ---
 
@@ -26,6 +26,8 @@ Networking is unpredictable: cables unplug, servers crash, packets vanish. Good 
 - **Idiomatic Go:** If you ignore an error, Go will warn you (and experienced Gophers will frown!).
 - **Why?** The creators of Go wanted to avoid the confusion and unpredictability of exceptions in large, concurrent systems. Explicit error handling makes code easier to read, maintain, and debug.
 
+<Axiom>An error you don't check is a bug you haven't met yet — it is just waiting for the worst possible moment to surface.</Axiom>
+
 **Fun Fact:**
 - The Go team considered exceptions, but after much debate, chose explicit errors for clarity and reliability.
 - The phrase "Don’t just check errors, handle them gracefully" is a Go mantra!
@@ -36,27 +38,44 @@ Networking is unpredictable: cables unplug, servers crash, packets vanish. Good 
 
 ```go
 package main
+
 import (
-    "fmt"
-    "net"
+	"errors"
+	"fmt"
+	"net"
 )
 
 func main() {
-    // Try to connect to a port with no server.
-    conn, err := net.Dial("tcp", "localhost:9999")
-    if err != nil {
-        fmt.Println("Error connecting:", err) // Print the error
-        return
-    }
-    fmt.Fprintln(conn, "Hello!")
-    conn.Close()
+	// Try to connect to a port with no server.
+	conn, err := net.Dial("tcp", "localhost:9999")
+	if err != nil {
+		// A dial failure can be a timeout, a refused connection,
+		// or something else entirely. net.Error tells us which.
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			fmt.Println("Timed out connecting:", err) // retry-worthy
+		} else {
+			fmt.Println("Error connecting:", err) // Print the error
+		}
+		return
+	}
+	fmt.Fprintln(conn, "Hello!")
+	conn.Close()
 }
 ```
 
 - **¿Qué hace cada parte?**
   - `net.Dial`: Tries to open a TCP connection.
   - `err`: If there is an error (e.g., no server), it is captured here.
+  - `errors.As(err, &netErr)`: Walks the error chain looking for a
+    value that implements the `net.Error` interface, even if the
+    error was wrapped along the way.
+  - `netErr.Timeout()`: Tells you whether the failure is a timeout
+    (worth retrying) versus something permanent like "connection
+    refused" (retrying won't help).
   - `fmt.Println`: Reports the error and exits.
+
+<Warning title="Type assertion vs errors.As">A raw type assertion like `err.(net.Error)` only works if `err` is *exactly* that type. The moment a caller wraps it with `fmt.Errorf("...: %w", err)`, the assertion silently fails and you fall back to generic handling. `errors.As` unwraps the chain via the error's `Unwrap() error` method, so it keeps working no matter how many layers of context were added on the way up.</Warning>
 
 [Ejercicio: Error Handling TCP](../../exercises/part2/07-error-handling-tcp/main.go)
 
@@ -66,24 +85,39 @@ func main() {
 
 ```go
 package main
+
 import (
-    "fmt"
-    "net"
+	"errors"
+	"fmt"
+	"net"
 )
 
 func main() {
-    _, err := net.LookupHost("no-such-hostname.example")
-    if err != nil {
-        fmt.Printf("Could not resolve host: %v\n", err)
-    } else {
-        fmt.Println("Host resolved successfully!")
-    }
+	_, err := net.LookupHost("no-such-hostname.example")
+	if err != nil {
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) {
+			fmt.Printf(
+				"DNS error for %q (not found=%v, timeout=%v)\n",
+				dnsErr.Name, dnsErr.IsNotFound, dnsErr.IsTimeout,
+			)
+		} else {
+			fmt.Printf("Could not resolve host: %v\n", err)
+		}
+	} else {
+		fmt.Println("Host resolved successfully!")
+	}
 }
 ```
 
 - **¿Qué hace cada parte?**
   - `net.LookupHost`: Tries to resolve a hostname.
-  - If it fails, prints a custom error message.
+  - `*net.DNSError`: The concrete error type the resolver returns; it
+    carries structured fields (`Name`, `IsNotFound`, `IsTimeout`)
+    instead of just a string.
+  - `errors.As`: Extracts that concrete type out of the generic
+    `error` interface so you can branch on *why* the lookup failed,
+    not just *that* it failed.
 
 [Ejercicio: Error Handling DNS](../../exercises/part2/07-error-handling-dns/main.go)
 
@@ -125,6 +159,87 @@ func main() {
   - `fmt.Errorf(...%w...)`: Wraps the original error with context.
   - `errors.Is`: Checks for specific error types.
 
+**Why wrap instead of just returning `err`?** A bare `return err` loses
+*where* the failure happened. `fmt.Errorf("...: %w", err)` adds a
+breadcrumb while keeping the original error reachable via
+`errors.Is`/`errors.As` — each call-stack layer can add its own, so the
+final message reads like a mini stack trace made of ordinary strings.
+
+<DeepDive title="Sentinel errors vs custom error types">Go has two common patterns for error identity. **Sentinel errors** are package-level values like `io.EOF` or `net.ErrClosed`, created once with `errors.New` and compared with `errors.Is` — good when there is one meaningful "kind" of failure. **Custom error types** (a struct implementing `Error() string`) carry extra data, like `*net.DNSError` above, and are extracted with `errors.As`. Use a sentinel when callers only need to know *which* error happened; use a type when callers also need *details about* it.</DeepDive>
+
+<Warning title="Don't compare wrapped errors with ==">`err == net.ErrClosed` breaks the instant that error is wrapped by `fmt.Errorf("...: %w", err)` anywhere in the chain, because wrapping produces a brand-new value with a different identity. `errors.Is` follows the `Unwrap()` chain and matches the sentinel underneath any number of wrapping layers — always prefer it over `==`.</Warning>
+
+### Go in Action: Retrying with Backoff and Wrapped Errors
+
+Real network calls are often *transiently* broken — retry a bounded
+number of times with a short pause, rather than giving up immediately.
+Let's extend `connect` into a retry loop that keeps every attempt
+visible through wrapping instead of discarding it:
+
+```go
+package main
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"time"
+)
+
+func connect(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to %s: %w", addr, err)
+	}
+	defer conn.Close()
+	return nil
+}
+
+func connectWithRetry(addr string, attempts int) error {
+	var lastErr error
+	for i := 1; i <= attempts; i++ {
+		err := connect(addr)
+		if err == nil {
+			return nil
+		}
+		// Wrap again: each retry adds its own layer of context, so
+		// the final error tells the whole story of every attempt.
+		lastErr = fmt.Errorf("attempt %d/%d: %w", i, attempts, err)
+
+		var netErr net.Error
+		if errors.As(err, &netErr) && !netErr.Timeout() {
+			// Not a timeout (e.g. "connection refused"): retrying
+			// won't fix a server that isn't listening, but a bounded
+			// retry still helps if the server is mid-restart.
+			_ = netErr
+		}
+		time.Sleep(time.Duration(i) * 200 * time.Millisecond)
+	}
+	return lastErr
+}
+
+func main() {
+	err := connectWithRetry("localhost:9999", 3)
+	if err != nil {
+		fmt.Println("Connection error:", err)
+		if errors.Is(err, net.ErrClosed) {
+			fmt.Println("The connection was closed!")
+		}
+	}
+}
+```
+
+- **¿Qué hace cada parte?**
+  - `connectWithRetry`: Calls `connect` up to `attempts` times,
+    backing off a little longer after each failure (`i * 200ms`).
+  - `fmt.Errorf("attempt %d/%d: %w", ...)`: Wraps the *previous*
+    wrapped error again, so `errors.Is`/`errors.As` still see straight
+    through to the original `net.Error` at the bottom of the chain.
+  - The loop always returns `lastErr` on total failure — callers get
+    a real, inspectable error, never a silent "it probably worked".
+
+[Ejercicio: Error Handling TCP](../../exercises/part2/07-error-handling-tcp/main.go)
+
 ---
 
 ## Debugging Go Network Applications
@@ -136,6 +251,10 @@ func main() {
 - **Delve:** The official Go debugger (`dlv debug`).
 - **net/http/pprof:** Built-in profiling for performance bottlenecks.
 - **Race Detector:** Run `go run -race` to catch concurrency bugs.
+
+<DeepDive title="Using the tools for real">- `dlv debug ./cmd/server` gives you breakpoints (`break main.go:42`), variable inspection (`print err`), and per-goroutine stepping (`goroutines`, `goroutine <n>`). - `go tool pprof http://localhost:6060/debug/pprof/profile` (with `net/http/pprof` imported for its side effect) captures a CPU profile you can explore with `top` and `web`. - `go run -race .` instruments every memory access and reports the exact goroutines and lines involved in a data race — run it in CI on anything touching shared state across goroutines.</DeepDive>
+
+<DeepDive title="panic/recover across goroutines">`recover` only has an effect inside a deferred function, and only catches a panic in the *same goroutine* that is unwinding. If a goroutine started with `go` panics and never recovers, that panic is **not** contained — it crashes the entire process, taking every other goroutine down with it. The fix is to put the `defer`/`recover` pair inside the goroutine itself: ```go func safeGo(work func()) { go func() { defer func() { if r := recover(); r != nil { log.Printf("recovered from panic: %v", r) } }() work() }() } ``` Reserve `panic` for programmer errors that should never happen at runtime (a broken invariant, a truly impossible state). Never use it for ordinary, expected failures like "connection refused" or "file not found" — those are exactly what the `error` return value is for.</DeepDive>
 
 **Fun Fact:**
 - The Go Playground is a real Go program running in a sandboxed environment—great for quick tests!
@@ -172,6 +291,26 @@ func main() {
 
 [Ejercicio: Logging TCP Server](../../exercises/part2/07-logging-tcp-server/main.go)
 
+<Warning title="Don't swallow the Close() error">`conn.Close()` above ignores its return value — fine for a demo, risky in a real server, since a failed `Close()` on a TCP connection can mean buffered writes never reached the peer. Capture it: `if cerr := conn.Close(); cerr != nil { log.Printf("close error: %v", cerr) }`. More generally: never let a *logged* error be treated as a *handled* one just because you already printed it. Logging is not a substitute for propagating or acting on a failure.</Warning>
+
+### Try It Yourself: Build a Resilient Dialer
+
+Combine this chapter's ideas into one program:
+
+1. Write `dialWithRetry(addr string, attempts int, timeout
+   time.Duration) (net.Conn, error)` using `net.DialTimeout`.
+2. Wrap each failed attempt with `fmt.Errorf("attempt %d: %w", i,
+   err)` so the final error preserves the whole history.
+3. Use `errors.As` to detect `net.Error`; keep retrying only while
+   `Timeout()` is true, and stop immediately on a permanent error.
+4. Wrap the call in a `safeGo`-style goroutine and confirm with
+   `go run -race` that concurrent dialers don't race.
+5. Log every attempt, but still *return* the final error — logging
+   never replaces propagating it to the caller.
+
+This mirrors what production dialers (database drivers, HTTP
+clients, message-queue consumers) do every time they connect.
+
 ---
 
 ## What Happens Under the Hood in Go?
@@ -180,6 +319,15 @@ func main() {
 - Go’s runtime does not hide errors—if you don’t check them, you might miss important clues.
 - Network errors can be temporary (e.g., timeouts) or permanent (e.g., connection refused). Use `net.Error` to check for timeouts and temporary errors.
 - Go’s explicit error handling is designed for reliability in large, concurrent systems—no surprises, no hidden exceptions.
+- Custom error types can implement `Unwrap() error` so `errors.Is`/
+  `errors.As` see through them, just like `fmt.Errorf("...: %w", err)`
+  does automatically.
+- Since Go 1.20, `errors.Join(err1, err2, ...)` combines several
+  errors into one value that `errors.Is`/`errors.As` can still
+  inspect individually — handy when closing several connections
+  fails in more than one place at once.
+
+<Axiom>In Go, the error path is not the exceptional path — it is just another return value you are required to look at.</Axiom>
 
 ---
 
@@ -190,7 +338,3 @@ func main() {
 - The Go team believes that clear, explicit error handling leads to more robust and maintainable code.
 - In Go, "if err != nil" is the most common phrase—embrace it!
 - Debugging in Go is so easy, even the gopher can do it!
-
----
-
-[Previous: UDP in Depth: Protocol Theory and Go Implementation](06-udp-in-depth-protocol-theory-and-go-implementation.md) | [Next: Concurrency in Networking](08-concurrency-in-networking.md)

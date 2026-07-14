@@ -1,5 +1,5 @@
 ---
-id: "[4.25.0]"
+id: "[5.25.0]"
 title: "Cloud Networking Security"
 ---
 
@@ -19,9 +19,7 @@ Every major cloud provider frames security as a shared responsibility: the provi
 
 **Network ACLs** operate at the subnet level and are stateless, meaning inbound and outbound rules must both be defined explicitly for a connection to complete in both directions. Security groups and NACLs are complementary layers, not substitutes for each other - a common real-world pattern is a broad NACL as a subnet-wide baseline with tighter, resource-specific security groups layered on top.
 
-<DeepDive title="The Most Common Cloud Breach Pattern">
-An enormous share of publicly disclosed cloud incidents share the same root cause: a storage bucket, database, or management interface left reachable from the public internet due to a misconfigured access policy, rather than any sophisticated exploit. Object storage services in particular default to private in most providers today specifically because so many earlier incidents involved buckets accidentally made public. The lesson generalizes past object storage: default-deny, explicit-allow is a safer starting posture for any cloud resource than default-allow with exceptions carved out later.
-</DeepDive>
+<DeepDive title="The Most Common Cloud Breach Pattern">An enormous share of publicly disclosed cloud incidents share the same root cause: a storage bucket, database, or management interface left reachable from the public internet due to a misconfigured access policy, rather than any sophisticated exploit. Object storage services in particular default to private in most providers today specifically because so many earlier incidents involved buckets accidentally made public. The lesson generalizes past object storage: default-deny, explicit-allow is a safer starting posture for any cloud resource than default-allow with exceptions carved out later.</DeepDive>
 
 ## Identity and Access as a Network Control
 

@@ -1,5 +1,5 @@
 ---
-id: "[5.12.0]"
+id: "[6.12.0]"
 title: "API Documentation and OpenAPI/Swagger"
 ---
 
@@ -105,9 +105,7 @@ mux.Handle("/swagger/", httpSwagger.WrapHandler)
 
 Visiting `/swagger/index.html` now shows a live, browsable, testable version of the API — regenerated every time you rerun `swag init` after changing annotations.
 
-<DeepDive title="Gin and Fiber have dedicated integrations">
-`swaggo` publishes framework-specific adapters — `gin-swagger` for Gin and a Fiber-compatible handler for Fiber — so the same annotation-driven workflow works regardless of which framework from earlier chapters you're using; only the one line wiring the docs handler into the router changes.
-</DeepDive>
+<DeepDive title="Gin and Fiber have dedicated integrations">`swaggo` publishes framework-specific adapters — `gin-swagger` for Gin and a Fiber-compatible handler for Fiber — so the same annotation-driven workflow works regardless of which framework from earlier chapters you're using; only the one line wiring the docs handler into the router changes.</DeepDive>
 
 ---
 

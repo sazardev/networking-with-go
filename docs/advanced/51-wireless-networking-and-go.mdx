@@ -1,5 +1,5 @@
 ---
-id: "[3.51.0]"
+id: "[4.51.0]"
 title: "Wireless Networking and Go"
 ---
 
@@ -13,9 +13,7 @@ Everything you've learned about TCP, UDP, and sockets still applies once a wirel
 
 That layer—802.11 frame construction, channel access, retransmission—lives in firmware and the OS's wireless driver stack. It is not something a portable, cross-platform Go program can reach into directly. There is no standard library package for raw 802.11 framing, and there shouldn't be one: the details are wildly different between Linux's `nl80211`/`mac80211`, Windows's Native Wifi API, and macOS's CoreWLAN, and getting it wrong risks destabilizing the OS's own network stack.
 
-<Warning title="Raw 802.11 injection is not portable">
-Frame injection and monitor-mode capture are possible on Linux with driver support, root privileges, and either cgo bindings to `libnl`/`libpcap` or shelling out to tools like `iw`. There is no cross-platform Go API for this, and production code should not depend on it.
-</Warning>
+<Warning title="Raw 802.11 injection is not portable">Frame injection and monitor-mode capture are possible on Linux with driver support, root privileges, and either cgo bindings to `libnl`/`libpcap` or shelling out to tools like `iw`. There is no cross-platform Go API for this, and production code should not depend on it.</Warning>
 
 ## What Go Can Actually Do with Wireless
 

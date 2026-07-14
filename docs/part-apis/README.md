@@ -40,7 +40,8 @@ Esta sección cubre el diseño, implementación y despliegue de APIs modernas y 
 30. [APIs for Serverless and FaaS](30-apis-for-serverless-and-faas.mdx)
 31. [APIs for Edge Computing and CDN](31-apis-for-edge-computing-and-cdn.mdx)
 32. [APIs for Advanced Security](32-apis-for-advanced-security.mdx)
-33. [APIs for Advanced Observability](34-apis-for-advanced-observability.mdx)
+33. [APIs for Advanced Observability: Metrics and Logging](33-apis-for-advanced-observability.mdx)
+34. [APIs for Advanced Observability: Distributed Tracing](34-apis-for-advanced-observability.mdx)
 
 ---
 

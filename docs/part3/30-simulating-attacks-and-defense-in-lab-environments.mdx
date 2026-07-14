@@ -1,5 +1,5 @@
 ---
-id: "[4.30.0]"
+id: "[5.30.0]"
 title: "Simulating Attacks and Defense in Lab Environments"
 ---
 
@@ -28,9 +28,7 @@ A typical minimal topology:
 
 **Network simulation tools** like GNS3 or EVE-NG go a step further for networking-focused labs, letting you model realistic router and switch topologies - VLANs, routing protocols, firewall placement - entirely virtually, which is valuable for practicing the segmentation and defense-in-depth concepts from earlier in this book against a topology that behaves like real network hardware.
 
-<Warning title="Snapshot Before, Isolate Always">
-Take a clean snapshot of every VM before running anything offensive against it, so a lab session can always be reset to a known-good state regardless of what happens during it. Double-check network isolation before every session that involves live malware, exploitation tooling, or anything you wouldn't want to accidentally reach a real network - a misconfigured bridge adapter connecting a "isolated" lab VM back to your home or corporate network is a genuinely common mistake, not a hypothetical one.
-</Warning>
+<Warning title="Snapshot Before, Isolate Always">Take a clean snapshot of every VM before running anything offensive against it, so a lab session can always be reset to a known-good state regardless of what happens during it. Double-check network isolation before every session that involves live malware, exploitation tooling, or anything you wouldn't want to accidentally reach a real network - a misconfigured bridge adapter connecting a "isolated" lab VM back to your home or corporate network is a genuinely common mistake, not a hypothetical one.</Warning>
 
 ## Intentionally Vulnerable Targets
 

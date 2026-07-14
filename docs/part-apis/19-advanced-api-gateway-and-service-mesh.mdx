@@ -1,5 +1,5 @@
 ---
-id: "[5.19.0]"
+id: "[6.19.0]"
 title: "Advanced API Gateway and Service Mesh"
 ---
 
@@ -78,9 +78,7 @@ func callOrders(req *http.Request) (*http.Response, error) {
 
 A service mesh solves a different problem: traffic *between* your internal services, not traffic from the outside world. In a mesh like Istio or Linkerd, every service instance gets a **sidecar proxy** (usually Envoy) injected next to it. Your Go service talks to `localhost`, the sidecar intercepts that traffic, and the sidecar handles mutual TLS, retries, load balancing, and telemetry — all without your application code knowing anything happened.
 
-<DeepDive title="Why not just put this logic in the gateway?">
-Because gateway policies apply to north-south traffic (client to system), while a mesh applies to east-west traffic (service to service) which never touches the gateway at all. A payments service calling an inventory service internally never passes through the edge gateway — if you want mTLS or retry policy on that call, the mesh (or your own code) has to provide it.
-</DeepDive>
+<DeepDive title="Why not just put this logic in the gateway?">Because gateway policies apply to north-south traffic (client to system), while a mesh applies to east-west traffic (service to service) which never touches the gateway at all. A payments service calling an inventory service internally never passes through the edge gateway — if you want mTLS or retry policy on that call, the mesh (or your own code) has to provide it.</DeepDive>
 
 The appeal of the sidecar model is that your Go code stays simple. You don't import a mesh SDK; you just make a normal HTTP or gRPC call to another service's address, and the sidecar intercepts it transparently at the network layer (via iptables rules in the pod, in Kubernetes-based meshes). This is a deliberate architectural trade-off: it moves cross-cutting network concerns out of application code and into infrastructure, at the cost of an extra network hop and additional operational complexity (certificate rotation, sidecar upgrades, mesh control-plane failures).
 
@@ -113,6 +111,4 @@ This is a reasonable starting point for a small system. Once you have dozens of 
 
 Most systems that operate at meaningful scale end up with both: a gateway (or several, per API surface) at the edge, and a mesh handling internal service-to-service traffic. As a Go developer, the practical takeaway is that neither one requires you to embed a vendor SDK into your business logic. Gateways are usually configured declaratively (routes, plugins) outside your service; meshes are usually transparent at the network layer. Your Go code's job is to expose a clean HTTP or gRPC interface, respect context cancellation and deadlines passed down to it, and emit the metrics and trace headers that let the surrounding infrastructure do its job well.
 
-<Warning title="Don't duplicate mesh policy in application code">
-If your platform team already enforces retries and mTLS via a mesh, don't also hardcode a competing retry loop with different timeouts in your service — the two policies can interact badly (retries stacking on retries) and turn a minor blip into a self-inflicted overload. Ask what the mesh already guarantees before adding your own resilience layer on top.
-</Warning>
+<Warning title="Don't duplicate mesh policy in application code">If your platform team already enforces retries and mTLS via a mesh, don't also hardcode a competing retry loop with different timeouts in your service — the two policies can interact badly (retries stacking on retries) and turn a minor blip into a self-inflicted overload. Ask what the mesh already guarantees before adding your own resilience layer on top.</Warning>

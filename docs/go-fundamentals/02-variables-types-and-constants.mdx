@@ -1,0 +1,257 @@
+---
+id: "[2.2.0]"
+title: "Variables, Types, and Constants"
+---
+
+# Variables, Types, and Constants
+
+> A variable in Go is like a labeled box with a fixed shape stamped on the
+> side: once you build the box to hold integers, you can never quietly slip
+> a string in through the lid. The shape is decided once, at compile time,
+> and the compiler enforces it every time you reach into the box.
+
+Every program is, underneath, just data being stored, read, and
+transformed. This chapter covers how Go names that data, what shapes
+("types") it can take, how those shapes convert into one another (or
+stubbornly refuse to), and how to declare values that never change.
+
+## Declaring Variables: var and :=
+
+Go gives you two everyday ways to introduce a variable. The first is the
+`var` keyword, which works everywhere — inside functions, and at package
+level, outside any function:
+
+```go
+var count int
+var name string = "gopher"
+var isActive bool
+```
+
+The second is the short variable declaration, `:=`, which only works inside
+a function body and infers the type from the right-hand side:
+
+```go
+count := 0
+name := "gopher"
+isActive := false
+```
+
+Both forms above produce identical variables; `:=` is simply shorter and is
+by far the more common style inside function bodies. `var` remains
+necessary in three situations: declaring a variable at package level
+(`:=` cannot appear outside a function), declaring a variable without
+initializing it, and declaring a variable whose type you want to state
+explicitly rather than let Go infer (for example, `var ratio float64 = 1`,
+which would otherwise infer `int` from the literal `1`).
+
+<Warning title=":= versus = — the single most common beginner typo">`:=` *declares and assigns* a new variable; `=` only *assigns* to a variable that already exists. Writing `count = 0` for a variable that was never declared fails to compile with "undefined: count." Writing `count := 0` a second time in the same scope for the same variable fails with "no new variables on left side of :=." Read the compiler error carefully — it names exactly which of the two mistakes you made.</Warning>
+
+## Zero Values
+
+Unlike many languages, Go never leaves a declared variable holding garbage
+or `undefined`. Every type has a well-defined **zero value** that a
+variable holds the instant it is declared with no explicit initializer:
+`0` for every numeric type, `false` for `bool`, `""` for `string`, and `nil`
+for pointers, slices, maps, channels, functions, and interfaces.
+
+```go
+var count int      // 0
+var price float64   // 0.0
+var label string    // ""
+var ready bool       // false
+```
+
+<Axiom>Go has no concept of an uninitialized variable — only a variable holding its type's zero value. This single design decision eliminates an entire category of bugs that plague languages where reading before writing is undefined behavior.</Axiom>
+
+## Basic Types
+
+Go's built-in types are grouped into a few families:
+
+| Category | Types | Notes |
+|---|---|---|
+| Integers | `int`, `int8/16/32/64`, `uint8/16/32/64` | `int` is 64-bit on modern platforms; prefer it unless you have a specific reason for a sized variant |
+| Floating point | `float32`, `float64` | Prefer `float64`; it is what most math functions expect |
+| Boolean | `bool` | Only `true`/`false` — no truthy integers |
+| String | `string` | Immutable, UTF-8 encoded byte sequence |
+| Byte and rune | `byte` (alias for `uint8`), `rune` (alias for `int32`) | `byte` is a raw 8-bit value; `rune` is a Unicode code point |
+
+Strings deserve a closer look because they trip up newcomers coming from
+languages where a string is an array of fixed-width characters. A Go
+string is a read-only sequence of bytes, conventionally holding UTF-8 text.
+Indexing a string with `s[0]` gives you a `byte`, not a "character" — for
+text that might contain multi-byte Unicode characters (accented letters,
+emoji, non-Latin scripts), iterate with `range` instead, which correctly
+decodes one `rune` (Unicode code point) at a time:
+
+```go
+s := "héllo"
+for i, r := range s {
+	fmt.Printf("index %d: %c (%d)\n", i, r, r)
+}
+```
+
+Notice the index jumps by more than one when it passes the multi-byte `é`
+— `range` is walking runes, not bytes, and reports each rune's *starting*
+byte position.
+
+<DeepDive title="byte vs rune, precisely">`byte` is an alias for `uint8`: a single 8-bit value, exactly one element of the underlying UTF-8 encoding. `rune` is an alias for `int32`: a full Unicode code point, which in UTF-8 can occupy anywhere from one to four bytes. `len(s)` on a string returns the byte count, not the rune count — for a string with any non-ASCII content those two numbers differ. Use `utf8.RuneCountInString(s)` from the standard library `unicode/utf8` package when you need the actual character count.</DeepDive>
+
+## Type Conversion: Go's Strictness
+
+Many languages quietly convert between related numeric types — pass an
+`int` where a `float64` is expected and it just works. Go does not do
+this. Every conversion between distinct named types, even closely related
+numeric ones, must be written explicitly:
+
+```go
+var whole int = 10
+var precise float64 = float64(whole)
+var backToInt int = int(precise)
+```
+
+Assigning an `int` directly to a `float64` variable, or vice versa, is a
+compile error: "cannot use whole (variable of type int) as float64 value in
+variable declaration." The conversion syntax `T(value)` is required every
+time, and truncates rather than rounds when converting a float to an
+integer type — `int(3.99)` gives `3`, not `4`.
+
+<Warning title="Integer division truncates silently">`7 / 2` where both operands are `int` evaluates to `3`, not `3.5` — Go performs integer division and discards the remainder with no warning. To get a fractional result, convert at least one operand to a float first: `float64(7) / float64(2)` gives `3.5`. Forgetting this is a frequent source of subtly wrong calculations that compile without complaint.</Warning>
+
+This strictness extends to named types you define yourself. Given
+`type Celsius float64` and `type Fahrenheit float64`, a `Celsius` value
+cannot be passed where a `Fahrenheit` is expected even though both are,
+underneath, a `float64` — you must convert explicitly. This is a deliberate
+trade: more typing at the call site, in exchange for the compiler catching
+"I passed a temperature in the wrong unit" as a type error instead of a
+runtime bug.
+
+## Constants and iota
+
+Constants are declared with `const` and must be computable at compile
+time — no function calls, no reading a variable:
+
+```go
+const Pi = 3.14159
+const MaxRetries = 3
+const AppName string = "netbook"
+```
+
+Unlike `var`, a `const` declared without an explicit type (like `Pi` and
+`MaxRetries` above) is an **untyped constant**. It has no fixed type until
+it is used in an expression that requires one, which lets the same
+constant be used naturally as an `int` in one place and a `float64` in
+another without any conversion syntax — one of the few places Go relaxes
+its usual strictness, precisely because the value is fixed and known at
+compile time.
+
+Go's `iota` identifier generates sequential constants inside a `const`
+block, starting at `0` and incrementing with each line — the idiomatic way
+to build enumerated constants:
+
+```go
+type Weekday int
+
+const (
+	Sunday Weekday = iota // 0
+	Monday                 // 1
+	Tuesday                // 2
+	Wednesday               // 3
+	Thursday                // 4
+	Friday                   // 5
+	Saturday                 // 6
+)
+```
+
+Each subsequent line without its own explicit value repeats the same
+expression (`Weekday = iota`) with `iota` incremented, so you rarely need
+to write out every value by hand. `iota` also supports arithmetic, which is
+how the standard library defines things like byte-size constants:
+
+```go
+const (
+	_  = iota // skip 0
+	KB = 1 << (10 * iota) // 1 << 10  = 1024
+	MB                     // 1 << 20
+	GB                     // 1 << 30
+)
+```
+
+<DeepDive title="Why iota instead of hand-written numbers">Hand-writing `Sunday = 0`, `Monday = 1`, and so on works until someone inserts a day in the middle and forgets to renumber everything below it. `iota` ties each constant's value to its position in the block, so inserting a new line automatically renumbers everything after it correctly — the compiler does the bookkeeping you would otherwise do by hand and occasionally get wrong.</DeepDive>
+
+## var, :=, and const at a Glance
+
+| Form | Where it's valid | Type | Reassignable |
+|---|---|---|---|
+| `var x T` | Package level or inside a function | Explicit or zero value | Yes |
+| `x := value` | Inside a function only | Inferred from `value` | Yes |
+| `const x = value` | Package level or inside a function | Untyped or explicit | No — compile error to reassign |
+
+## Naming Conventions
+
+Go's style conventions for variable and constant names are unusually
+consistent across the entire ecosystem, largely because `gofmt` and the
+standard library set a strong example everyone follows. A few rules worth
+internalizing early:
+
+- Use `camelCase` for unexported names (`retryCount`, `maxAttempts`) and
+  `PascalCase` for exported ones (`RetryCount`, `MaxAttempts`) — the same
+  capitalization rule from Chapter 4 that also governs visibility.
+- Prefer short, scoped names for short-lived local variables — `i` for a
+  loop index, `r` for a reader, `err` for an error — and reserve longer,
+  descriptive names for identifiers with wider scope, like package-level
+  variables or exported constants.
+- Avoid repeating type information already implied by the type system
+  itself: `count int`, not `countInt`; `users []User`, not `userSlice`.
+- Acronyms stay uniformly cased: `userID`, not `userId`; `HTTPClient`, not
+  `HttpClient` — this matches how the standard library names things like
+  `http.Client` and `url.URL`.
+
+<Warning title="Short names are idiomatic only when the scope is short">A loop variable named `i` inside a five-line `for` loop is perfectly idiomatic Go. That same single-letter name for a struct field or a package-level variable read from a dozen different files becomes a real readability cost — the accepted convention scales the name's length to how far the reader has to carry its meaning in their head.</Warning>
+
+### Try It Yourself
+
+Write a small program that converts a temperature from Celsius to
+Fahrenheit, deliberately exercising the conversion rules from this chapter:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+	const freezingC float64 = 0
+	celsius := 24.0
+	fahrenheit := celsius*9/5 + 32
+	fmt.Printf("%.1f C is %.1f F\n", celsius, fahrenheit)
+	fmt.Printf("Freezing point: %.1f C is %.1f F\n",
+		freezingC, freezingC*9/5+32)
+}
+```
+
+1. Run it with `go run main.go` and confirm `24.0 C` reports as `75.2 F`.
+2. Change `celsius := 24.0` to `celsius := 24` (dropping the decimal point)
+   and try to run it again — read the compiler error about mixing an `int`
+   with the untyped float constants `9`, `5`, and `32`, then explain in your
+   own words why removing the decimal point changed the inferred type.
+3. Add a `const boilingC float64 = 100` and print its Fahrenheit
+   equivalent using the same formula.
+4. **Bonus:** rewrite the day-of-week `iota` example from this chapter,
+   add a `String() string` — skip the method itself if you have not read
+   Chapter 3 yet, and instead just print `int(Wednesday)` to confirm it
+   equals `3`.
+
+<Axiom>A compiler that refuses to add an int to a float is not being pedantic — it is refusing to guess which one of you and the machine is wrong about the units.</Axiom>
+
+## Key Takeaways
+
+- `var` works anywhere and can declare without initializing; `:=` is
+  function-local shorthand that infers the type from the assigned value.
+- Every type has a zero value — Go never leaves a variable holding
+  uninitialized garbage.
+- Strings are UTF-8 byte sequences; index them for raw bytes, `range` over
+  them for correctly decoded Unicode runes.
+- Type conversions are always explicit (`T(value)`) — Go never silently
+  converts between numeric types, even closely related ones.
+- `const` values must be computable at compile time; untyped constants
+  adapt to context, and `iota` generates sequential values inside a
+  `const` block without manual renumbering.

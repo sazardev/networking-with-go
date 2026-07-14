@@ -1,5 +1,5 @@
 ---
-id: "[5.16.0]"
+id: "[6.16.0]"
 title: "API Performance, Monitoring, and Observability"
 ---
 
@@ -105,9 +105,7 @@ mux.Handle("/metrics", promhttp.Handler())
 
 Prometheus (or any compatible scraper) pulls `/metrics` on an interval and stores the time series, which tools like Grafana then turn into dashboards and alerts — for example, alerting when the 99th percentile of `http_request_duration_seconds` crosses a threshold for a given path.
 
-<DeepDive title="Histogram, not just an average">
-A simple average latency hides outliers — a service with mostly 5ms responses and a few 5-second stragglers can still report a healthy-looking average. A histogram (as used above) buckets observations so you can compute percentiles (p50, p95, p99) after the fact, which is what actually tells you how bad the slowest requests are, not just the typical one.
-</DeepDive>
+<DeepDive title="Histogram, not just an average">A simple average latency hides outliers — a service with mostly 5ms responses and a few 5-second stragglers can still report a healthy-looking average. A histogram (as used above) buckets observations so you can compute percentiles (p50, p95, p99) after the fact, which is what actually tells you how bad the slowest requests are, not just the typical one.</DeepDive>
 
 ---
 
@@ -171,9 +169,7 @@ import _ "net/http/pprof"
 go tool pprof http://localhost:8080/debug/pprof/profile?seconds=30
 ```
 
-<Warning title="Never expose pprof publicly">
-The `/debug/pprof/` endpoints reveal internal memory layout and can be used to degrade performance (a 30-second CPU profile request forces the server to profile itself for that whole window). Bind them to a separate, internal-only port or gate them behind authentication — never expose them on the same public listener as your API.
-</Warning>
+<Warning title="Never expose pprof publicly">The `/debug/pprof/` endpoints reveal internal memory layout and can be used to degrade performance (a 30-second CPU profile request forces the server to profile itself for that whole window). Bind them to a separate, internal-only port or gate them behind authentication — never expose them on the same public listener as your API.</Warning>
 
 ---
 

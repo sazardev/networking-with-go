@@ -1,5 +1,5 @@
 ---
-id: "[5.27.0]"
+id: "[6.27.0]"
 title: "APIs for Feature Flags and Dynamic Config"
 ---
 
@@ -90,9 +90,7 @@ func isEnabledForUser(flagName, userID string, rolloutPercent int) bool {
 
 Because the hash is deterministic, `alice` always lands in the same bucket for `new-checkout-flow` regardless of which server handles her request or how many times she reloads — the rollout percentage can climb over days without any single user's experience flickering back and forth.
 
-<Warning title="A flag left on forever is just dead code with extra steps">
-Flags accumulate fast, and an `if` branch nobody ever flips back becomes permanent complexity nobody dares delete. Treat every flag as having an expected lifetime — once a rollout reaches 100% and stays there for a sprint or two, remove the flag and the old code path in the same change.
-</Warning>
+<Warning title="A flag left on forever is just dead code with extra steps">Flags accumulate fast, and an `if` branch nobody ever flips back becomes permanent complexity nobody dares delete. Treat every flag as having an expected lifetime — once a rollout reaches 100% and stays there for a sprint or two, remove the flag and the old code path in the same change.</Warning>
 
 ## Reaching for a dedicated service
 
@@ -159,9 +157,7 @@ func flagsHandler(w http.ResponseWriter, r *http.Request) {
 
 A mobile client that fetches this once at app launch and caches it for the session avoids checking flags on every screen render, while still picking up changes on the next launch or a periodic refresh — a reasonable trade-off between freshness and not hammering the flags endpoint on every navigation.
 
-<DeepDive title="Server-side and client-side flag checks need to agree">
-If a checkout page renders differently based on a flag evaluated client-side, but the checkout API endpoint evaluates the same flag independently, a user can end up with a UI for the new flow submitting to an API still running the old one. Evaluate the flag once per request, as close to the start of the request as possible, and pass the resolved decision down rather than re-checking it in multiple places that could disagree.
-</DeepDive>
+<DeepDive title="Server-side and client-side flag checks need to agree">If a checkout page renders differently based on a flag evaluated client-side, but the checkout API endpoint evaluates the same flag independently, a user can end up with a UI for the new flow submitting to an API still running the old one. Evaluate the flag once per request, as close to the start of the request as possible, and pass the resolved decision down rather than re-checking it in multiple places that could disagree.</DeepDive>
 
 ## Testing with flags in the codebase
 

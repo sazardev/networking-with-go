@@ -1,5 +1,5 @@
 ---
-id: "[5.2.0]"
+id: "[6.2.0]"
 title: "Designing Clean URLs, Query Params, and Routing"
 ---
 
@@ -39,9 +39,7 @@ Think of URLs as the signs on a highway. Clear, concise signs help drivers — u
 
 5. **Be consistent about casing and trailing slashes.** Pick lowercase, hyphen-separated segments (`/order-items`, not `/orderItems` or `/order_items`), and decide once whether trailing slashes are allowed — then apply that rule everywhere.
 
-<DeepDive title="Singular or plural resource names?">
-Most REST APIs settle on plural nouns for collections — `/users`, `/products` — because a collection endpoint naturally returns many items, and the singular form is just the collection with an ID appended: `/users/42`. Pick one convention for the whole API and never mix them; switching between `/user/42` and `/products/123` inside the same API is one of the most common sources of client confusion.
-</DeepDive>
+<DeepDive title="Singular or plural resource names?">Most REST APIs settle on plural nouns for collections — `/users`, `/products` — because a collection endpoint naturally returns many items, and the singular form is just the collection with an ID appended: `/users/42`. Pick one convention for the whole API and never mix them; switching between `/user/42` and `/products/123` inside the same API is one of the most common sources of client confusion.</DeepDive>
 
 ---
 
@@ -87,9 +85,7 @@ Routing maps an incoming URL — and, in a REST API, an HTTP method — to the c
 
 Since Go 1.22, the standard library's `http.ServeMux` understands both HTTP methods and wildcard path segments natively, which removes most of the historical need to reach for a third-party router just to get clean paths. A pattern looks like `"GET /products/{id}"`, and the captured segment is read with `r.PathValue("id")`.
 
-<Warning title="Go version matters">
-Method-aware patterns and `{wildcard}` segments in `http.ServeMux` were added in Go 1.22 (released February 2024). On older Go versions, `ServeMux` only does prefix matching, and you'd need a package like `gorilla/mux` or `go-chi/chi` to get this behavior.
-</Warning>
+<Warning title="Go version matters">Method-aware patterns and `{wildcard}` segments in `http.ServeMux` were added in Go 1.22 (released February 2024). On older Go versions, `ServeMux` only does prefix matching, and you'd need a package like `gorilla/mux` or `go-chi/chi` to get this behavior.</Warning>
 
 Here's a small, complete example that ties routing and query parameters together — a `/products` endpoint that lists and filters products, and a `/products/{id}` endpoint that fetches one:
 

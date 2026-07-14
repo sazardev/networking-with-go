@@ -1,5 +1,5 @@
 ---
-id: "[3.54.0]"
+id: "[4.54.0]"
 title: "Real-Time Networking for Games"
 ---
 
@@ -109,7 +109,9 @@ func (s *Server) receiveLoop() {
 
 // tickLoop runs the authoritative simulation at a fixed rate and broadcasts
 // state to every known client. 20 Hz is a common baseline tick rate.
-func (s *Server) tickLoop(tickRate time.Duration, currentState func() []PlayerState) {
+func (s *Server) tickLoop(
+	tickRate time.Duration, currentState func() []PlayerState,
+) {
 	ticker := time.NewTicker(tickRate)
 	defer ticker.Stop()
 
@@ -167,9 +169,7 @@ func (c *ClientState) Apply(update PlayerState) bool {
 
 Position updates can be dropped safely because the next tick supersedes them. Some messages can't be treated that way—"player fired," "player picked up item," "match ended"—because losing one changes the outcome of the game, not just its smoothness. The standard pattern is a lightweight application-level acknowledgment for just those messages: tag them with an ID, resend if no ack arrives within a short timeout, and let the receiver deduplicate by ID. This is exactly the reliability TCP gives you for free, deliberately reimplemented at the application layer so it only applies to the handful of messages that actually need it, instead of to every byte on the wire.
 
-<DeepDive title="Why not just use QUIC?">
-QUIC (implemented in real, production Go libraries like `quic-go`) gives you multiplexed, independently-ordered streams over UDP with built-in encryption—which solves head-of-line blocking between unrelated streams, a real TCP pain point. It's a legitimate choice for game transports that want some reliable streams (chat, inventory) alongside unreliable ones (position), without hand-rolling the reliability layer above. It's not universal in game networking mainly because its per-packet overhead and connection setup cost can matter more than raw UDP at very high tick rates or on very constrained platforms.
-</DeepDive>
+<DeepDive title="Why not just use QUIC?">QUIC (implemented in real, production Go libraries like `quic-go`) gives you multiplexed, independently-ordered streams over UDP with built-in encryption—which solves head-of-line blocking between unrelated streams, a real TCP pain point. It's a legitimate choice for game transports that want some reliable streams (chat, inventory) alongside unreliable ones (position), without hand-rolling the reliability layer above. It's not universal in game networking mainly because its per-packet overhead and connection setup cost can matter more than raw UDP at very high tick rates or on very constrained platforms.</DeepDive>
 
 ## Reducing Bandwidth: Delta Compression
 

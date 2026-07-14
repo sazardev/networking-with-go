@@ -1,5 +1,5 @@
 ---
-id: "[2.14.0]"
+id: "[3.14.0]"
 title: "File Transfer Applications: Protocols and Go Implementation"
 ---
 
@@ -44,9 +44,7 @@ The core idea of framing: before sending the file bytes, send a small, fixed-for
 
 Once the receiver reads the header, it knows exactly how many bytes to expect next, and can stop reading (or write to disk) at precisely the right point — no ambiguity about where the file ends.
 
-<DeepDive title="Why not just read until EOF?">
-Reading until the connection closes works only if you open a *new* connection per file and close it right after. That's fine for a small tool, but it defeats connection reuse and makes multiplexing multiple files over one connection impossible. Sending an explicit length up front is the same principle HTTP uses with `Content-Length`.
-</DeepDive>
+<DeepDive title="Why not just read until EOF?">Reading until the connection closes works only if you open a *new* connection per file and close it right after. That's fine for a small tool, but it defeats connection reuse and makes multiplexing multiple files over one connection impossible. Sending an explicit length up front is the same principle HTTP uses with `Content-Length`.</DeepDive>
 
 ---
 
@@ -122,6 +120,8 @@ func main() {
 }
 ```
 
+<Warning title="Unbounded goroutines are a resource leak waiting to happen">`for { conn, _ := ln.Accept(); go handleConn(conn) }` spawns one goroutine per connection with no upper bound. Each goroutine holds a file descriptor and a stack, so a burst of connections (or a client opening thousands of them on purpose) can exhaust memory or file descriptors before any individual transfer misbehaves. Production servers bound concurrency with a buffered channel used as a semaphore (`sem := make(chan struct{}, maxConns)`, then `sem <- struct{}{}` before handling and `<-sem` when done) or a worker pool that pulls connections off a queue.</Warning>
+
 **Client** (sends a local file with the matching header):
 
 ```go
@@ -134,7 +134,30 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"time"
 )
+
+// dialWithRetry attempts to connect up to attempts times, backing off
+// between failures. A bare net.Dial in production code is often too
+// fragile: a server still starting up, a brief network blip, or a load
+// balancer mid-failover can all cause a single dial to fail even though
+// the destination is reachable moments later.
+func dialWithRetry(
+	addr string, attempts int, backoff time.Duration,
+) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: 5 * time.Second}
+
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		conn, err := dialer.Dial("tcp", addr)
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+		time.Sleep(backoff * time.Duration(i+1))
+	}
+	return nil, fmt.Errorf("after %d attempts: %w", attempts, lastErr)
+}
 
 func sendFile(path, addr string) error {
 	f, err := os.Open(path)
@@ -148,7 +171,7 @@ func sendFile(path, addr string) error {
 		return err
 	}
 
-	conn, err := net.Dial("tcp", addr)
+	conn, err := dialWithRetry(addr, 3, 500*time.Millisecond)
 	if err != nil {
 		return err
 	}
@@ -189,9 +212,11 @@ func main() {
 
 [Exercise: TCP File Transfer](../../exercises/part2/14-tcp-file-transfer/main.go)
 
-<Warning title="Never trust the declared size">
-A malicious or buggy client can lie about the size prefix. `io.CopyN` bounds how much the server reads, but production code should also enforce a maximum file size and validate the file name (reject `../` path traversal) before writing to disk.
-</Warning>
+<Warning title="Never trust the declared size">A malicious or buggy client can lie about the size prefix. `io.CopyN` bounds how much the server reads, but production code should also enforce a maximum file size and validate the file name (reject `../` path traversal) before writing to disk.</Warning>
+
+<DeepDive title="How much does io.Copy read at a time?">`io.Copy` doesn't move the whole file in one syscall. Internally it allocates a 32 KB buffer (unless the source or destination implements a faster path — see the zero-copy note later in this chapter) and loops: read up to 32 KB, write it out, repeat. That's why memory usage stays flat regardless of file size, and why `io.CopyN` is simply the same loop with a running counter that stops once the requested number of bytes has been copied. If 32 KB is too small for your workload (many small reads add syscall overhead) or too large (you want tighter progress granularity), `io.CopyBuffer` lets you supply your own buffer instead.</DeepDive>
+
+<Axiom>Framing is a promise about *how much*, not *when* — the receiver never has to guess where a file ends if the sender says so up front.</Axiom>
 
 ---
 
@@ -270,13 +295,51 @@ For integrity, compute a checksum while copying using `io.MultiWriter` with a `c
 
 ---
 
+## Performance: Why io.Copy Can Be Faster Than It Looks
+
+`io.Copy` checks whether its source implements `io.WriterTo` or its
+destination implements `io.ReaderFrom` before falling back to the generic
+32 KB buffer loop. `*os.File` implements `WriteTo`, and on Linux
+`*net.TCPConn` implements `ReadFrom` by calling the `sendfile(2)` syscall
+under the hood. When both ends line up — copying straight from a file to a
+raw TCP connection, as the client in this chapter does — the kernel can move
+bytes from the file's page cache directly to the socket buffer without ever
+copying them into your process's user-space memory. That's the same
+optimization behind `http.ServeFile`'s efficiency for large downloads.
+
+<Warning title="Progress bars and checksums disable the fast path">The moment you wrap the destination in `io.MultiWriter(dst, &progressWriter{...})` or a `crypto/sha256` hash, `io.Copy` can no longer hand the connection to `sendfile` — a `MultiWriter` is a plain `io.Writer`, not a `ReaderFrom`, so every byte has to pass through user space to be counted or hashed. This is a real tradeoff, not a bug: pick zero-copy speed for trusted, already-verified transfers, or pay the copy cost when you need live progress or integrity checking on the wire.</Warning>
+
+<DeepDive title="Checking for the fast path yourself">You can confirm this behavior by tracing syscalls: run the TCP file transfer client under `strace -e trace=sendfile,read,write ./client bigfile.bin` on Linux and compare a plain `io.Copy(conn, f)` against one wrapped in `io.MultiWriter`. The unwrapped version shows `sendfile` calls moving large chunks; the wrapped version shows many smaller `read`/`write` pairs instead.</DeepDive>
+
+---
+
+## Try It Yourself: Resuming an Interrupted Transfer
+
+The custom TCP protocol in this chapter always starts a transfer from byte
+zero, even if a previous attempt already wrote most of the file to disk.
+Extend it to support resuming:
+
+1. Add a third field to the header — an 8-byte `offset` — sent by the
+   client to tell the server "start writing (or reading, for downloads) at
+   this byte position" instead of always zero.
+2. On the client, before dialing, `os.Stat` any partially-received file
+   left over from a prior attempt and use its size as the offset.
+3. On the server, open the destination file with `os.OpenFile` using
+   `os.O_WRONLY|os.O_CREATE` (not `os.Create`, which truncates), then
+   `Seek` to the offset before calling `io.CopyN` for the remaining bytes
+   (`size - offset`).
+4. Have the client seek its local file reader (`f.Seek(offset, io.SeekStart)`)
+   past the bytes already sent, so it only streams the remainder.
+
+This is the same idea behind HTTP's `Range` header and resumable downloads
+via `http.ServeFile` — you're just implementing it by hand for the custom
+protocol instead of getting it for free from `net/http`.
+
+---
+
 ## Key Takeaways
 
 - File transfer is a framing problem: the receiver must always know exactly how many bytes belong to the file.
 - `io.Copy`, `io.CopyN`, and `io.ReadFull` are the workhorses — they stream data without loading entire files into memory.
 - HTTP already solves most of this for you: multipart uploads for sending, `http.ServeFile` for sending back (including range requests for resumable downloads).
 - Always validate declared sizes and file names before trusting them — a file transfer server is a prime target for path traversal and resource-exhaustion attacks.
-
----
-
-[Previous: Chat Applications](13-chat-applications.md) | [Next: Proxy Servers and Clients](15-proxy-servers-and-clients.md)

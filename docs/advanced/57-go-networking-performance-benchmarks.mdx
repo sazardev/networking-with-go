@@ -1,5 +1,5 @@
 ---
-id: "[3.57.0]"
+id: "[4.57.0]"
 title: "Go Networking Performance Benchmarks"
 ---
 
@@ -121,9 +121,7 @@ func main() {
 
 With that running, `go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30` captures a 30-second CPU profile you can explore interactively (`top`, `list <function>`, or `web` for a call graph). For a benchmark specifically, `go test -bench=. -cpuprofile=cpu.out` produces the same kind of profile scoped to just that benchmark's run.
 
-<DeepDive title="Reading a pprof profile">
-`top` in the pprof interactive shell shows which functions consumed the most cumulative or flat CPU time—flat time is time spent in that function itself, cumulative includes everything it called. Start with flat time on a CPU profile; it points directly at the function actually doing the work, rather than at whichever caller happens to be high in the stack.
-</DeepDive>
+<DeepDive title="Reading a pprof profile">`top` in the pprof interactive shell shows which functions consumed the most cumulative or flat CPU time—flat time is time spent in that function itself, cumulative includes everything it called. Start with flat time on a CPU profile; it points directly at the function actually doing the work, rather than at whichever caller happens to be high in the stack.</DeepDive>
 
 ## Connection Reuse and Tuning `http.Transport`
 

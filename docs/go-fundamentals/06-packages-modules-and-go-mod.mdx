@@ -1,0 +1,291 @@
+---
+id: "[2.6.0]"
+title: "Packages, Modules, and go.mod"
+---
+
+# Packages, Modules, and go.mod
+
+> A package is a room in a house — everything inside can see everything
+> else in that room without asking permission. A module is the whole house
+> — a boundary with an address, so other houses know exactly where to send
+> mail when they need something from inside.
+
+This chapter is about how Go code is organized above the level of a single
+file: how packages group related code, how capitalization alone decides
+what's public, and how modules — via `go.mod` and `go.sum` — manage
+dependencies without a central package registry deciding what "the" latest
+version of anything is.
+
+## Packages: Go's Unit of Organization
+
+Every `.go` file starts with a `package` declaration, and every file in
+the same directory must declare the same package name — a directory *is*
+a package, in Go's model, and files within it share scope freely with no
+imports needed between them:
+
+```go
+// file: shapes/rectangle.go
+package shapes
+
+type Rectangle struct {
+	Width, Height float64
+}
+```
+
+```go
+// file: shapes/circle.go
+package shapes
+
+import "math"
+
+type Circle struct {
+	Radius float64
+}
+
+func (c Circle) Area() float64 {
+	return math.Pi * c.Radius * c.Radius
+}
+```
+
+Both files live in a directory named `shapes/` and both declare
+`package shapes` — from outside, this directory is imported as a single
+unit, `.../shapes`, regardless of how many files it's split across.
+
+`package main` is special: it marks a package that produces an executable,
+with `func main()` as the entry point, exactly as you saw in Chapter 1.
+Every other package name marks a **library package** — importable code
+with no entry point of its own.
+
+<DeepDive title="One package name per directory, always">Go enforces, at compile time, that every `.go` file in a directory declares the same package name (with one narrow exception: files ending in `_test.go` may declare `packagename_test` for black-box testing, covered in the next chapter). Mixing package names in one directory is a compile error, not a style suggestion.</DeepDive>
+
+## Exported vs. Unexported: Capitalization Is the Access Modifier
+
+Go has no `public`, `private`, or `protected` keywords. Visibility outside
+a package is decided entirely by the first letter of an identifier's name:
+capitalized names are **exported** (visible to importing packages),
+lowercase names are **unexported** (visible only within the declaring
+package):
+
+```go
+package shapes
+
+type Rectangle struct { // exported: usable from other packages
+	Width, Height float64 // exported fields
+}
+
+func (r Rectangle) Area() float64 { // exported method
+	return r.Width * r.Height
+}
+
+func validateDimension(d float64) bool { // unexported: package-private
+	return d > 0
+}
+```
+
+A package importing `shapes` can create a `shapes.Rectangle`, read
+`.Width`, and call `.Area()` — but cannot call `validateDimension` at all;
+the compiler reports it as undefined, because the name simply isn't
+visible outside `shapes`.
+
+<Axiom>Go's naming-as-visibility rule means you can tell what's part of a package's public API just by scanning for capital letters — there is no separate keyword to hunt for, and no way for the visibility to silently drift out of sync with the name.</Axiom>
+
+<Warning title="Struct fields are exported or unexported individually">Exporting a struct type (`Rectangle`) does not automatically export its fields — each field's own capitalization decides its visibility. A common beginner mistake is exporting a struct but leaving its fields lowercase, then being confused why `pkg.Config{}.timeout` fails to compile from another package: `timeout` needs its own capital letter, or a public constructor/setter method, to be usable from outside.</Warning>
+
+Naming conventions in Go favor short, clear names — `Area`, not
+`ComputeAndReturnTheAreaOfTheRectangle` — and idiomatic Go avoids
+repeating the package name inside identifiers it will always be qualified
+with (`shapes.Rectangle`, not `shapes.ShapesRectangle`), because the
+package name already provides that context at every call site.
+
+## Modules: go.mod and go.sum
+
+A **module** is one or more packages versioned and distributed together,
+rooted at a directory containing a `go.mod` file. You met `go mod init` in
+Chapter 1; here is what the file it produces actually declares:
+
+```
+module github.com/you/mytool
+
+go 1.22
+
+require (
+	github.com/google/uuid v1.6.0
+)
+```
+
+- `module` declares the module's import path — the prefix every package
+  inside it is imported under (`github.com/you/mytool/shapes`, for a
+  `shapes` subdirectory).
+- `go` declares the minimum Go language version the module requires.
+- `require` lists direct dependencies and their exact versions, added
+  automatically the first time you import and build against them.
+
+Adding a dependency is as simple as importing it and building, or fetching
+it explicitly:
+
+```sh
+go get github.com/google/uuid@v1.6.0
+```
+
+`go get` updates `go.mod` and also writes or updates `go.sum` — a file
+listing cryptographic checksums for every dependency (and every
+dependency of a dependency), so a build can verify it is downloading
+exactly the bytes it expects, not a tampered or accidentally different
+version:
+
+```sh
+cat go.sum
+```
+
+```
+github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb59...
+github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+n...
+```
+
+<Warning title="go.sum is not optional, and it is not a lockfile you can skip">Deleting `go.sum` or adding it to `.gitignore` is a common but serious mistake — without it, two builds of the same `go.mod` can silently resolve to different dependency bytes, defeating the entire point of reproducible builds. Always commit both `go.mod` and `go.sum` to version control.</Warning>
+
+<DeepDive title="Why Go has no central package registry like npm or PyPI">`go get` fetches packages directly from their source repository (GitHub, GitLab, or any Git host), addressed by the same import path used in code — there is no separate "publish" step to a central registry, and no registry-level naming authority to squat on names. The Go team runs a public module proxy and checksum database (`proxy.golang.org`, `sum.golang.org`) that cache and verify modules for speed and security, but the *source of truth* for a module's identity is always its own repository path, not a registry account.</DeepDive>
+
+## Keeping go.mod and go.sum Tidy
+
+As you add and remove imports while developing, `go.mod` can drift out of
+sync with what your code actually uses. `go mod tidy` reconciles the two
+directions at once: it adds any missing `require` entries for packages you
+import but haven't declared, and removes entries for dependencies nothing
+imports anymore:
+
+```sh
+go mod tidy
+```
+
+Running it regularly — and especially right before committing — keeps
+`go.mod` an accurate, minimal record of what the module actually depends
+on, rather than an ever-growing list of things that were needed once.
+
+<Warning title="Forgetting go mod tidy after removing an import">Deleting the last `import` of a dependency from your code does not remove its `require` line from `go.mod` automatically — the module still builds fine with the stale entry present, so this is easy to miss. Left unaddressed across many changes, `go.mod` accumulates dependencies nothing in the codebase actually needs anymore, and `go mod tidy` is the one-command fix.</Warning>
+
+## internal Packages: Compiler-Enforced Privacy
+
+Chapter's earlier point about capitalization controls visibility *within*
+an already-importable package. A directory literally named `internal`
+goes further: the compiler refuses to let any package outside the module
+subtree rooted at `internal`'s parent import anything from inside it, no
+matter how the identifiers are capitalized:
+
+```
+mymodule/
+  go.mod
+  internal/
+    auth/
+      token.go
+  cmd/
+    server/
+      main.go
+```
+
+Here, `mymodule/cmd/server` can import `mymodule/internal/auth` because
+both live under the same `mymodule` tree, but a completely different
+module importing `mymodule` as a dependency cannot reach
+`mymodule/internal/auth` at all — the import simply fails to compile, with
+"use of internal package ... not allowed." This is the one place Go
+enforces an access boundary above the level of a single package, and it's
+the standard way to mark code as "part of this module's implementation,
+not its public API," even when every identifier inside is capitalized.
+
+## Semantic Versioning, Briefly
+
+Go module versions follow semantic versioning: `vMAJOR.MINOR.PATCH`.
+`go get` without a version suffix fetches the latest compatible release;
+appending `@v1.6.0` (or `@latest`, `@none` to remove, or a branch/commit
+hash) pins or changes it explicitly:
+
+```sh
+go get github.com/google/uuid@latest
+go get github.com/google/uuid@v1.5.0
+```
+
+One Go-specific rule worth knowing: a major version 2 or above must be
+reflected in the *import path itself* (`.../v2`, `.../v3`) — this is how
+Go allows two incompatible major versions of the same module to be
+imported side by side without conflict, something most other ecosystems
+handle only through separate package names.
+
+| Version bump | Meaning | Import path changes? |
+|---|---|---|
+| Patch (`v1.6.0` to `v1.6.1`) | Bug fixes, no API change | No |
+| Minor (`v1.6.0` to `v1.7.0`) | Backwards-compatible additions | No |
+| Major (`v1.6.0` to `v2.0.0`) | Breaking changes | Yes — import path gains `/v2` |
+
+## A Small Multi-Package Example
+
+A realistic small project splits code across a `main` package and one or
+more library packages. Given this layout:
+
+```
+mytool/
+  go.mod
+  main.go
+  shapes/
+    rectangle.go
+    circle.go
+```
+
+`main.go` imports `shapes` by its full module-qualified path:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"example.com/mytool/shapes"
+)
+
+func main() {
+	r := shapes.Rectangle{Width: 3, Height: 4}
+	c := shapes.Circle{Radius: 2}
+	fmt.Println("rectangle area:", r.Area())
+	fmt.Println("circle area:", c.Area())
+}
+```
+
+Note the import path: `example.com/mytool/shapes` combines the module
+path declared in `go.mod` (`example.com/mytool`) with the subdirectory
+(`shapes`) — Go derives every internal package's import path this way,
+with no separate registration step needed for your own subpackages.
+
+<Warning title="A subdirectory without a package declaration isn't automatically a package">Creating a `shapes/` folder with files inside is not enough on its own — each file must declare `package shapes` at the top, and the directory name and package name are conventionally (though not strictly required to be) the same. A mismatch between directory name and package name compiles fine but confuses readers and tools that assume the convention holds.</Warning>
+
+### Try It Yourself
+
+Build the two-package layout above from scratch:
+
+1. Create `mytool/`, run `go mod init example.com/mytool` inside it.
+2. Create `mytool/shapes/rectangle.go` and `mytool/shapes/circle.go` with
+   the two file contents shown earlier in this chapter (including the
+   `Area()` methods).
+3. Create `mytool/main.go` with the multi-package example above, and run
+   `go run .` from the `mytool/` directory — confirm both areas print.
+4. Add an unexported helper `func validateDimension(d float64) bool` to
+   `shapes/rectangle.go`, then try to call `shapes.validateDimension(3)`
+   from `main.go` — read the compiler error and confirm it names the
+   identifier as undefined, not merely "private."
+5. **Bonus:** run `go list -m all` inside `mytool/` to see your module and
+   every dependency (there may be none yet) in the module graph.
+
+<Axiom>A package boundary is a trust boundary as much as an organizational one — code inside a package trusts its own unexported details completely; code outside must go through whatever the package chooses to export.</Axiom>
+
+## Key Takeaways
+
+- A directory is a package; every file in it must declare the same
+  package name, and files within a package share scope with no imports.
+- Capitalization alone decides visibility outside a package — no
+  `public`/`private` keywords, and each struct field is exported or not
+  individually.
+- `go.mod` declares a module's import path, minimum Go version, and
+  dependencies; `go.sum` records checksums for reproducible builds —
+  commit both, always.
+- `go get` fetches directly from a dependency's source repository; Go has
+  no central package registry, only a caching/verification proxy layer.
+- Semantic versioning governs dependency versions, and a major version 2+
+  must be reflected in the import path itself (`/v2`, `/v3`, ...).

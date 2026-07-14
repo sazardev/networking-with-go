@@ -9,18 +9,18 @@ title: "Performance, Latency, and Bandwidth"
 
 ---
 
-## What is Network Performance?
+## What Is Network Performance?
 
-Network performance is like the overall scorecard for your digital highway. It measures how fast, reliable, and efficient your network is at moving data from point A to point B. Just like a race car, you want your network to be fast, responsive, and able to handle lots of traffic!
+Network performance is the overall scorecard for your digital highway, and it's actually made of several *independent* metrics that people often blur together: **bandwidth** (how wide the road is), **latency** (how long it takes one car to get from A to B), **throughput** (how many cars actually finish the trip per second, in practice), and **jitter** (how consistent the travel time is from one car to the next). A network can be excellent on one of these and poor on another — understanding them separately is the difference between diagnosing a slow app correctly and blaming the wrong thing.
 
 ---
 
 ## Bandwidth: The Highway Width
 
-**Analogy:** Bandwidth is the number of lanes on your highway—the more lanes, the more cars (data) can travel at once.
+**Analogy:** Bandwidth is the number of lanes on your highway — the more lanes, the more cars (data) can travel at once.
 
-- **Definition:** The maximum amount of data that can be transmitted per second (measured in Mbps, Gbps, etc.).
-- **Example:** A 100 Mbps connection can transfer 100 megabits every second.
+- **Definition:** The maximum amount of data that *could* be transmitted per second over a link, measured in bits per second (Mbps, Gbps).
+- **Example:** A 100 Mbps connection can theoretically move 100 megabits — about 12.5 megabytes — every second.
 - **Diagram:**
 
 ```
@@ -28,7 +28,9 @@ Network performance is like the overall scorecard for your digital highway. It m
 [Narrow Highway] => [Few Cars/Data]
 ```
 
-- **Fun Fact:** Streaming 4K video needs more bandwidth than checking email!
+<Warning title="Bits and bytes are not the same, and marketing knows it">ISPs advertise speeds in **megabits** per second (Mbps), but file sizes and download progress bars are almost always shown in **megabytes** (MB) — and there are 8 bits in a byte. A "500 Mbps" plan tops out around 62.5 MB/s, not 500 MB/s, which is a common source of "why is my download slower than my internet speed" confusion. It's also worth remembering that "up to 500 Mbps" is a ceiling, not a promise — actual throughput depends on everything covered in this chapter, not just the number on your bill.</Warning>
+
+Many consumer connections are also **asymmetric** — cable and DSL, in particular, typically offer far more download bandwidth than upload, because historically most home traffic was downloading web pages and videos. Fiber connections are increasingly symmetric, which matters a great deal for anyone uploading large files, hosting a server, or doing video calls, where upload bandwidth is just as important as download.
 
 ---
 
@@ -36,82 +38,177 @@ Network performance is like the overall scorecard for your digital highway. It m
 
 **Analogy:** Latency is the time it takes for your car to respond when you hit the gas pedal.
 
-- **Definition:** The delay between sending a request and receiving a response (measured in milliseconds, ms).
-- **Example:** A ping of 20ms is fast; 200ms feels sluggish (like a slow elevator).
-- **Diagram:**
+- **Definition:** The delay between sending a request and receiving a response, measured in milliseconds (ms).
+- **Example:** A ping of 20ms is fast; 200ms feels sluggish, like a slow elevator door.
 
-```
-[You] ---(20ms)---> [Server]
-```
+Latency is not one single delay — it's the sum of four distinct components, and knowing them helps explain *why* a given connection is slow:
 
-- **Fun Fact:** Satellite internet has high latency because signals travel to space and back!
+- **Propagation delay:** The time for a signal to physically travel the distance, fundamentally bounded by the speed of light in the medium (roughly two-thirds of light speed in fiber). This is why distance always costs you something, no matter how good your hardware is.
+- **Transmission (serialization) delay:** The time to push all the bits of a packet onto the wire, which depends on the link's bandwidth — a slower link takes longer to "say" the same packet even before it starts traveling.
+- **Processing delay:** The time routers and switches along the path spend deciding where to forward each packet.
+- **Queuing delay:** The time a packet sits waiting in a buffer because the link ahead of it is busy — this is the component that spikes under congestion, and the one most within an operator's control.
+
+<DeepDive title="Why satellites have famously bad latency">A traditional geostationary communications satellite orbits at about 35,786 km above the equator. A signal from your dish has to travel up to the satellite and back down to a ground station — roughly 71,600 km one way when you account for both hops — and light itself takes about 240ms to cover that distance one-way, meaning a round trip is unavoidably in the 500-600ms range *before* any processing or queuing is added. No amount of bandwidth upgrades fixes this, because it's pure propagation delay dictated by physics, not a bottleneck that faster equipment can remove. This is exactly why newer low-Earth-orbit (LEO) satellite systems like Starlink, orbiting at roughly 550 km instead of 35,786 km, achieve latencies closer to 20-40ms — they trade a more complex constellation of many satellites for a dramatically shorter physical path.</DeepDive>
+
+| Connection Type | Typical One-Way Latency | Why |
+|---|---|---|
+| Same LAN | Under 1 ms | Local switch, minimal distance |
+| Fiber, same country | 5-20 ms | Propagation over a few hundred/thousand km |
+| Fiber, cross-continent | 60-150 ms | Long-haul propagation plus multiple hops |
+| Geostationary satellite | 250-300 ms (~500-600 ms round trip) | ~35,786 km altitude, twice each way |
+| LEO satellite (e.g. Starlink) | 20-40 ms | Much lower orbital altitude |
 
 ---
 
 ## Throughput: The Actual Speed
 
-**Analogy:** Throughput is how many cars actually make it to the finish line per second.
+**Analogy:** Throughput is how many cars actually make it to the finish line per second, as opposed to how many the highway could theoretically carry.
 
-- **Definition:** The real amount of data successfully delivered over a network in a given time.
-- **Example:** If your bandwidth is 100 Mbps but you only get 50 Mbps, your throughput is 50 Mbps.
+- **Definition:** The real amount of data successfully delivered over a network in a given time — always less than or equal to bandwidth, often noticeably less.
+- **Example:** If your bandwidth is 100 Mbps but you only measure 50 Mbps of actual transfer, your throughput is 50 Mbps.
+- **Why throughput falls short of bandwidth:** Packet loss forces retransmissions that eat into useful capacity; TCP's congestion control deliberately throttles a connection below the link's true capacity if it detects loss or delay; and on a long, high-bandwidth path, TCP's flow-control window can cap throughput well below the link's ceiling unless window scaling is tuned correctly — a phenomenon summarized by the **bandwidth-delay product** (roughly, bandwidth multiplied by round-trip latency gives the amount of data that should be "in flight" at once to fully use the link).
 
 ---
 
 ## Jitter: The Bumpy Ride
 
-**Analogy:** Jitter is like potholes on the road—sometimes your car bounces, sometimes it glides.
+**Analogy:** Jitter is like potholes on the road — sometimes your car bounces, sometimes it glides.
 
-- **Definition:** The variation in latency over time. High jitter means unpredictable delays.
-- **Use Case:** Low jitter is crucial for video calls and gaming.
+- **Definition:** The variation in latency over time. High jitter means unpredictable delays, even if the *average* latency looks fine.
+- **Use Case:** Low jitter is crucial for live video and voice calls, which is why real-time apps use a **jitter buffer** — deliberately holding incoming audio/video for a few extra milliseconds so playback can smooth out arrival-time variation, trading a small amount of added latency for a much smoother experience.
+
+<Warning title="Low latency and high bandwidth are independent, not the same thing">It's a very common mix-up to assume "I upgraded to a faster internet plan, so everything should feel more responsive." Bandwidth is about *capacity* — how much data fits through per second — while latency is about *delay* — how long one round trip takes. A gigabit fiber connection to a server on the other side of the planet can still have 150ms of latency, and a game or video call will feel exactly as laggy as it did on a much slower connection, because extra bandwidth doesn't shorten the physical distance the signal has to travel. Conversely, a low-bandwidth connection can still have excellent latency if the destination is close by. Diagnose them separately.</Warning>
+
+<Axiom>Bandwidth is how much you can move at once; latency is how long any of it takes to arrive — doubling one never fixes a problem caused by the other.</Axiom>
 
 ---
 
 ## Measuring Performance
 
-- **Speed Test:** Measures bandwidth and latency (e.g., speedtest.net).
-- **Ping:** Checks latency.
-- **Traceroute:** Finds slow hops on the route.
-- **Iperf:** Tests throughput between two devices.
-- **Wireshark:** Analyzes traffic for bottlenecks.
+- **Speed test (e.g. speedtest.net):** Measures approximate bandwidth and latency to a nearby test server.
+- **Ping:** Checks round-trip latency to a specific host.
+- **Traceroute:** Finds which hop along the route is adding delay (see Chapter 12).
+- **iperf/iperf3:** Measures actual achievable throughput between two devices you control, which is far more reliable than a speed test for diagnosing your own network's real capacity.
+- **Wireshark:** Analyzes captured traffic to spot retransmissions, out-of-order packets, and other symptoms of a struggling link.
 
 ---
 
 ## Optimizing Performance
 
-1. **Upgrade Bandwidth:** Get a faster plan from your ISP.
-2. **Reduce Latency:** Use wired connections, choose closer servers.
-3. **Minimize Jitter:** Avoid network congestion, use quality hardware.
-4. **Optimize Devices:** Keep firmware updated, close unused apps.
-5. **Use QoS (Quality of Service):** Prioritize important traffic (like video calls).
+1. **Upgrade bandwidth** when the bottleneck is genuinely capacity — many simultaneous large downloads, for instance.
+2. **Reduce latency** by using wired connections instead of Wi-Fi, and by choosing servers or CDN endpoints physically closer to your users.
+3. **Minimize jitter** by avoiding network congestion and prioritizing real-time traffic.
+4. **Optimize devices and software:** Keep firmware updated, avoid outdated Wi-Fi standards, and watch out for **bufferbloat** — oversized buffers in cheap routers that queue traffic instead of dropping it promptly, adding huge latency spikes under load even though nothing is technically "broken."
+5. **Use QoS (Quality of Service):** Prioritize latency-sensitive traffic, like video calls, ahead of latency-tolerant traffic, like a large background download.
 
 ---
 
 ## Real-World Scenarios
 
-1. **Video Call:** Needs low latency and jitter for smooth conversation.
-2. **Online Gaming:** Fast reaction times require low latency and high throughput.
-3. **File Download:** High bandwidth means faster downloads.
-4. **Streaming:** Needs enough bandwidth and low jitter for uninterrupted playback.
+1. **Video call:** Needs low latency and low jitter far more than it needs high bandwidth — a call can look fine on a modest connection but stutter badly on a fast one with high jitter.
+2. **Competitive online gaming:** Reaction-time-sensitive; low latency and consistent (low-jitter) timing matter more than raw throughput.
+3. **Large file download:** Bandwidth-bound — throughput close to your plan's bandwidth is what actually matters here.
+4. **Video streaming:** Needs enough sustained bandwidth to stay ahead of playback, plus low enough jitter that the buffer doesn't repeatedly empty.
 
 ---
 
-## Visual Summary
+## Try It Yourself in Go
 
+You can measure both latency and throughput yourself, on your own machine, with nothing more than the standard library: dial a local listener, time a tiny round trip for latency, then time a bulk transfer for throughput.
+
+```go
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net"
+	"time"
+)
+
+func main() {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Println("listen error:", err)
+		return
+	}
+	defer ln.Close()
+
+	go serve(ln)
+
+	measureLatency(ln.Addr().String())
+	measureThroughput(ln.Addr().String())
+}
+
+// serve answers a one-byte latency probe ('L') by echoing it straight back,
+// and otherwise just drains the connection as fast as possible for the
+// throughput test.
+func serve(ln net.Listener) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go handleConn(conn)
+	}
+}
+
+func handleConn(conn net.Conn) {
+	defer conn.Close()
+	buf := make([]byte, 1)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return
+	}
+	if n == 1 && buf[0] == 'L' {
+		conn.Write([]byte{'L'})
+		return
+	}
+	io.Copy(io.Discard, conn)
+}
+
+func measureLatency(addr string) {
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		fmt.Println("dial error:", err)
+		return
+	}
+	defer conn.Close()
+
+	start := time.Now()
+	conn.Write([]byte{'L'})
+	buf := make([]byte, 1)
+	conn.Read(buf)
+	fmt.Printf("Round-trip latency: %v\n", time.Since(start))
+}
+
+func measureThroughput(addr string) {
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		fmt.Println("dial error:", err)
+		return
+	}
+	defer conn.Close()
+
+	payload := bytes.Repeat([]byte("x"), 10*1024*1024) // 10 MB
+	start := time.Now()
+	n, err := io.Copy(conn, bytes.NewReader(payload))
+	if err != nil {
+		fmt.Println("copy error:", err)
+		return
+	}
+	elapsed := time.Since(start)
+	mbps := float64(n) / elapsed.Seconds() / (1024 * 1024)
+	fmt.Printf("Sent %d bytes in %v (%.1f MB/s)\n", n, elapsed, mbps)
+}
 ```
-[Bandwidth] ===> [Throughput]
-   |
-[Latency] (Delay)
-   |
-[Jitter] (Variation)
-```
+
+Running this prints something like `Round-trip latency: 85µs` followed by `Sent 10485760 bytes in 12ms (830.0 MB/s)`. On localhost, both numbers will look extremely fast compared to real internet links — there's no propagation delay worth mentioning across a loopback interface, and the "bandwidth" is really just memory-copy and kernel-buffer speed. That's actually the useful lesson: run the same program against a remote `host:port` (adjusting the throughput payload and protocol expectations accordingly) and you'll see the latency number jump to reflect real propagation delay, and the throughput number get capped by the real link's bandwidth and congestion behavior — the exact distinction this chapter draws between a link's theoretical capacity and what you actually measure end to end.
 
 ---
 
 ## Fun Facts & Memes
-- The world’s fastest internet speed (as of 2025) is over 300 Tbps—enough to download the entire Netflix library in seconds!
-- Gamers call high latency "lag"—the arch-nemesis of victory.
-- If bandwidth were pizza, more slices mean more friends can eat at once!
-
----
-
-[Previous: Network Troubleshooting and Tools](12-network-troubleshooting-and-tools.md) | [Next: Setting Up Your Go Development Environment](../part2/01-setting-up-your-go-development-environment.md)
+- Multi-terabit-per-second research links have been demonstrated in labs — enough bandwidth, in principle, to move an entire large streaming catalog in seconds, though no home connection is anywhere close to that yet.
+- Gamers call high latency "lag" — the arch-nemesis of victory, and a great example of why milliseconds matter.
+- If bandwidth were pizza, more slices mean more friends can eat at once — but if the delivery driver lives across town, every slice still takes just as long to arrive.

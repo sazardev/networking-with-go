@@ -1,5 +1,5 @@
 ---
-id: "[3.44.0]"
+id: "[4.44.0]"
 title: "Deep Packet Inspection and Packet Manipulation"
 ---
 
@@ -13,9 +13,7 @@ Every network tool you have built so far in this book -- TCP servers, proxies, H
 
 Firewalls that only look at IP addresses and port numbers cannot tell the difference between legitimate HTTPS traffic and a tunnel smuggling something else over port 443. Intrusion detection systems need to match traffic content against signatures of known attacks, not just source and destination. Network operators doing traffic shaping need to identify *what kind* of traffic is congesting a link, not just how much of it there is. All three needs come back to the same requirement: look inside the packet, past the addressing information, at the actual bytes being carried.
 
-<Warning title="This is a genuine ethical and legal boundary, not a footnote">
-Inspecting traffic you do not own or are not authorized to monitor is illegal in most jurisdictions and is a serious breach of trust even where it is technically legal (for example, inspecting traffic on your own home lab or with explicit, informed consent from all parties). Everything in this chapter assumes you are working with traffic you have clear authority to capture -- your own test network, your own application's traffic, or an environment where you have documented authorization.
-</Warning>
+<Warning title="This is a genuine ethical and legal boundary, not a footnote">Inspecting traffic you do not own or are not authorized to monitor is illegal in most jurisdictions and is a serious breach of trust even where it is technically legal (for example, inspecting traffic on your own home lab or with explicit, informed consent from all parties). Everything in this chapter assumes you are working with traffic you have clear authority to capture -- your own test network, your own application's traffic, or an environment where you have documented authorization.</Warning>
 
 ### The Go Tool for This: gopacket
 
@@ -119,9 +117,7 @@ if err := handle.WritePacketData(buf.Bytes()); err != nil {
 
 `SerializeLayers` writes each layer's header in order into the buffer, and `FixLengths`/`ComputeChecksums` fill in the length and checksum fields that would otherwise be tedious and error-prone to compute by hand -- exactly the kind of low-level correctness that makes hand-rolled packet crafting risky without a library like this one.
 
-<DeepDive title="Root privileges and platform setup">
-Raw packet capture requires elevated privileges on every platform -- `CAP_NET_RAW` (or root) on Linux, Administrator on Windows with Npcap installed, and root on macOS -- because reading traffic that was not addressed to your process is precisely the capability an operating system restricts by default. `gopacket/pcap` is a cgo binding to `libpcap`/`Npcap`, so those native libraries and headers need to be installed on the build machine as well as the target machine.
-</DeepDive>
+<DeepDive title="Root privileges and platform setup">Raw packet capture requires elevated privileges on every platform -- `CAP_NET_RAW` (or root) on Linux, Administrator on Windows with Npcap installed, and root on macOS -- because reading traffic that was not addressed to your process is precisely the capability an operating system restricts by default. `gopacket/pcap` is a cgo binding to `libpcap`/`Npcap`, so those native libraries and headers need to be installed on the build machine as well as the target machine.</DeepDive>
 
 ### Where This Belongs in a Real System
 

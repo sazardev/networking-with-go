@@ -1,5 +1,5 @@
 ---
-id: "[2.18.0]"
+id: "[3.18.0]"
 title: "Authentication and Authorization: Security Theory and Go Implementation"
 ---
 
@@ -25,6 +25,10 @@ A request can be authenticated (we know it's Alice) and still be unauthorized (A
 - **Bearer tokens:** A token — often a JWT or an opaque session token — sent in an `Authorization: Bearer <token>` header, typically issued after a login step.
 - **mTLS (mutual TLS):** Both client and server present certificates during the TLS handshake, authenticating each other at the transport layer, before any application data is exchanged. Covered in depth in the next chapter.
 
+<DeepDive title="OAuth 2.0 and OpenID Connect">Bearer tokens above assume your own server issues and verifies its own tokens. **OAuth 2.0** solves a related but different problem: letting a user grant a *third-party* application limited access to their data on *another* service, without handing that application their password. The user authenticates with the service that owns the data, which issues the third-party app a scoped access token instead. **OpenID Connect** layers identity on top: it standardizes an ID token, almost always a JWT, that tells the client who the user is. "Sign in with Google" on someone else's site is both of these at once.</DeepDive>
+
+<Axiom>Authentication answers "who are you"; authorization answers "what can you do"; a token is a portable, tamper-evident answer to the first question that a server can check without re-asking it.</Axiom>
+
 ---
 
 ## Go Implementation: HTTP Basic Auth
@@ -36,7 +40,9 @@ func basicAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
 		if !ok || !validCredentials(user, pass) {
-			w.Header().Set("WWW-Authenticate", `Basic realm="restricted"`)
+			w.Header().Set(
+				"WWW-Authenticate", `Basic realm="restricted"`,
+			)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -47,9 +53,7 @@ func basicAuthMiddleware(next http.Handler) http.Handler {
 
 This is the same middleware-wrapping pattern used for logging and other cross-cutting concerns: a function that takes an `http.Handler` and returns a new one, letting you layer authentication in front of any handler without touching its logic.
 
-<Warning title="Never compare secrets with ==">
-Comparing passwords or tokens with `==` leaks timing information an attacker can use to guess the value byte by byte. Use `crypto/subtle.ConstantTimeCompare` for any secret comparison.
-</Warning>
+<Warning title="Never compare secrets with ==">Comparing passwords or tokens with `==` leaks timing information an attacker can use to guess the value byte by byte. Use `crypto/subtle.ConstantTimeCompare` for any secret comparison.</Warning>
 
 ```go
 import "crypto/subtle"
@@ -61,6 +65,8 @@ func validCredentials(user, pass string) bool {
 		subtle.ConstantTimeCompare([]byte(pass), expectedPass) == 1
 }
 ```
+
+<Warning title="Basic Auth has no real logout">Browsers cache Basic Auth credentials for the session and resend them automatically to the same realm, so there is no clean way to "log out" short of closing the browser or changing the password — there's no server-side session to invalidate. Combined with credentials traveling on every request (base64 is encoding, not encryption), treat Basic Auth as TLS-only and reserve it for machine-to-machine calls, not user-facing login flows.</Warning>
 
 ---
 
@@ -83,32 +89,69 @@ func checkPassword(hash, plain string) bool {
 
 `bcrypt` embeds a random salt in its output automatically and deliberately takes milliseconds to compute — that cost is the whole point.
 
+<Warning title="bcrypt silently truncates past 72 bytes">`bcrypt.GenerateFromPassword` only looks at the first 72 bytes of its input; anything beyond that is silently ignored rather than rejected. This rarely matters for typical passwords, but a "paste your whole passphrase" feature can end up validating only a prefix of what the user typed, weakening the effective password with no error returned. If you need to support arbitrarily long input safely, hash it with SHA-256 first and feed that fixed-length digest into bcrypt, or switch to `golang.org/x/crypto/argon2`, which has no such limit.</Warning>
+
+<DeepDive title="Choosing a Cost Factor, and Alternatives to bcrypt">`bcrypt.DefaultCost` (10) roughly doubles the hashing time per increment — each `+1` doubles both an attacker's brute-force cost and your server's CPU time per login. OWASP's current recommendation leans toward `argon2id` (`golang.org/x/crypto/argon2`) for new systems, since it's tunable for memory cost as well as time cost, resisting GPU- and ASIC-based cracking better than bcrypt's CPU-only design. bcrypt remains reasonable regardless — battle-tested, with no known practical break, and no extra tuning beyond the cost factor.</DeepDive>
+
 ---
 
 ## Token-Based Authentication
 
 For APIs, a common pattern issues a signed token after login, which the client then sends on every subsequent request instead of resending credentials. You don't need a third-party JWT library to understand or build the core mechanism — a signed token is just a payload plus an HMAC signature proving it wasn't tampered with:
 
+<Warning title="Never hardcode the signing secret">`secretKey` below is a literal string for the sake of a short example — in real code that is a critical security bug. Anyone with read access to the source (or a decompiled binary) can forge valid tokens for any user. Load signing secrets from an environment variable or a secrets manager, generate them with `crypto/rand` at a length appropriate for the hash (at least 32 random bytes for HMAC-SHA256), and rotate them periodically, which means the verifier must accept both the current and immediately previous key during a rotation window.</Warning>
+
 ```go
 import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
-var secretKey = []byte("server-only-secret-key")
+var secretKey = []byte("server-only-secret-key") // load from env/secrets
 
 func issueToken(userID string) string {
-	payload := fmt.Sprintf("%s|%d", userID, time.Now().Add(1*time.Hour).Unix())
+	payload := fmt.Sprintf(
+		"%s|%d", userID, time.Now().Add(1*time.Hour).Unix())
 	mac := hmac.New(sha256.New, secretKey)
 	mac.Write([]byte(payload))
 	sig := base64.URLEncoding.EncodeToString(mac.Sum(nil))
 	return base64.URLEncoding.EncodeToString([]byte(payload)) + "." + sig
 }
 
-func verifyToken(token string) (userID string, ok bool) {
+// revocationList lets a still-unexpired token be invalidated immediately
+// — on logout, or when a token is suspected compromised — something a
+// self-contained signature check alone can never do: a valid signature
+// only proves the token wasn't tampered with, not that it's still wanted.
+type revocationList struct {
+	mu      sync.Mutex
+	revoked map[string]time.Time // signature -> time of revocation
+}
+
+func newRevocationList() *revocationList {
+	return &revocationList{revoked: make(map[string]time.Time)}
+}
+
+func (r *revocationList) revoke(sig string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.revoked[sig] = time.Now()
+}
+
+func (r *revocationList) isRevoked(sig string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, revoked := r.revoked[sig]
+	return revoked
+}
+
+func verifyToken(
+	token string, revoked *revocationList,
+) (userID string, ok bool) {
 	parts := strings.SplitN(token, ".", 2)
 	if len(parts) != 2 {
 		return "", false
@@ -125,10 +168,18 @@ func verifyToken(token string) (userID string, ok bool) {
 		// signature mismatch — token was tampered with or forged
 		return "", false
 	}
+	if revoked.isRevoked(parts[1]) {
+		return "", false // valid signature, but explicitly logged out
+	}
 
 	fields := strings.SplitN(string(payloadBytes), "|", 2)
+	if len(fields) != 2 {
+		return "", false
+	}
 	var expiry int64
-	fmt.Sscanf(fields[1], "%d", &expiry)
+	if _, err := fmt.Sscanf(fields[1], "%d", &expiry); err != nil {
+		return "", false
+	}
 	if time.Now().Unix() > expiry {
 		return "", false // expired
 	}
@@ -136,7 +187,13 @@ func verifyToken(token string) (userID string, ok bool) {
 }
 ```
 
-This is structurally the same idea a JWT implements: a payload plus a signature the server can verify without a database round trip, since the signature itself proves the payload wasn't altered. `hmac.Equal` — not `==` — is used for the same constant-time reason as the password comparison above.
+This is structurally the same idea a JWT implements: a payload plus a signature the server can verify without a database round trip, since the signature itself proves the payload wasn't altered. `hmac.Equal` — not `==` — is used for the same constant-time reason as the password comparison above. Note also that the original version of `verifyToken` ignored the error from `fmt.Sscanf` and never checked `len(fields)`, meaning a malformed payload could panic on `fields[1]` or silently parse a bogus expiry as `0` — both are fixed above.
+
+<DeepDive title="How This Maps to a Real JWT">A real JSON Web Token uses the same three-part shape — header, payload, signature, base64url-encoded and dot-separated — but formalizes the payload as a JSON object of *claims* instead of a pipe-delimited string: `iss` (issuer), `sub` (subject), `exp` (expiry, a Unix timestamp), `aud` (audience), plus any custom claims. The header also names the signing algorithm (`HS256`, `RS256`, ...), a well-known JWT pitfall: naive verifiers that trust the algorithm named in an attacker-supplied token, rather than pinning the expected one server-side, can be tricked into accepting a token signed with a weaker or absent algorithm (the "`alg: none`" attack). Libraries like `github.com/golang-jwt/jwt` handle this correctly; a hand-rolled verifier must hardcode the expected algorithm instead of trusting the token's own header.</DeepDive>
+
+<Warning title="Allow a little clock skew, but not none">Comparing `time.Now().Unix() > expiry` with zero tolerance means a token can be rejected early just because the verifying server's clock is slightly ahead of the issuer's — a real occurrence when hosts aren't perfectly synchronized. Production verifiers typically allow a small leeway (a few seconds). The opposite mistake, too much leeway, extends how long an expired or revoked token stays usable, so keep it small.</Warning>
+
+<Axiom>A signature proves a token wasn't altered; it says nothing about whether the token is still wanted — that's what revocation and expiry are for.</Axiom>
 
 ---
 
@@ -149,10 +206,12 @@ type contextKey string
 
 const userIDKey contextKey = "userID"
 
-func requireRole(role string, next http.Handler) http.Handler {
+func requireRole(
+	role string, revoked *revocationList, next http.Handler,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		userID, ok := verifyToken(token)
+		userID, ok := verifyToken(token, revoked)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -171,6 +230,19 @@ Attaching the authenticated user ID to the request's `context.Context` — the s
 
 Note the distinct status codes: `401 Unauthorized` means "I don't know who you are," while `403 Forbidden` means "I know who you are, and the answer is no" — a direct reflection of the authn/authz split at the HTTP level.
 
+<DeepDive title="Why contextKey Is Its Own Type">`userIDKey` is a named type (`contextKey`), not a bare `string`. `context.WithValue` keys are compared by both type and value, so a plain string `"userID"` key could silently collide with an unrelated package storing a value under that same string — a hard-to-debug source of context values overwriting each other. A small unexported type per package is the standard idiom for avoiding that collision.</DeepDive>
+
+<Warning title="Missing middleware is a silent bypass">`requireRole` only protects a route if every handler for that route is wrapped with it. A new endpoint that forgets to wrap its handler is reachable by anyone, with no error or log line to flag the mistake — the failure is silent by omission, not by a failed check. Prefer applying authorization at the router level (whole route groups) over remembering per-handler, and consider a default-deny catch-all route so an unmatched path fails closed rather than falling through unauthenticated.</Warning>
+
+---
+
+## Try It Yourself: Logout and Role Hierarchies
+
+- **Wire up logout.** Add a handler that extracts the token's signature and calls `revoked.revoke(sig)`, then confirm a later request with that token is rejected even though it hasn't expired.
+- **Write a table-driven test.** Using `net/http/httptest`, test `requireRole` against four cases: no token, expired token, wrong role, success — the authn and authz failures should return different status codes.
+- **Add a role hierarchy.** Replace the single-string check in `userHasRole` with an ordered list (`"viewer" < "editor" < "admin"`) so `requireRole("editor", ...)` also accepts an `"admin"` caller.
+- **Simulate clock skew.** Back-date a test's notion of "now" a few seconds past `expiry` and confirm your leeway (deep dive above) behaves as expected at the boundary.
+
 ---
 
 ## Key Takeaways
@@ -179,8 +251,5 @@ Note the distinct status codes: `401 Unauthorized` means "I don't know who you a
 - Use `crypto/subtle.ConstantTimeCompare` or `hmac.Equal` for any secret comparison — never `==`.
 - Hash passwords with an adaptive, salted algorithm like bcrypt — never a fast general-purpose hash.
 - Signed tokens (HMAC-based, or a full JWT library) let a server verify a caller's identity without a database lookup on every request.
+- A signature alone can't express "logged out" — pair short-lived tokens with a revocation check for anything that needs immediate invalidation.
 - `401` vs. `403` is not a stylistic choice — it communicates which half of the authn/authz split failed.
-
----
-
-[Previous: NAT Traversal and P2P Networking](17-nat-traversal-and-p2p-networking.md) | [Next: Security in Go Networking](19-security-in-go-networking.md)

@@ -1,5 +1,5 @@
 ---
-id: "[4.8.0]"
+id: "[5.8.0]"
 title: "Penetration Testing Workflows"
 ---
 
@@ -21,9 +21,7 @@ Unlike a vulnerability assessment (Chapter 4.6), which is broad and largely auto
 
 Most pentesting methodologies (PTES, OWASP Testing Guide, and others) converge on a similar shape:
 
-<DeepDive title="The typical phases of an engagement">
-**Scoping and rules of engagement** — agreeing in writing exactly what's in scope, what's off-limits, the testing window, and emergency contacts if something goes wrong. **Reconnaissance** — gathering information about the target passively (public records, DNS, job postings) and actively (scanning, per Chapter 4.4). **Vulnerability analysis** — identifying candidate weaknesses (Chapter 4.6) worth pursuing. **Exploitation** — attempting to actually leverage a weakness to gain access or demonstrate impact, carefully and within scope. **Post-exploitation** — assessing what the access is actually worth: what data, systems, or further access it provides, without exceeding the agreed boundaries. **Reporting** — the deliverable that actually matters to the client: findings, evidence, severity, and concrete remediation guidance.
-</DeepDive>
+<DeepDive title="The typical phases of an engagement">**Scoping and rules of engagement** — agreeing in writing exactly what's in scope, what's off-limits, the testing window, and emergency contacts if something goes wrong. **Reconnaissance** — gathering information about the target passively (public records, DNS, job postings) and actively (scanning, per Chapter 4.4). **Vulnerability analysis** — identifying candidate weaknesses (Chapter 4.6) worth pursuing. **Exploitation** — attempting to actually leverage a weakness to gain access or demonstrate impact, carefully and within scope. **Post-exploitation** — assessing what the access is actually worth: what data, systems, or further access it provides, without exceeding the agreed boundaries. **Reporting** — the deliverable that actually matters to the client: findings, evidence, severity, and concrete remediation guidance.</DeepDive>
 
 It's worth internalizing that **reporting is not an afterthought** — for most clients, the report is the entire value of the engagement. A brilliant exploit chain that never gets written up clearly, with reproducible steps and a fix recommendation, delivers close to zero value.
 
@@ -39,9 +37,7 @@ Before any technical work begins, a professional engagement is bounded by a writ
 - **Emergency stop conditions** — who to call immediately if a test causes unexpected impact.
 - **Data handling** — how discovered sensitive data is stored, reported, and eventually destroyed.
 
-<Warning title="No authorization, no test">
-Every technique described anywhere in this book — scanning, sniffing, exploitation basics — is only appropriate to run under this kind of explicit authorization: your own lab, a licensed practice platform, a CTF, or a signed rules-of-engagement document. Without it, the exact same actions are unauthorized computer access, a crime in essentially every jurisdiction, regardless of intent.
-</Warning>
+<Warning title="No authorization, no test">Every technique described anywhere in this book — scanning, sniffing, exploitation basics — is only appropriate to run under this kind of explicit authorization: your own lab, a licensed practice platform, a CTF, or a signed rules-of-engagement document. Without it, the exact same actions are unauthorized computer access, a crime in essentially every jurisdiction, regardless of intent.</Warning>
 
 ---
 
@@ -106,7 +102,3 @@ This is intentionally minimal, but it captures the shape every real report is bu
 ## Why This Matters Even If You Never Do This Job
 
 Most readers of this book will build software, not run pentests professionally — but understanding this workflow reshapes how you read a pentest report handed to you about your own system: you'll know why scope matters, why "verified" is different from "reported but unconfirmed," and why a well-written finding always includes clear reproduction steps and a concrete fix, not just a scary severity label.
-
----
-
-[Previous: Building Simple Security Tools in Go](07-building-simple-security-tools-in-go.md) | [Next: Incident Response and Forensics](09-incident-response-and-forensics.md)

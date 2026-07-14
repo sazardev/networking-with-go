@@ -1,5 +1,5 @@
 ---
-id: "[4.28.0]"
+id: "[5.28.0]"
 title: "Security Automation with Go"
 ---
 
@@ -20,9 +20,7 @@ Go is particularly well suited to this kind of tooling: a single static binary w
 - **Alert enrichment and triage**: automatically attaching context (WHOIS data, threat intelligence lookups, asset ownership) to a raw SIEM alert before it reaches a human analyst, so the first thirty seconds of investigation are already done.
 - **Automated response playbooks**: for well-understood, low-risk scenarios (a single failed-login spike, a known-bad IP appearing in logs), automatically taking a safe, reversible containment action - blocking an IP at the firewall, disabling an account pending review - rather than waiting for a human to execute the same steps manually.
 
-<Warning title="Automate Containment Carefully">
-Automated response actions should be reversible, logged, and scoped to scenarios with very low false-positive risk. An automation that can lock out a legitimate user account or block a legitimate customer IP based on a noisy detection rule can turn a minor security event into a self-inflicted outage - the same false-positive concern raised for inline IPS deployments earlier in this part applies with even more force once a human is fully out of the loop.
-</Warning>
+<Warning title="Automate Containment Carefully">Automated response actions should be reversible, logged, and scoped to scenarios with very low false-positive risk. An automation that can lock out a legitimate user account or block a legitimate customer IP based on a noisy detection rule can turn a minor security event into a self-inflicted outage - the same false-positive concern raised for inline IPS deployments earlier in this part applies with even more force once a human is fully out of the loop.</Warning>
 
 ## Go Implementation: Automated Certificate Expiry Monitoring
 

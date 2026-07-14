@@ -1,5 +1,5 @@
 ---
-id: "[4.4.0]"
+id: "[5.4.0]"
 title: "Network Scanning and Enumeration with Go"
 ---
 
@@ -15,9 +15,7 @@ title: "Network Scanning and Enumeration with Go"
 
 Both are the first phase of nearly every security engagement, offensive or defensive. Attackers scan to find a way in. Defenders scan their own networks for the same reason: to find the way in before an attacker does, and to notice when something is listening that shouldn't be.
 
-<Warning title="Only scan what you're authorized to scan">
-Port scanning a network you don't own or don't have explicit permission to test can violate computer-crime laws even if you never exploit anything you find — the act of probing can itself be the offense in some jurisdictions. Run everything in this chapter against `localhost`, a VM you control, or a lab environment built for this purpose.
-</Warning>
+<Warning title="Only scan what you're authorized to scan">Port scanning a network you don't own or don't have explicit permission to test can violate computer-crime laws even if you never exploit anything you find — the act of probing can itself be the offense in some jurisdictions. Run everything in this chapter against `localhost`, a VM you control, or a lab environment built for this purpose.</Warning>
 
 ---
 
@@ -154,10 +152,4 @@ DNS enumeration is another common technique, using `net.LookupHost`, `net.Lookup
 
 A scan produces a list of open ports and banners. On its own, that's just data. Chapter 4.6 covers how to turn "port 21 open, running vsftpd 2.3.4" into an actual assessed finding — checking that version against known weaknesses and deciding whether it matters in context. Scanning tells you what's there; assessment tells you whether it's a problem.
 
-<DeepDive title="Why not just use nmap?">
-`nmap` is the industry-standard scanner and you should absolutely use it for real engagements — it has SYN scanning, OS fingerprinting, and a huge script library that would take years to reimplement. Building a scanner in Go here isn't about competing with it; it's about understanding exactly what a scanner does under the hood, so that when you read `nmap` output — or write Go code that needs to probe its own dependencies at startup — you know precisely what's happening on the wire.
-</DeepDive>
-
----
-
-[Previous: Common Network Attacks](03-common-network-attacks.md) | [Next: Packet Sniffing and Analysis with Go](05-packet-sniffing-and-analysis-with-go.md)
+<DeepDive title="Why not just use nmap?">`nmap` is the industry-standard scanner and you should absolutely use it for real engagements — it has SYN scanning, OS fingerprinting, and a huge script library that would take years to reimplement. Building a scanner in Go here isn't about competing with it; it's about understanding exactly what a scanner does under the hood, so that when you read `nmap` output — or write Go code that needs to probe its own dependencies at startup — you know precisely what's happening on the wire.</DeepDive>

@@ -1,5 +1,5 @@
 ---
-id: "[4.14.0]"
+id: "[5.14.0]"
 title: "Secure Coding Practices in Go"
 ---
 
@@ -114,9 +114,7 @@ func generateToken(n int) (string, error) {
 }
 ```
 
-<Warning title="math/rand vs crypto/rand">
-Using `math/rand` (or its top-level `rand.Int`/`rand.Intn` functions) to generate a session token, password reset code, or API key is a common, serious mistake — its output can be predicted by an attacker who observes enough samples. Import `crypto/rand` instead for anything where unpredictability is a security property, not just a usability one.
-</Warning>
+<Warning title="math/rand vs crypto/rand">Using `math/rand` (or its top-level `rand.Int`/`rand.Intn` functions) to generate a session token, password reset code, or API key is a common, serious mistake — its output can be predicted by an attacker who observes enough samples. Import `crypto/rand` instead for anything where unpredictability is a security property, not just a usability one.</Warning>
 
 ---
 
@@ -149,7 +147,3 @@ A raw database error returned directly to an HTTP response can reveal schema det
 ## A Habit, Not a Checklist
 
 None of the above is exotic. Every item is a normal Go idiom applied with one extra question asked: *where did this value come from, and what happens if it's hostile?* That question, asked consistently at every trust boundary, prevents far more real-world incidents than any single clever defensive technique.
-
----
-
-[Previous: Certificate Management and PKI](13-certificate-management-and-pki.md) | [Next: Zero Trust Networking Concepts](15-zero-trust-networking-concepts.md)

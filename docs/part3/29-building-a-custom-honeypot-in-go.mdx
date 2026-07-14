@@ -1,5 +1,5 @@
 ---
-id: "[4.29.0]"
+id: "[5.29.0]"
 title: "Building a Custom Honeypot in Go"
 ---
 
@@ -15,9 +15,7 @@ A honeypot is a decoy system deliberately exposed to attract and record unauthor
 
 Honeypots also serve a distinct research purpose beyond detection: capturing the actual tools, credentials, and techniques attackers try against a given service type, which feeds directly into the malware analysis and threat intelligence practices covered earlier in this part.
 
-<Warning title="Isolation and Legal Care Are Not Optional">
-A honeypot must run in an isolated network segment with no route to production systems or sensitive data - treat it as hostile territory that will, by design, attract attackers. Logging attacker input can itself raise privacy and wiretap-style legal considerations depending on jurisdiction and what gets captured, so avoid logging anything beyond what's needed for detection and analysis, and get explicit sign-off before deploying a honeypot on any network you don't fully control. Never deploy a honeypot that could plausibly be mistaken for a real production system by a legitimate user - that's a liability, not a detection tool.
-</Warning>
+<Warning title="Isolation and Legal Care Are Not Optional">A honeypot must run in an isolated network segment with no route to production systems or sensitive data - treat it as hostile territory that will, by design, attract attackers. Logging attacker input can itself raise privacy and wiretap-style legal considerations depending on jurisdiction and what gets captured, so avoid logging anything beyond what's needed for detection and analysis, and get explicit sign-off before deploying a honeypot on any network you don't fully control. Never deploy a honeypot that could plausibly be mistaken for a real production system by a legitimate user - that's a liability, not a detection tool.</Warning>
 
 ## Go Implementation: A Low-Interaction SSH Honeypot
 

@@ -1,5 +1,5 @@
 ---
-id: "[5.17.0]"
+id: "[6.17.0]"
 title: "Deploying and Scaling Go APIs"
 ---
 
@@ -91,7 +91,9 @@ go func() {
 	}
 }()
 
-ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+ctx, stop := signal.NotifyContext(
+	context.Background(), os.Interrupt, syscall.SIGTERM,
+)
 defer stop()
 <-ctx.Done()
 
@@ -143,9 +145,7 @@ spec:
 
 The `Service` load-balances across all `Pods` matching the `app: myapi` label, and the two probes wired to `/readyz` and `/healthz` from the previous chapter control, respectively, whether traffic reaches an instance and whether Kubernetes considers it alive at all.
 
-<DeepDive title="Horizontal Pod Autoscaling">
-A `HorizontalPodAutoscaler` can adjust `replicas` automatically based on CPU usage, memory, or a custom metric (like requests-per-second from the Prometheus metrics set up in the previous chapter). Because Go services are stateless by design in this architecture — no in-memory session state tied to a specific instance — scaling out is just a matter of adding more identical replicas behind the same `Service`, with no special coordination required between them.
-</DeepDive>
+<DeepDive title="Horizontal Pod Autoscaling">A `HorizontalPodAutoscaler` can adjust `replicas` automatically based on CPU usage, memory, or a custom metric (like requests-per-second from the Prometheus metrics set up in the previous chapter). Because Go services are stateless by design in this architecture — no in-memory session state tied to a specific instance — scaling out is just a matter of adding more identical replicas behind the same `Service`, with no special coordination required between them.</DeepDive>
 
 ---
 

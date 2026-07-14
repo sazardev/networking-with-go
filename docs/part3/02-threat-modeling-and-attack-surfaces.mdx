@@ -1,5 +1,5 @@
 ---
-id: "[4.2.0]"
+id: "[5.2.0]"
 title: "Threat Modeling and Attack Surfaces"
 ---
 
@@ -34,9 +34,7 @@ Threat modeling is the process of walking through these in order: assets, then a
 
 One of the most widely taught models for enumerating threats is **STRIDE**, which gives you six categories to check a system against:
 
-<DeepDive title="The STRIDE categories">
-**Spoofing** — pretending to be something or someone you're not (a fake server, a forged source IP, a stolen session token). **Tampering** — modifying data or code in transit or at rest without authorization. **Repudiation** — being able to deny having performed an action, because nothing logged it. **Information disclosure** — exposing data to someone not authorized to see it. **Denial of service** — degrading or blocking legitimate access to a service. **Elevation of privilege** — gaining capabilities beyond what was granted, such as an unauthenticated user reaching an admin-only route.
-</DeepDive>
+<DeepDive title="The STRIDE categories">**Spoofing** — pretending to be something or someone you're not (a fake server, a forged source IP, a stolen session token). **Tampering** — modifying data or code in transit or at rest without authorization. **Repudiation** — being able to deny having performed an action, because nothing logged it. **Information disclosure** — exposing data to someone not authorized to see it. **Denial of service** — degrading or blocking legitimate access to a service. **Elevation of privilege** — gaining capabilities beyond what was granted, such as an unauthenticated user reaching an admin-only route.</DeepDive>
 
 Running each component of your system through these six lenses is a fast way to surface threats you wouldn't think of by just staring at the architecture diagram. A TCP listener, for instance: can it be spoofed (source IP forgery)? Tampered with (no integrity check on the payload)? Used for denial of service (no connection limit)?
 
@@ -121,7 +119,3 @@ Once you've listed threats, you still need to decide what to fix first. Most tea
 <Axiom>You cannot secure what you haven't mapped. Every minute spent listing entry points is a minute not spent guessing at your defenses later.</Axiom>
 
 Threat modeling isn't a one-time diagram you draw and file away — it's a habit you repeat every time the system changes: a new endpoint, a new dependency, a new network path all deserve a fresh pass through the same questions.
-
----
-
-[Previous: Introduction to Cybersecurity in Networking](01-introduction-to-cybersecurity-in-networking.md) | [Next: Common Network Attacks](03-common-network-attacks.md)

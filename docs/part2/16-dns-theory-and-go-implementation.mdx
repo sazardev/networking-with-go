@@ -1,5 +1,5 @@
 ---
-id: "[2.16.0]"
+id: "[3.16.0]"
 title: "DNS: Theory and Go Implementation"
 ---
 
@@ -36,6 +36,37 @@ DNS runs primarily over **UDP port 53** — the same connectionless, best-effort
 - **PTR:** Reverse lookup, mapping an IP address back to a name.
 
 Every record also carries a **TTL** (time to live), telling resolvers how long they may cache the answer before asking again.
+
+<Axiom>DNS trades a little staleness for a lot of speed — TTL is the dial that controls the trade.</Axiom>
+
+### Anatomy of a DNS Message
+
+Both queries and responses share the same wire format, whether carried
+over UDP or TCP:
+
+- **Header (12 bytes):** a transaction `ID` (so a resolver can match a
+  response to the query it sent, since UDP has no built-in request/reply
+  correlation), flag bits (is this a query or response, is recursion
+  desired, was the answer authoritative), and four counts — how many
+  entries follow in the question, answer, authority, and additional
+  sections.
+- **Question section:** the name being looked up, its record type
+  (`A`, `MX`, ...), and its class (almost always `IN`, for internet).
+- **Answer section:** zero or more records matching the question, each
+  with its own name, type, TTL, and data (an IP address for `A`, a
+  hostname for `CNAME`, and so on).
+- **Authority / additional sections:** extra records the server includes
+  proactively — for example, the IP address of a name server mentioned in
+  the answer, saving the resolver a second round trip.
+
+You never construct this format by hand when using Go's `net` package —
+the `Lookup*` functions and `net.Resolver` handle encoding the query and
+parsing the response for you. Knowing the shape matters anyway: it
+explains why DNS responses fit in a single UDP datagram most of the time
+(a handful of short records plus a fixed 12-byte header), and why an
+attacker who can predict or guess the 16-bit transaction `ID` can attempt
+to inject a forged response — one of the historical motivations for
+DNSSEC, discussed later in this chapter.
 
 ---
 
@@ -84,9 +115,9 @@ func main() {
 
 [Exercise: DNS Lookups](../../exercises/part2/16-dns-lookups/main.go)
 
-<DeepDive title="net.Dial already does this for you">
-Every time you've called `net.Dial("tcp", "example.com:80")` in earlier chapters, Go resolved the hostname first, then connected to one of the returned IPs. `net.LookupHost` just exposes that same resolution step directly, which is useful when you want to inspect, cache, or choose among the results yourself.
-</DeepDive>
+<DeepDive title="net.Dial already does this for you">Every time you've called `net.Dial("tcp", "example.com:80")` in earlier chapters, Go resolved the hostname first, then connected to one of the returned IPs. `net.LookupHost` just exposes that same resolution step directly, which is useful when you want to inspect, cache, or choose among the results yourself.</DeepDive>
+
+<Warning title="net.LookupHost has no built-in timeout">`net.LookupHost`, `net.LookupMX`, and the other package-level `Lookup*` functions take no `context.Context` and no deadline — they block until the underlying resolver answers, fails, or the operating system's own resolver timeout (often 5 seconds per server, sometimes multiplied across several configured servers) finally gives up. In a program handling many requests concurrently, a single unresponsive DNS server can quietly stall every goroutine that happens to trigger a lookup at the same time. Prefer `net.Resolver.LookupHost(ctx, host)` (shown next) with a bounded `context.WithTimeout`, so a slow resolver fails fast instead of hanging the caller indefinitely.</Warning>
 
 ---
 
@@ -97,7 +128,9 @@ By default, Go's resolver behavior depends on the platform: it may use the opera
 ```go
 resolver := &net.Resolver{
 	PreferGo: true,
-	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+	Dial: func(
+		ctx context.Context, network, address string,
+	) (net.Conn, error) {
 		d := net.Dialer{Timeout: 5 * time.Second}
 		// Ignore the system-configured server and query Cloudflare's
 		// public resolver directly.
@@ -105,10 +138,18 @@ resolver := &net.Resolver{
 	},
 }
 
-ips, err := resolver.LookupHost(context.Background(), "example.com")
+// Give the whole lookup a hard deadline, addressing the timeout
+// pitfall from the previous warning — if 1.1.1.1 doesn't answer within
+// two seconds, ctx.Err() unblocks the caller instead of hanging.
+ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+defer cancel()
+
+ips, err := resolver.LookupHost(ctx, "example.com")
 ```
 
 This is the same `context.Context`-driven, pluggable-dial pattern you saw with `net.Dialer.DialContext` in earlier chapters — DNS resolution is just another network operation that benefits from cancellation and timeouts.
+
+<DeepDive title="netgo vs netcgo, and why PreferGo matters">On Linux and most Unix systems, Go's default resolver tries to use `cgo` to call the system's native `getaddrinfo`, which transparently honors `/etc/hosts`, `/etc/resolv.conf`, `/etc/nsswitch.conf`, and any NSS modules (like corporate LDAP-backed name resolution) the OS is configured with. Setting `PreferGo: true` — or building the binary with the `netgo` build tag — switches to a resolver written entirely in Go that speaks DNS directly over the network and skips all of that OS machinery. The pure-Go path is what makes statically linked, fully portable binaries possible (no dependency on the host's C library at runtime), and it's also what lets you override the destination server via `Dial` the way the example above does — the cgo path talks to whatever the OS decides to talk to, with no hook for the application to intercept it.</DeepDive>
 
 ---
 
@@ -119,6 +160,7 @@ Because DNS lookups add latency to every new connection, applications that make 
 ```go
 type cacheEntry struct {
 	ips     []string
+	err     error
 	expires time.Time
 }
 
@@ -130,33 +172,68 @@ type dnsCache struct {
 func (c *dnsCache) lookup(host string) ([]string, error) {
 	c.mu.Lock()
 	if entry, ok := c.entries[host]; ok && time.Now().Before(entry.expires) {
-		c.mu.Unlock()
+		defer c.mu.Unlock()
+		if entry.err != nil {
+			return nil, entry.err
+		}
 		return entry.ips, nil
 	}
 	c.mu.Unlock()
 
 	ips, err := net.LookupHost(host)
+
+	// Negative caching: a lookup failure (NXDOMAIN, a resolver timeout)
+	// is cached too, just for a shorter window. Without this, a hostname
+	// that doesn't exist gets re-queried on every single call site that
+	// asks for it, which is exactly the kind of repeated, avoidable
+	// traffic caching was meant to eliminate in the first place.
+	ttl := 60 * time.Second
 	if err != nil {
-		return nil, err
+		ttl = 5 * time.Second
 	}
 
 	c.mu.Lock()
 	c.entries[host] = cacheEntry{
 		ips:     ips,
-		expires: time.Now().Add(60 * time.Second),
+		err:     err,
+		expires: time.Now().Add(ttl),
 	}
 	c.mu.Unlock()
-	return ips, nil
+	return ips, err
 }
 ```
 
 [Exercise: DNS Cache](../../exercises/part2/16-dns-cache/main.go)
 
-This mirrors the concurrency-safety patterns from the concurrency chapter: a `sync.Mutex` guards the shared map because multiple goroutines may resolve hostnames concurrently.
+This mirrors the concurrency-safety patterns from the concurrency chapter: a `sync.Mutex` guards the shared map because multiple goroutines may resolve hostnames concurrently. Note that `cacheEntry` now needs an `err error` field alongside `ips` and `expires` to support the negative-caching path above.
 
-<Warning title="Real TTLs, not a guess">
-The 60-second expiry above is a placeholder for the exercise. Go's standard `net` package does not expose the actual TTL returned by the DNS server — if you need TTL-accurate caching, you generally reach for a dedicated DNS library that parses raw records, rather than the `net.Lookup*` convenience functions.
-</Warning>
+<Warning title="Real TTLs, not a guess">The 60-second expiry above is a placeholder for the exercise. Go's standard `net` package does not expose the actual TTL returned by the DNS server — if you need TTL-accurate caching, you generally reach for a dedicated DNS library that parses raw records, rather than the `net.Lookup*` convenience functions.</Warning>
+
+<Warning title="A shared mutex serializes every lookup, even cache hits">Every call to `lookup` takes `c.mu` at least once, even when the entry is already cached and valid. For a read-heavy cache with many concurrent goroutines, that single mutex can become a bottleneck under high concurrency. A `sync.RWMutex` (read lock for the cache-hit path, write lock only when inserting) or `sync.Map` — which is optimized for exactly this read-mostly, write-rarely access pattern — are the usual next steps once a plain `sync.Mutex` shows up in a profile.</Warning>
+
+<DeepDive title="Why doesn't Go validate DNSSEC?">DNSSEC adds cryptographic signatures to DNS records so a resolver can verify a response really came from the domain's authoritative servers and wasn't forged or tampered with in transit — closing exactly the spoofing risk the 16-bit transaction ID discussed earlier in this chapter leaves open. Go's `net` package deliberately stays a thin, convenience layer over whatever the OS (or its own pure-Go resolver) returns; neither validates DNSSEC signatures. If your application needs cryptographic assurance that a DNS answer is authentic — rather than merely "some server on the path answered" — reach for a dedicated library such as `miekg/dns`, which exposes raw record parsing and signature validation.</DeepDive>
+
+---
+
+## Try It Yourself: A Resolver with Fallback
+
+Extend the custom `net.Resolver` from this chapter so a slow or
+unreachable primary DNS server doesn't stall every lookup:
+
+1. Wrap the `Dial` function so it first tries the primary server (say,
+   `1.1.1.1:53`) with a short `context.WithTimeout` (around 1-2 seconds).
+2. If that attempt's context deadline expires or the dial fails, retry
+   once against a secondary server (`8.8.8.8:53`) with a fresh, similarly
+   short timeout — the same layered-timeout idea used for the retrying
+   TCP file transfer client earlier in this book.
+3. Log which server actually answered, so you can tell in practice how
+   often the fallback path is exercised versus the primary succeeding.
+
+This is a miniature version of what production recursive resolvers do
+constantly: DNS servers are configured in a list precisely because any
+single one of them can become slow or unreachable, and a resolver that
+gives up after one attempt trades a small amount of extra latency for a
+much larger amount of unnecessary lookup failures.
 
 ---
 
@@ -166,7 +243,3 @@ The 60-second expiry above is a placeholder for the exercise. Go's standard `net
 - `net.LookupHost`, `net.LookupMX`, `net.LookupTXT`, and `net.LookupAddr` cover the common record types without any extra dependencies.
 - `net.Resolver` with a custom `Dial` function lets you target a specific DNS server or force Go's pure-Go resolver.
 - Caching lookups reduces latency for applications making many outbound connections, but respect TTLs and guard shared caches with a mutex.
-
----
-
-[Previous: Proxy Servers and Clients](15-proxy-servers-and-clients.md) | [Next: NAT Traversal and P2P Networking](17-nat-traversal-and-p2p-networking.md)

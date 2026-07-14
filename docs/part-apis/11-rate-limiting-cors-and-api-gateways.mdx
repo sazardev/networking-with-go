@@ -1,5 +1,5 @@
 ---
-id: "[5.11.0]"
+id: "[6.11.0]"
 title: "Rate Limiting, CORS, and API Gateways"
 ---
 
@@ -70,9 +70,7 @@ func (c *ClientLimiter) middleware(next http.Handler) http.Handler {
 
 `429 Too Many Requests` is the correct status code, and the `Retry-After` header tells well-behaved clients how long to back off before trying again.
 
-<DeepDive title="Token bucket vs sliding window">
-Token bucket (used above) allows short bursts up to the bucket's capacity, then settles into the steady refill rate — good for typical API traffic, which is naturally bursty. A sliding window counts requests in a rolling time frame and is stricter about not letting any window exceed the limit, at the cost of more bookkeeping. For a single-process API, token bucket's simplicity usually wins; distributed, multi-instance rate limiting (covered later) often needs a shared store regardless of algorithm.
-</DeepDive>
+<DeepDive title="Token bucket vs sliding window">Token bucket (used above) allows short bursts up to the bucket's capacity, then settles into the steady refill rate — good for typical API traffic, which is naturally bursty. A sliding window counts requests in a rolling time frame and is stricter about not letting any window exceed the limit, at the cost of more bookkeeping. For a single-process API, token bucket's simplicity usually wins; distributed, multi-instance rate limiting (covered later) often needs a shared store regardless of algorithm.</DeepDive>
 
 This in-memory approach works for a single server instance; once you run multiple instances behind a load balancer, each has its own map and the effective limit multiplies by instance count. A later chapter covers distributed rate limiting with a shared store like Redis for that case.
 
@@ -105,9 +103,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 The preflight `OPTIONS` request never reaches your real handler — the middleware answers it directly with `204 No Content` and the allowed methods/headers, and the browser only proceeds with the actual request if that answer permits it.
 
-<Warning title="Avoid Access-Control-Allow-Origin: *  with credentials">
-A wildcard origin is fine for a fully public, unauthenticated API. The moment requests carry cookies or an `Authorization` header meant to be trusted, echo back a specific, validated origin instead of `*` — browsers refuse to combine a wildcard origin with `Access-Control-Allow-Credentials: true` for exactly this reason, and even where they didn't, a wildcard plus credentials would let any site on the internet act on a logged-in user's behalf.
-</Warning>
+<Warning title="Avoid Access-Control-Allow-Origin: *  with credentials">A wildcard origin is fine for a fully public, unauthenticated API. The moment requests carry cookies or an `Authorization` header meant to be trusted, echo back a specific, validated origin instead of `*` — browsers refuse to combine a wildcard origin with `Access-Control-Allow-Credentials: true` for exactly this reason, and even where they didn't, a wildcard plus credentials would let any site on the internet act on a logged-in user's behalf.</Warning>
 
 For production use, reaching for `github.com/rs/cors` is usually simpler and safer than hand-rolling every edge case:
 

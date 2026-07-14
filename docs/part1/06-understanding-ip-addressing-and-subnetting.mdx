@@ -5,19 +5,19 @@ title: "Understanding IP Addressing and Subnetting"
 
 # Understanding IP Addressing and Subnetting
 
-> "Imagine every house in the world had a unique address, and neighborhoods were carefully planned so mail could always find its way. That’s how IP addressing and subnetting work in the digital city!"
+> "Imagine every house in the world had a unique address, and neighborhoods were carefully planned so mail could always find its way. That's how IP addressing and subnetting work in the digital city!"
 
 ---
 
 ## What is an IP Address?
 
-An IP address is like a home address for your device on a network. It tells data where to go and how to get back. Without it, your device would be lost in the digital wilderness!
+An IP address is like a home address for your device on a network. It tells data where to go and how to get back. Without it, your device would be lost in the digital wilderness—every packet needs both a source and destination address, the same way every piece of mail needs both a return address and a delivery address.
 
-- **Analogy:** Think of sending a postcard. If you don’t write the recipient’s address, it’ll never arrive. The same goes for data on a network.
+- **Analogy:** Think of sending a postcard. If you don't write the recipient's address, it'll never arrive. The same goes for data on a network.
 
 ### **IPv4 vs. IPv6**
-- **IPv4:** The classic—four numbers (0–255) separated by dots (e.g., 192.168.1.1). Like old phone numbers—simple, but running out!
-- **IPv6:** The upgrade—eight groups of hexadecimal numbers (e.g., 2001:0db8:85a3:0000:0000:8a2e:0370:7334). More addresses than grains of sand on Earth!
+- **IPv4:** The classic—32 bits, written as four decimal numbers (0-255) separated by dots (e.g., `192.168.1.1`). Simple, but with only about 4.3 billion possible addresses, it ran out of easily-allocated space years ago—a genuine crisis that shaped how the internet is built today.
+- **IPv6:** The upgrade—128 bits, written as eight groups of hexadecimal digits (e.g., `2001:0db8:85a3:0000:0000:8a2e:0370:7334`). The address space is so large (roughly 340 undecillion addresses) that it's effectively impossible to exhaust with any foreseeable number of devices.
 
 - **Diagram:**
 
@@ -26,58 +26,77 @@ IPv4: 192.168.1.1
 IPv6: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
 ```
 
-- **Fun Fact:** There are more possible IPv6 addresses than atoms in the observable universe!
+<DeepDive title="How the world coped with running out of IPv4 addresses">Rather than switching everyone to IPv6 overnight (which would have required replacing essentially all networking hardware at once), the industry leaned hard on **NAT (Network Address Translation)**. NAT lets an entire private network—your whole house, or an entire company—share a single public IPv4 address, with the router quietly rewriting each outgoing packet's address and remembering how to route the replies back to the right internal device. This is why your laptop, phone, and smart TV can all reach the internet using only one public IP address handed out by your ISP. It's a clever patch, but it also means two devices behind two different routers can both legitimately be `192.168.1.10` without ever conflicting—their addresses are only meaningful within their own private network.</DeepDive>
+
+- **Fun Fact:** There are more possible IPv6 addresses than there are grains of sand on every beach on Earth, many times over.
 
 ---
 
 ## How IP Addresses Work
 
 - **Public vs. Private:**
-  - **Public:** Like your street address—unique on the whole internet.
-  - **Private:** Like your apartment number—unique only within your building (local network).
+  - **Public:** Like your street address—unique across the whole internet, assigned by your ISP or a cloud provider, directly reachable from anywhere.
+  - **Private:** Like your apartment number—unique only within your building (local network). The ranges `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16` are permanently reserved for private use and are never handed out as public addresses, precisely so private networks everywhere can reuse them freely without collisions.
 - **Static vs. Dynamic:**
-  - **Static:** Never changes (like a permanent address).
-  - **Dynamic:** Assigned as needed (like a hotel room number).
+  - **Static:** Never changes (like a permanent address)—typical for servers that need a stable, predictable address.
+  - **Dynamic:** Assigned as needed, usually by DHCP (like a hotel room number)—typical for laptops and phones that come and go from a network.
+
+<Warning title="A common misconception">Seeing `192.168.1.10` on your own laptop does not mean the whole world can reach you at that address. Private addresses are not routable on the public internet at all—routers on the internet backbone are configured to simply drop packets addressed to them. Only your own local network, and devices behind the same router, can use that address to reach you directly.</Warning>
 
 ---
 
 ## What is Subnetting?
 
-Subnetting is like dividing a city into neighborhoods. It helps organize, secure, and efficiently use addresses.
+Subnetting is like dividing a city into neighborhoods. It helps organize, secure, and efficiently use addresses by splitting one large block of addresses into smaller, purpose-built pieces—one subnet for the engineering department, another for guest Wi-Fi, another for security cameras, each isolated from the others even though they all come from the same original address block.
 
-- **Analogy:** Imagine a city planner dividing a city into districts so mail carriers don’t get lost and traffic flows smoothly.
+- **Analogy:** Imagine a city planner dividing a city into districts so mail carriers don't get lost and traffic flows smoothly.
 
 ### **Why Subnet?**
-- Reduces network congestion.
-- Improves security and management.
-- Makes large networks scalable.
+- Reduces network congestion, since broadcast traffic (messages meant for every device on a segment) stays contained within its own subnet instead of flooding the entire organization.
+- Improves security and management—a compromised guest-Wi-Fi device on its own subnet can be blocked from ever reaching the finance department's subnet.
+- Makes large networks scalable and easier to reason about, since each subnet is a manageable, self-contained chunk.
 
 ---
 
 ## How Subnetting Works
 
-- **Subnet Mask:** Tells which part of the address is the "neighborhood" (network) and which is the "house number" (host).
-- **CIDR Notation:** A shorthand for subnet masks (e.g., 192.168.1.0/24).
+- **Subnet Mask:** Tells which part of the address is the "neighborhood" (network) and which is the "house number" (host). It's a second 32-bit number where a `1` bit means "this bit is part of the network portion" and a `0` bit means "this bit identifies the specific host."
+- **CIDR Notation:** A shorthand for subnet masks (e.g., `192.168.1.0/24`)—the number after the slash is simply how many leading bits of the mask are `1`s. A `/24` means the first 24 bits (three full octets) identify the network, leaving the last 8 bits (256 possible values, minus network and broadcast) for individual hosts.
 
 - **Diagram:**
 
 ```
 IP Address:   192.168.1.10
-Subnet Mask:  255.255.255.0
+Subnet Mask:  255.255.255.0   (i.e. /24: 24 network bits, 8 host bits)
 Network:      192.168.1.0
-Host:         10
+Broadcast:    192.168.1.255
+Usable hosts: 192.168.1.1 - 192.168.1.254
 CIDR:         192.168.1.0/24
 ```
 
-- **Fun Fact:** Subnetting can create thousands of mini-networks from a single address block!
+The **network address** (all host bits set to 0) identifies the subnet itself and is never assigned to a device. The **broadcast address** (all host bits set to 1) is a special address that means "every host on this subnet"—also never assigned to an individual device. That's why a `/24` subnet, which has 256 total addresses, only offers 254 *usable* addresses for actual devices.
+
+<DeepDive title="Reading CIDR prefixes quickly">A smaller number after the slash means a bigger network, and a bigger number means a smaller network—which trips up almost everyone the first time. A `/8` reserves only 8 bits for the network, leaving 24 bits (over 16 million addresses) for hosts—that's the size of an entire large ISP's allocation. A `/30` reserves 30 bits for the network, leaving only 2 host bits (4 addresses, 2 usable)—just enough for a point-to-point link between exactly two routers. Once this clicks, CIDR notation becomes a fast way to size up any network you encounter: `/24` is "a typical office or home LAN," `/30` is "a wire between two routers and nothing else."</DeepDive>
+
+- **Fun Fact:** Subnetting can carve thousands of small, isolated networks out of a single address block, each with its own broadcast domain.
 
 ---
 
 ## Real-World Example: Home Wi-Fi
 
-1. Your router gets a public IP from your ISP (like your building’s street address).
-2. It assigns private IPs to your devices (like apartment numbers).
-3. Subnetting keeps your home network organized and secure.
+1. Your router gets a public IP from your ISP (like your building's street address).
+2. It assigns private IPs to your devices (like apartment numbers), almost always from the `192.168.0.0/16` or `192.168.1.0/24` range by factory default.
+3. Subnetting (even at this simple, single-subnet scale) keeps your home network organized and lets the router know exactly which packets belong on the LAN side versus which need to go out to the internet.
+
+## Comparing Common CIDR Blocks
+
+| CIDR | Subnet Mask | Total Addresses | Usable Hosts | Typical Use |
+|---|---|---|---|---|
+| /30 | 255.255.255.252 | 4 | 2 | Point-to-point router link |
+| /29 | 255.255.255.248 | 8 | 6 | Tiny office segment |
+| /24 | 255.255.255.0 | 256 | 254 | Home or small office LAN |
+| /16 | 255.255.0.0 | 65,536 | 65,534 | Large corporate network |
+| /8 | 255.0.0.0 | 16,777,216 | 16,777,214 | ISP-scale allocation |
 
 ---
 
@@ -95,11 +114,54 @@ CIDR:         192.168.1.0/24
 
 ---
 
-## Fun Facts & Memes
-- The first IP address ever assigned was 0.0.0.0 (reserved for special use).
-- If you tried to ping every IPv6 address, it would take longer than the age of the universe!
-- Subnetting is like slicing a pizza—everyone gets a piece, and no one goes hungry (for addresses)!
+## Fun Facts & Notes
+- The address `0.0.0.0` is reserved for special use (commonly meaning "any address" or "unspecified"), not assigned to any real device.
+- If you tried to individually address every IPv6 address, it would take longer than the age of the universe at any conceivable scanning rate.
+- Subnetting is like slicing a pizza precisely along power-of-two lines—every slice is exactly half, a quarter, or an eighth of the whole, never an arbitrary size.
 
----
+### Try It Yourself in Go
 
-[Previous: The OSI and TCP/IP Models](05-osi-and-tcpip-models.md) | [Next: Ports, Sockets, and Endpoints](07-ports-sockets-and-endpoints.md)
+Go's standard library has first-class support for exactly this kind of arithmetic, so you never have to hand-compute network and broadcast addresses with a calculator. The program below parses a CIDR block, works out its network address, and checks whether a handful of candidate IPs actually fall inside it.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func main() {
+	cidr := "192.168.1.0/24"
+	_, subnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		fmt.Println("Invalid CIDR:", err)
+		return
+	}
+
+	fmt.Println("Subnet:        ", subnet)
+	fmt.Println("Network address:", subnet.IP)
+
+	ones, bits := subnet.Mask.Size()
+	fmt.Printf("Mask: %d network bits, %d host bits, %d total usable hosts\n",
+		ones, bits-ones, (1<<(bits-ones))-2)
+
+	// Compute the broadcast address by OR-ing every host bit to 1.
+	broadcast := make(net.IP, len(subnet.IP))
+	for i := range subnet.IP {
+		broadcast[i] = subnet.IP[i] | ^subnet.Mask[i]
+	}
+	fmt.Println("Broadcast address:", broadcast)
+
+	candidates := []string{
+		"192.168.1.1", "192.168.1.254", "192.168.2.1", "10.0.0.5",
+	}
+	for _, c := range candidates {
+		ip := net.ParseIP(c)
+		inside := subnet.Contains(ip)
+		fmt.Printf("Is %-15s inside %s? %v\n", c, cidr, inside)
+	}
+}
+```
+
+Running `go run main.go` prints the network address (`192.168.1.0`), the mask breakdown (24 network bits, 8 host bits, 254 usable hosts), the computed broadcast address (`192.168.1.255`), and then a clear true/false verdict for each candidate address—`192.168.1.1` and `192.168.1.254` land inside the subnet, while `192.168.2.1` and `10.0.0.5` do not. This is precisely the check a router performs on every packet: "does this destination belong on my local subnet, or does it need to be forwarded elsewhere?" `subnet.Contains` does in one call exactly what the earlier CIDR diagram does by hand.

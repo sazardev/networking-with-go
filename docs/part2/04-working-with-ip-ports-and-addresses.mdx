@@ -1,5 +1,5 @@
 ---
-id: "[2.4.0]"
+id: "[3.4.0]"
 title: "Working with IP, Ports, and Addresses: Concepts and Go Implementation"
 ---
 
@@ -14,6 +14,10 @@ title: "Working with IP, Ports, and Addresses: Concepts and Go Implementation"
 - **IP Address:** Like a street address for your device on a network. IPv4 (e.g., 192.168.1.1) and IPv6 (e.g., 2001:db8::1).
 - **Port:** Like an apartment number—identifies a specific service on a device (e.g., port 80 for web servers).
 - **Socket:** The combo of IP + port (e.g., 192.168.1.1:80)—the full address for network communication.
+
+<Axiom>A socket is not a place — it's a promise: this exact IP and port pair, on this exact protocol, right now.</Axiom>
+
+<DeepDive title="net.Addr is an interface, not a struct">Go doesn't have one universal "address" type. `net.Addr` is a small interface (`Network() string`, `String() string`) implemented by several concrete types: `net.IPAddr` (a bare IP, no port — used by raw ICMP sockets), `net.TCPAddr` (IP + port + optional zone, used by TCP), and `net.UDPAddr` (same shape as `TCPAddr`, used by UDP). Functions like `net.ResolveTCPAddr` and `Conn.RemoteAddr()` return one of these concrete types wrapped in `net.Addr`, so you often need a type assertion (`addr.(*net.TCPAddr)`) to reach fields like `.Port` directly.</DeepDive>
 
 ---
 
@@ -30,6 +34,21 @@ title: "Working with IP, Ports, and Addresses: Concepts and Go Implementation"
 **How Go Handles IPs:**
 Go abstracts away the complexity of IP addresses. When you use `net.LookupIP`, Go asks your operating system to resolve the hostname, which in turn queries DNS servers. Go then parses the response and gives you a list of IPs—no need to worry about the protocol details!
 
+**Under the hood: net.IP is just a byte slice.**
+`net.IP` is defined as `type IP []byte` — nothing more. Go usually
+normalizes a parsed IPv4 address into a 16-byte **IPv4-mapped IPv6**
+form, `::ffff:a.b.c.d`. `ip.To4()` and `ip.To16()` don't convert between
+address families — they return a differently-shaped view of the same
+bytes (or `nil` if that shape isn't possible), which is why
+`ip.To4() != nil` is the idiomatic way to ask "is this usable as an IPv4
+address?"
+
+<Warning title="Never compare net.IP values with ==">Because `net.IP` is a byte slice, two values representing the same address can still fail `==` if one was parsed as 4 bytes and the other as a 16-byte IPv4-mapped form. Use `ip1.Equal(ip2)` instead, which compares the represented address, not the slice's raw bytes.</Warning>
+
+<DeepDive title="What net.LookupIP actually does">Go ships two resolvers: a pure-Go DNS client, and a path that calls the operating system's resolver (via cgo, where available). By default, Go prefers the OS resolver so `/etc/hosts`, `/etc/nsswitch.conf`, and any local split-DNS setup behave as they would for any other program. Force the pure-Go resolver with `GODEBUG=netdns=go` — handy when cross-compiling a static binary that must not depend on libc.</DeepDive>
+
+<Warning title="A hostname can resolve to more than one IP for a reason">`net.LookupIP` frequently returns several addresses — for load balancing, IPv4/IPv6 dual-stack fallback, or a CDN behind the name. Code that blindly uses `ips[0]` and gives up will fail for users whose network can't reach that particular address family. `net.Dial` already implements a "Happy Eyeballs" style fallback across lookup results internally.</Warning>
+
 ---
 
 ## Ports and Services
@@ -43,6 +62,18 @@ Go abstracts away the complexity of IP addresses. When you use `net.LookupIP`, G
 **How Go Handles Ports:**
 When you open a connection in Go (e.g., `net.Dial("tcp", "example.com:80")`), Go creates a socket, negotiates with the OS, and binds to a random local port if you don't specify one. It handles all the low-level details, so you can focus on your app logic.
 
+**The full picture:** a port number is a 16-bit unsigned integer, ranging
+from 0 to 65535 — never 65536. IANA splits that range into three bands:
+**well-known** 0-1023 (traditionally require root/admin to bind on
+Unix-like systems), **registered** 1024-49151 (assigned to specific
+applications but bindable by any user), and **dynamic/ephemeral**
+49152-65535 (what the OS picks from when your program doesn't specify a
+source port, as on the client side of `net.Dial`).
+
+<Warning title="Off-by-one on the port range">A common bug is looping `for port := 1; port <= 65536; port++` — 65536 overflows a `uint16` and is not a valid port; the inclusive range is 0 to 65535. Port 0 is special: passing it to `net.Listen` means "pick any free port," which is genuinely useful in tests that need an unused port.</Warning>
+
+<DeepDive title="Binding a privileged port without running as root">On Linux, grant the binary the `CAP_NET_BIND_SERVICE` capability (`sudo setcap 'cap_net_bind_service=+ep' ./myserver`) instead of running the whole process as root. In practice, though, most production Go servers just listen on an unprivileged port (e.g. 8080) and let a reverse proxy or load balancer own port 80/443.</DeepDive>
+
 ---
 
 ## Go in Action: Lookup IPs
@@ -51,23 +82,36 @@ Let’s see how to resolve a hostname to its IP addresses in Go:
 
 ```go
 package main
+
 import (
-    "fmt"
-    "net"
+	"fmt"
+	"net"
 )
+
 func main() {
-    host := "google.com"
-    ips, err := net.LookupIP(host)
-    if err != nil {
-        fmt.Println("Error:", err)
-        return
-    }
-    fmt.Println("IP addresses for", host, ":")
-    for _, ip := range ips {
-        fmt.Println(" -", ip)
-    }
+	host := "google.com"
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println("IP addresses for", host, ":")
+	for _, ip := range ips {
+		family := "IPv6"
+		if ip.To4() != nil {
+			family = "IPv4"
+		}
+		fmt.Printf(" - %s (%s)\n", ip, family)
+	}
 }
 ```
+
+The loop reuses the `To4()`/`nil` check above to label each resolved
+address as IPv4 or IPv6 — a real Go program almost always needs to know
+which family it got back, since some environments (an IPv6-only
+container network, say) can only dial one of the two.
+
+<Warning title="net.LookupHost vs net.LookupIP">`net.LookupHost` returns `[]string` (already formatted), while `net.LookupIP` returns `[]net.IP` (structured values you can inspect with `.To4()` and similar methods). Reach for `LookupIP` whenever you need to reason about the address itself, `LookupHost` to just print it.</Warning>
 
 [Ejercicio: Lookup IP](../../exercises/part2/04-lookup-ip/main.go)
 
@@ -77,21 +121,34 @@ func main() {
 
 ```go
 package main
+
 import (
-    "fmt"
-    "net"
+	"fmt"
+	"net"
 )
+
 func main() {
-    addr := "192.168.1.10:8080"
-    host, port, err := net.SplitHostPort(addr)
-    if err != nil {
-        fmt.Println("Error:", err)
-        return
-    }
-    fmt.Println("Host:", host)
-    fmt.Println("Port:", port)
+	addr := "192.168.1.10:8080"
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println("Host:", host)
+	fmt.Println("Port:", port)
+
+	rejoined := net.JoinHostPort(host, port)
+	fmt.Println("Rejoined:", rejoined)
+	fmt.Println("Round trip matches:", rejoined == addr)
 }
 ```
+
+`net.SplitHostPort` exists instead of a plain `strings.Split(addr, ":")`
+because a naive split breaks the instant the host contains its own
+colons — exactly what every IPv6 address does. `net.JoinHostPort` is its
+inverse; use the two as a matched pair.
+
+<Warning title="Don't build host:port strings with fmt.Sprintf or +">`fmt.Sprintf("%s:%d", host, port)` looks harmless until `host` is an IPv6 address like `2001:db8::1` — the result, `2001:db8::1:8080`, is ambiguous and unparsable, since IPv6 addresses already use colons as separators. `net.JoinHostPort` wraps an IPv6 host in brackets (`[2001:db8::1]:8080`) automatically — use it and `net.SplitHostPort` as a matched pair, and never hand-roll the colon.</Warning>
 
 [Ejercicio: Split Host and Port](../../exercises/part2/04-split-host-port/main.go)
 
@@ -101,22 +158,35 @@ func main() {
 
 ```go
 package main
+
 import (
-    "fmt"
-    "net"
+	"fmt"
+	"net"
 )
+
 func main() {
-    addrs, err := net.InterfaceAddrs()
-    if err != nil {
-        fmt.Println("Error:", err)
-        return
-    }
-    fmt.Println("Local IP addresses:")
-    for _, addr := range addrs {
-        fmt.Println(" -", addr.String())
-    }
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println("Local IP addresses:")
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok || ipNet.IP.IsLoopback() {
+			continue
+		}
+		fmt.Println(" -", addr.String())
+	}
 }
 ```
+
+`net.InterfaceAddrs` returns a `[]net.Addr`, but each element is actually
+a concrete `*net.IPNet`, so the assertion `addr.(*net.IPNet)` is how you
+reach the underlying `net.IP` and call `IsLoopback()` — used here to skip
+`127.0.0.1` and `::1` and print only addresses reachable from outside.
+
+<DeepDive title="InterfaceAddrs vs Interfaces">`net.InterfaceAddrs()` flattens every interface's addresses into one slice. When you need to know *which* interface an address belongs to (picking a NIC for multicast, or a VPN-aware program), use `net.Interfaces()` for each `net.Interface` (`Name`, MTU, hardware address), then call `iface.Addrs()` on the one you care about.</DeepDive>
 
 [Ejercicio: List Local IPs](../../exercises/part2/04-list-local-ips/main.go)
 
@@ -126,32 +196,65 @@ func main() {
 
 ```go
 package main
+
 import (
-    "fmt"
-    "net"
-    "time"
+	"fmt"
+	"net"
+	"strconv"
+	"sync"
+	"time"
 )
+
 func main() {
-    host := "scanme.nmap.org"
-    ports := []int{22, 80, 443, 8080}
-    for _, port := range ports {
-        address := fmt.Sprintf("%s:%d", host, port)
-        conn, err := net.DialTimeout("tcp", address, 2*time.Second)
-        if err != nil {
-            fmt.Printf("Port %d closed\n", port)
-            continue
-        }
-        fmt.Printf("Port %d open!\n", port)
-        conn.Close()
-    }
+	host := "scanme.nmap.org"
+	ports := []int{22, 80, 443, 8080}
+
+	var wg sync.WaitGroup
+	results := make(chan string, len(ports))
+
+	for _, port := range ports {
+		wg.Add(1)
+		go func(port int) {
+			defer wg.Done()
+			address := net.JoinHostPort(host, strconv.Itoa(port))
+			conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+			if err != nil {
+				results <- fmt.Sprintf("Port %d closed", port)
+				return
+			}
+			conn.Close()
+			results <- fmt.Sprintf("Port %d open!", port)
+		}(port)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for r := range results {
+		fmt.Println(r)
+	}
 }
 ```
+
+The original version scanned ports one at a time; this version scans
+concurrently with one goroutine per port, collecting results over a
+channel, and builds each address with `net.JoinHostPort` instead of
+`fmt.Sprintf` — the same lesson from the warning above applies here too.
+
+<Warning title="Port scanning has legal and ethical limits">`scanme.nmap.org` is provided by the Nmap project for testing scanners like this one — running the same code against a host you don't own or have permission to test can violate its terms of service, or the law. Keep experiments pointed at hosts you control or that allow scanning.</Warning>
 
 [Ejercicio: Simple Port Scanner](../../exercises/part2/04-port-scanner/main.go)
 
 ---
 
 ## Go in Action: Custom Address Parsing
+
+IPv6 addresses already contain colons, so bracketing the host before
+appending `:port` is not a style choice — it's what lets
+`net.SplitHostPort` unambiguously separate address from port. Forgetting
+the brackets is one of the most common IPv6 bugs in Go network code.
 
 ```go
 package main
@@ -175,7 +278,81 @@ func main() {
 }
 ```
 
+<Warning title="net.ParseIP returns nil, not an error, on failure">Unlike most Go parsing functions, `net.ParseIP` doesn't return an `error` — it returns `nil` if the string isn't a valid IP address. Always check `if ip == nil`; a `nil` `net.IP` printed with `fmt.Println` prints `<nil>`, easy to miss in a log line.</Warning>
+
 [Ejercicio: IPv6 Address Parsing](../../exercises/part2/04-ipv6-parse/main.go)
+
+---
+
+## Go in Action: Working with CIDR Notation
+
+Subnets are usually written in **CIDR notation** — an IP address plus a
+slash and a prefix length, like `192.168.1.0/24`, meaning the first 24
+bits identify the network and the rest identify hosts within it. Go
+parses this with `net.ParseCIDR`, which returns both the parsed IP and a
+`*net.IPNet` describing the whole subnet.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func main() {
+	cidr := "192.168.1.0/24"
+	ip, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println("Parsed IP:", ip)
+	fmt.Println("Network:", ipNet)
+
+	candidates := []string{"192.168.1.42", "10.0.0.5"}
+	for _, c := range candidates {
+		testIP := net.ParseIP(c)
+		if ipNet.Contains(testIP) {
+			fmt.Printf("%s is inside %s\n", c, cidr)
+		} else {
+			fmt.Printf("%s is NOT inside %s\n", c, cidr)
+		}
+	}
+}
+```
+
+`ipNet.Contains(ip)` answers "is this address part of that subnet?" — it
+masks the candidate IP with the subnet's mask and compares it to the
+network address, exactly what a router does when forwarding a packet.
+
+<Axiom>An IP address answers "which device?" — a CIDR block answers "which neighborhood?"</Axiom>
+
+<Warning title="A CIDR prefix length has a hard ceiling">An IPv4 prefix ranges from `/0` (the entire IPv4 space) to `/32` (a single address) — never higher; an IPv6 prefix caps at `/128`. Passing `net.ParseCIDR` something like `/33` for an IPv4 address returns an error, not a silently-truncated value, so always check it.</Warning>
+
+---
+
+## Try It Yourself: Build an Address Inspector
+
+Combine everything from this chapter into one small command-line tool
+that takes a hostname, resolves it, and reports useful facts about each
+address.
+
+**Steps:**
+1. Resolve a hostname of your choice with `net.LookupIP`.
+2. For each address, print IPv4/IPv6 via `.To4()`, loopback via
+   `.IsLoopback()`, and private via `.IsPrivate()`.
+3. Build a `host:port` string for port 443 with `net.JoinHostPort` — the
+   IPv6 ones need to come out bracketed.
+4. Define `10.0.0.0/8` as a "known internal range" and use
+   `net.ParseCIDR` plus `ipNet.Contains` to flag any address inside it —
+   a public hostname resolving there is often a misconfiguration.
+5. Wrap step 3's target in `net.DialTimeout` and report which addresses
+   actually answer on port 443 versus which merely resolved.
+
+This exercise chains `net.LookupIP`, `net.IP` methods, `net.JoinHostPort`,
+`net.ParseCIDR`, and `net.DialTimeout` — the sequence a real Go network
+client follows: resolve, inspect, format, connect.
 
 ---
 
@@ -199,7 +376,3 @@ func main() {
 - Go’s networking is so fast, you can scan thousands of ports in seconds!
 - Go’s `net` package is cross-platform: your code works on Windows, Linux, and Mac without changes.
 - Go handles all the low-level socket magic for you—no need to mess with C or system calls!
-
----
-
-[Previous: Go Networking Packages Overview](03-go-networking-packages-overview.md) | [Next: TCP in Depth: Protocol Theory and Go Implementation](05-tcp-in-depth-protocol-theory-and-go-implementation.md)

@@ -1,5 +1,5 @@
 ---
-id: "[4.18.0]"
+id: "[5.18.0]"
 title: "SIEM and Log Analysis for Network Security"
 ---
 
@@ -23,9 +23,7 @@ Any individual security tool only sees its own slice of the environment. A firew
 
 This is also why log normalization matters so much in practice. If your firewall logs timestamps in UTC and your Windows event logs are in local time, or one source calls the field `src_ip` and another calls it `source_address`, correlation silently breaks. Most of the unglamorous engineering effort in running a SIEM goes into keeping every source mapped into the same schema.
 
-<DeepDive title="Log Sources Worth Prioritizing">
-If you can only onboard a handful of log sources first, authentication events (successful and failed logins, privilege escalation, new account creation), DNS query logs (malware and C2 channels rely heavily on DNS), firewall/flow logs (who talked to whom, how much data, how often), and endpoint process/command-line logs tend to give the highest signal-to-effort ratio. Network-layer visibility without identity context, or identity logs without network context, both leave dangerous blind spots.
-</DeepDive>
+<DeepDive title="Log Sources Worth Prioritizing">If you can only onboard a handful of log sources first, authentication events (successful and failed logins, privilege escalation, new account creation), DNS query logs (malware and C2 channels rely heavily on DNS), firewall/flow logs (who talked to whom, how much data, how often), and endpoint process/command-line logs tend to give the highest signal-to-effort ratio. Network-layer visibility without identity context, or identity logs without network context, both leave dangerous blind spots.</DeepDive>
 
 ## Correlation Rules and Use Cases
 

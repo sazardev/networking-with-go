@@ -1,0 +1,323 @@
+---
+id: "[2.7.0]"
+title: "Testing Basics with go test"
+---
+
+# Testing Basics with go test
+
+> Go treats tests the way a good workshop treats a tape measure: not a
+> separate specialized tool bolted on afterward, but something built into
+> the toolchain itself, sitting right next to the saw, ready to check every
+> cut before you trust it.
+
+Testing in Go needs no external framework to get started — `go test`, the
+`testing` package, and a naming convention are the entire foundation. This
+chapter covers writing and running tests, the table-driven pattern that
+dominates idiomatic Go test code, and a forward look at `httptest`, which
+Part 2 leans on heavily once networking code needs testing.
+
+## The _test.go Convention
+
+Go recognizes any file ending in `_test.go` as a test file, excluded from
+normal `go build` output but compiled and run by `go test`. Given a file
+`math.go`:
+
+```go
+package calc
+
+func Add(a, b int) int {
+	return a + b
+}
+```
+
+Its test lives alongside it, in `math_test.go`:
+
+```go
+package calc
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+	got := Add(2, 3)
+	want := 5
+	if got != want {
+		t.Errorf("Add(2, 3) = %d, want %d", got, want)
+	}
+}
+```
+
+Three conventions matter here, all enforced or checked by the toolchain:
+the file must end in `_test.go`, the test function must start with
+`Test` and take a single `*testing.T` parameter, and — very commonly
+missed — the function name after `Test` must start with a capital letter
+or the toolchain won't recognize it as a test at all (`Testadd` is silently
+ignored; `TestAdd` is not).
+
+Run every test in the current package with:
+
+```sh
+go test ./...
+```
+
+```
+ok  	example.com/calc	0.002s
+```
+
+<Warning title="t.Errorf keeps running the test; t.Fatalf stops it immediately">`t.Errorf` records a failure and lets the rest of the test function keep executing — useful when later assertions are independent and you want to see all of them fail at once. `t.Fatalf` records the failure and immediately stops the current test function, which matters when a later line would panic on bad data from an earlier, already-failed step (for instance, dereferencing a pointer that a failed setup step left `nil`).</Warning>
+
+## Table-Driven Tests
+
+The dominant pattern in idiomatic Go testing is the **table-driven test**:
+a slice of input/expected-output cases, run through the same test body in
+a loop. It scales far better than writing a separate `TestX_CaseY`
+function per scenario:
+
+```go
+func TestAdd(t *testing.T) {
+	cases := []struct {
+		name     string
+		a, b     int
+		expected int
+	}{
+		{"positives", 2, 3, 5},
+		{"negatives", -2, -3, -5},
+		{"zero", 0, 0, 0},
+		{"mixed signs", -5, 10, 5},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Add(tc.a, tc.b)
+			if got != tc.expected {
+				t.Errorf("Add(%d, %d) = %d, want %d",
+					tc.a, tc.b, got, tc.expected)
+			}
+		})
+	}
+}
+```
+
+`t.Run` registers each case as a named **subtest**, which gives you three
+practical benefits at once: each case's pass/fail status is reported
+individually in verbose output, a single case's failure doesn't hide the
+others, and `-run` (below) can target one specific case by name.
+
+<Axiom>A table-driven test turns "did I test enough cases?" into "did I add enough rows?" — the hard part of testing becomes enumerating scenarios, not writing boilerplate to exercise each one.</Axiom>
+
+<DeepDive title="Why the struct fields are named, not positional">The table above names every field (`name`, `a`, `b`, `expected`) rather than relying on struct literal position. As the table grows to a dozen cases and someone inserts a new field in the middle of the struct definition, named literals keep every row correct automatically, while positional literals would silently shift values into the wrong field — exactly the same reasoning from Chapter 4's advice to name struct fields in literals, just at higher stakes because test data errors are easy to overlook.</DeepDive>
+
+## Useful go test Flags
+
+```sh
+go test -v ./...          # verbose: show every test/subtest name and result
+go test -run TestAdd ./... # run only tests matching this regex
+go test -cover ./...        # report the percentage of code exercised
+```
+
+`-run` matches against the full test name, including subtest names joined
+with `/` — so `go test -run TestAdd/negatives` runs only that one row of
+the table above, which becomes invaluable once a package accumulates
+dozens of table-driven cases and you're chasing one specific failure.
+
+```sh
+go test -v -run TestAdd/negatives ./...
+```
+
+```
+=== RUN   TestAdd
+=== RUN   TestAdd/negatives
+--- PASS: TestAdd (0.00s)
+    --- PASS: TestAdd/negatives (0.00s)
+PASS
+ok  	example.com/calc	0.002s
+```
+
+<Warning title="High coverage percentage does not mean correct tests">`go test -cover` reports what fraction of *lines* executed during testing, not whether the assertions on those lines were meaningful. A test that calls a function and checks nothing about its result can reach 100% coverage on that function while verifying absolutely nothing. Treat coverage as a tool for finding *untested* code, not as proof that tested code is correct.</Warning>
+
+## Testing Error Paths
+
+Idiomatic Go tests exercise both the success path and the failure path of
+any function that returns an `error`, using the tools from Chapter 5:
+
+```go
+func Divide(a, b float64) (float64, error) {
+	if b == 0 {
+		return 0, errors.New("divide by zero")
+	}
+	return a / b, nil
+}
+
+func TestDivide(t *testing.T) {
+	if _, err := Divide(10, 0); err == nil {
+		t.Error("Divide(10, 0) succeeded, want an error")
+	}
+
+	got, err := Divide(10, 2)
+	if err != nil {
+		t.Fatalf("Divide(10, 2) returned unexpected error: %v", err)
+	}
+	if got != 5 {
+		t.Errorf("Divide(10, 2) = %v, want 5", got)
+	}
+}
+```
+
+Note the `t.Fatalf` on the second check: if `Divide(10, 2)` unexpectedly
+errored, continuing on to compare `got` against `5` would just produce a
+confusing second failure about the wrong thing (`0`, the zero value, not
+matching `5`) — stopping immediately keeps the failure message focused on
+the real problem.
+
+## A Forward Look: httptest
+
+Part 2 of this book builds real TCP and HTTP servers, and testing those
+without a real network round trip is exactly what the standard library's
+`net/http/httptest` package is for. A brief preview, since you'll meet it
+properly once networking code needs verifying:
+
+```go
+func TestHandler(t *testing.T) {
+	req := httptest.NewRequest("GET", "/hello", nil)
+	rec := httptest.NewRecorder()
+
+	helloHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := rec.Body.String(); body != "hello\n" {
+		t.Errorf("body = %q, want %q", body, "hello\n")
+	}
+}
+```
+
+`httptest.NewRequest` builds a fake, in-memory `*http.Request` with no
+real socket involved, and `httptest.NewRecorder` captures whatever an
+`http.HandlerFunc` writes as if it were a real `http.ResponseWriter` —
+letting you test an HTTP handler's exact logic at full speed, with no
+listening port, no real connection, and no flakiness from the network at
+all.
+
+## A Word on Benchmarks
+
+Alongside `TestXxx`, the `testing` package recognizes functions named
+`BenchmarkXxx(b *testing.B)`, run with `go test -bench`. A benchmark
+repeatedly calls the code under test, letting the framework decide `b.N`
+— how many iterations to run — until it has a stable timing measurement:
+
+```go
+func BenchmarkAdd(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Add(2, 3)
+	}
+}
+```
+
+```sh
+go test -bench=. -benchtime=1x ./...
+```
+
+Benchmarks are not part of the everyday workflow the way tests are — you
+reach for them specifically when comparing two implementations for
+performance, not as a routine part of every package. They're mentioned
+here mainly so the name and shape look familiar the first time you meet
+one in the standard library's own source.
+
+One more test-shaped function worth knowing: `ExampleXxx()` functions with
+a trailing `// Output:` comment are compiled, executed, and checked by
+`go test`, which compares everything printed to stdout against the text in
+the comment:
+
+```go
+func ExampleAdd() {
+	fmt.Println(Add(2, 3))
+	// Output: 5
+}
+```
+
+If `Add(2, 3)` ever printed anything other than `5`, this example would
+fail exactly like a regular test — the difference is that these examples
+also render directly in generated documentation (`go doc`, pkg.go.dev), so
+they double as living, verified usage samples rather than static prose
+that can silently drift out of date as the code changes underneath it.
+
+| Concept | Purpose |
+|---|---|
+| `_test.go` file, `TestXxx(t *testing.T)` | The unit `go test` discovers and runs |
+| `t.Errorf` | Record a failure, keep running the rest of the test |
+| `t.Fatalf` | Record a failure, stop the current test function immediately |
+| `t.Run(name, func(t *testing.T){...})` | Register a named, individually reportable subtest |
+| Table-driven test | A slice of named cases run through one shared test body |
+| `-run`, `-v`, `-cover` | Target specific tests, show detail, measure coverage |
+| `httptest.NewRequest`/`NewRecorder` | Test HTTP handlers without a real network connection |
+
+### Try It Yourself
+
+Take the `Divide` function above and turn its test into a proper
+table-driven test with an error-expectation column:
+
+```go
+func TestDivideTable(t *testing.T) {
+	cases := []struct {
+		name    string
+		a, b    float64
+		want    float64
+		wantErr bool
+	}{
+		{"even division", 10, 2, 5, false},
+		{"fractional result", 7, 2, 3.5, false},
+		{"divide by zero", 10, 0, 0, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Divide(tc.a, tc.b)
+			if tc.wantErr && err == nil {
+				t.Fatalf("Divide(%v, %v) succeeded, want error",
+					tc.a, tc.b)
+			}
+			if tc.wantErr {
+				return
+			}
+			if err != nil {
+				t.Fatalf("Divide(%v, %v) unexpected error: %v",
+					tc.a, tc.b, err)
+			}
+			if got != tc.want {
+				t.Errorf("Divide(%v, %v) = %v, want %v",
+					tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+```
+
+1. Add the table-driven test above alongside `Divide`, run
+   `go test -v ./...`, and confirm all three named subtests pass.
+2. Run `go test -run TestDivideTable/divide_by_zero -v ./...` — note that
+   `go test` replaces spaces in subtest names with underscores when
+   matching against `-run`.
+3. Deliberately break `Divide` (return `a / b` even when `b == 0`, letting
+   it produce `+Inf` instead of an error) and re-run the tests — confirm
+   the "divide by zero" subtest fails with a clear message pointing at the
+   missing error.
+4. **Bonus:** add `go test -cover ./...` to see the coverage percentage,
+   then add a case exercising a negative divisor and note whether the
+   percentage changes at all — a good illustration of coverage measuring
+   lines, not scenarios.
+
+<Axiom>A test you didn't write for the failure path isn't half a test suite — for error-returning functions, it's arguably the more important half you skipped.</Axiom>
+
+## Key Takeaways
+
+- `go test` discovers `_test.go` files and runs any exported
+  `TestXxx(t *testing.T)` function — no external framework required.
+- `t.Errorf` records a failure and continues; `t.Fatalf` records a failure
+  and stops the current test function immediately.
+- Table-driven tests (a slice of named cases run through `t.Run` in a
+  loop) are the idiomatic way to cover many scenarios without repeating
+  test-body boilerplate.
+- `-v`, `-run`, and `-cover` target, narrate, and measure test runs;
+  coverage percentage reflects lines executed, not assertion quality.
+- `net/http/httptest` tests HTTP handlers in-memory, with no real network
+  connection — the tool Part 2 relies on once servers need testing.

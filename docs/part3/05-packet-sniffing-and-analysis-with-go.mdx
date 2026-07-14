@@ -1,5 +1,5 @@
 ---
-id: "[4.5.0]"
+id: "[5.5.0]"
 title: "Packet Sniffing and Analysis with Go"
 ---
 
@@ -15,9 +15,7 @@ Every network interface sees far more traffic pass by than the frames addressed 
 
 This is invaluable for legitimate work: debugging why a TCP handshake never completes, verifying that a service really is using TLS instead of falling back to plaintext, or investigating unusual traffic during incident response (Chapter 4.9). It's also, unsurprisingly, a tool an attacker uses to harvest credentials from unencrypted traffic — which is itself the strongest argument for encrypting everything (Chapter 4.12).
 
-<Warning title="Capture only what you're authorized to capture">
-Sniffing traffic on a network segment captures everyone's packets on that segment, not just your own — on shared media or a hub, that can include other people's data. Only run packet capture on networks and interfaces you own or are explicitly authorized to monitor, and be aware that in many places, intercepting communications you're not a party to is a separate offense from unauthorized access.
-</Warning>
+<Warning title="Capture only what you're authorized to capture">Sniffing traffic on a network segment captures everyone's packets on that segment, not just your own — on shared media or a hub, that can include other people's data. Only run packet capture on networks and interfaces you own or are explicitly authorized to monitor, and be aware that in many places, intercepting communications you're not a party to is a separate offense from unauthorized access.</Warning>
 
 ---
 
@@ -131,7 +129,3 @@ handleFromFile, err := pcap.OpenOffline("capture.pcap")
 Everything downstream — the `gopacket.NewPacketSource` loop, the layer inspection — works identically whether the handle came from a live interface or a saved file, which is one of `gopacket`'s more convenient design choices.
 
 <Axiom>The packet never lies about what crossed the wire — only about what the sender intended you to believe was inside it. Sniffing shows you the former; analysis is figuring out the latter.</Axiom>
-
----
-
-[Previous: Network Scanning and Enumeration with Go](04-network-scanning-and-enumeration-with-go.md) | [Next: Vulnerability Assessment and Exploitation Basics](06-vulnerability-assessment-and-exploitation-basics.md)

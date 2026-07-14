@@ -1,5 +1,5 @@
 ---
-id: "[2.3.0]"
+id: "[3.3.0]"
 title: "Go Networking Packages Overview"
 ---
 
@@ -16,6 +16,10 @@ Go’s standard library is famous for its simplicity, power, and completeness. F
 - **Analogy:** If Python’s networking is a toolbox, Go’s is a full workshop—organized, sharp, and always open.
 - **Fun Fact:** Many cloud giants (Google, Dropbox, Docker, Kubernetes) use Go for their networking muscle.
 
+<Axiom>Go ships a production-grade networking stack in its standard library, so "downloading a framework" is the exception, not the starting point.</Axiom>
+
+<DeepDive title="Why Go's networking code looks so simple">Most of Go's networking primitives are built around **blocking I/O calls** running inside cheap goroutines, not callbacks or an event loop. When you call `conn.Read()` or `http.Get()`, the calling goroutine blocks, but the Go runtime scheduler parks it and keeps the underlying OS thread free to run other goroutines. This is why a Go TCP server can handle tens of thousands of simultaneous connections with a "one goroutine per connection" style that would be far too expensive as one OS thread per connection in C or Java. You get the readability of synchronous code with the throughput of an asynchronous event loop.</DeepDive>
+
 ---
 
 ## Core Networking Packages in Go
@@ -30,6 +34,17 @@ import "net"
 - **Example:** Creating a TCP server or client, resolving DNS, working with IP addresses.
 - [Exercise: TCP Server](../../exercises/part2/03-tcp-server/main.go)
 
+The `net` package is deliberately low-level: it exposes `Dial`, `Listen`,
+and `Conn` almost one-to-one with the underlying BSD socket calls, just
+with Go's error handling and garbage collection instead of manual
+file-descriptor bookkeeping. Every higher-level package in this chapter —
+`net/http`, `net/smtp`, `net/rpc` — is built **on top of** `net`, not
+instead of it. That is why learning `net` first pays off: once you
+understand `net.Conn`, you already understand what an `http.Client` or a
+`smtp.Client` is doing underneath.
+
+<Warning title="net.Dial has no timeout by default">`net.Dial("tcp", addr)` blocks forever if the remote host exists but never responds (a firewall silently dropping packets, for example). Prefer `net.DialTimeout` for anything user-facing, or build a `net.Dialer{Timeout: ...}` and call its `DialContext` method so the call also respects a `context.Context` deadline.</Warning>
+
 ---
 
 ### 2. `net/http`
@@ -42,6 +57,17 @@ import "net/http"
 - **Example:** Serving web pages, building RESTful APIs, making HTTP requests.
 - [Exercise: HTTP Server](../../exercises/part2/03-http-server/main.go)
 
+`net/http` gives you a production-ready HTTP/1.1 and HTTP/2 client and
+server in a handful of function calls, but that convenience hides real
+machinery underneath: `http.ListenAndServe` spins up a `net.Listener`
+internally (so it's still just `net`, wrapped), and `http.Client` reuses a
+pool of connections (a `Transport`) so repeated requests to the same host
+don't pay the TCP and TLS handshake cost every single time.
+
+<Warning title="Always close the response body">Every `*http.Response` returned by a successful `http.Client` call carries an open `io.ReadCloser` in `resp.Body`. Forgetting `defer resp.Body.Close()` means the underlying TCP connection can never be returned to the client's connection pool, and a long-running program will slowly leak sockets until it hits the OS file-descriptor limit.</Warning>
+
+<DeepDive title="Why http.Client reuses connections">Opening a TCP connection means a full three-way handshake, and an HTTPS connection adds a TLS handshake on top of that — both are expensive compared to just sending a request. `http.Transport` keeps idle connections open in a pool keyed by host, so the next request to the same host can skip straight to sending bytes. This is why reusing a single `http.Client` (instead of constructing a new one per request) is one of the most common performance tips in Go HTTP code.</DeepDive>
+
 ---
 
 ### 3. `net/url`
@@ -53,6 +79,12 @@ import "net/url"
 
 - **Example:** Parsing query parameters, building URLs for API calls.
 - [Exercise: URL Parsing](../../exercises/part2/03-url-parsing/main.go)
+
+`net/url` exists because URLs have surprisingly strict rules about which
+characters need percent-encoding, and getting query strings right by hand
+is easy to get wrong the moment a value contains an `&`, a space, or a `#`.
+
+<Warning title="Don't build URLs with fmt.Sprintf">Concatenating query parameters with `fmt.Sprintf("%s?q=%s", base, input)` silently breaks the moment `input` contains a character like `&`, `=`, or `%`. Build a `url.URL` (or start from `url.Parse`), set values through its `Query()`/`url.Values`, and call `.String()` — the package handles escaping for you.</Warning>
 
 ---
 
@@ -67,6 +99,15 @@ import "net/mail"
 - **Example:** Sending automated emails, reading email headers.
 - [Exercise: Send Email](../../exercises/part2/03-send-email/main.go)
 
+`net/smtp` speaks raw SMTP: it opens a connection and runs the
+`EHLO`/`AUTH`/`MAIL FROM`/`RCPT TO`/`DATA` sequence, exposing a `Client`
+that controls each step. `net/mail` only **parses** the RFC 5322 headers
+and address lists of a message you already have — the two packages solve
+different halves of "working with email" and are frequently used
+together.
+
+<Warning title="net/smtp is intentionally minimal">`net/smtp` has no built-in retry logic or connection pooling, and its `PlainAuth` helper assumes the connection is already encrypted (usually via `STARTTLS`). For anything beyond a simple notification email, most Go programs reach for a maintained third-party mail client library rather than driving `net/smtp` directly against a real-world provider.</Warning>
+
 ---
 
 ### 5. `net/rpc`
@@ -78,6 +119,12 @@ import "net/rpc"
 
 - **Example:** Building distributed systems, microservices.
 - [Exercise: RPC Example](../../exercises/part2/03-rpc-example/main.go)
+
+`net/rpc` lets one Go program call exported methods on another Go program
+as though they were local function calls, hiding the socket, the request
+framing, and the encoding behind a single `Client.Call`.
+
+<Warning title="net/rpc defaults to a Go-only encoding">By default `net/rpc` encodes requests and responses with `encoding/gob`, a format only Go programs can read. If a non-Go client needs to talk to your RPC service, swap in the `net/rpc/jsonrpc` codec, or reach for gRPC (`grpc/grpc-go`), which speaks Protocol Buffers over HTTP/2 and has first-class support in many languages.</Warning>
 
 ---
 
@@ -91,6 +138,59 @@ import "crypto/tls"
 - **Example:** HTTPS servers, encrypted TCP connections.
 - [Exercise: TLS Server](../../exercises/part2/03-tls-server/main.go)
 
+`crypto/tls` wraps an existing `net.Conn` and layers the TLS handshake,
+certificate verification, and symmetric encryption on top of it, which is
+why you'll often see it used as `tls.Client(conn, config)` or
+`tls.Listen("tcp", addr, config)` — TLS is a layer over TCP, not a
+replacement for it.
+
+<DeepDive title="What actually happens during a TLS handshake">When `tls.Dial` connects, the client and server exchange a `ClientHello` and a `ServerHello` to agree on a TLS version and cipher suite, the server presents its certificate chain, the client verifies it against trusted root CAs, and both sides derive a shared symmetric key through a key exchange (commonly ECDHE) so that no private key ever crosses the wire. Only after this handshake completes does any application data flow — this is why the first request over a fresh HTTPS connection is always slower than the ones that follow.</DeepDive>
+
+<Warning title="Never ship InsecureSkipVerify: true">Setting `tls.Config{InsecureSkipVerify: true}` disables certificate verification entirely, so your program will happily connect to an attacker performing a man-in-the-middle attack. It's occasionally useful for local testing against a self-signed certificate, but it should never reach a production build — add the test certificate to a custom `RootCAs` pool instead.</Warning>
+
+---
+
+### 7. `bufio`
+Buffered, line-oriented reading and writing on top of any `io.Reader` or
+`io.Writer` — including a raw `net.Conn`.
+
+```go
+import "bufio"
+```
+
+- **Example:** Reading newline-delimited messages from a TCP connection
+  one line at a time instead of juggling raw byte slices.
+- [Exercise: TCP Server](../../exercises/part2/03-tcp-server/main.go)
+
+A raw `net.Conn.Read` call returns whatever bytes happened to arrive at
+that instant — it might be half a message, or three messages stuck
+together. Wrapping the connection in a `bufio.Scanner` or `bufio.Reader`
+lets you ask for "the next line" or "the next delimited message" and have
+Go handle the buffering and reassembly for you.
+
+<Warning title="bufio.Scanner has a default 64KB line-size limit">`bufio.NewScanner(conn)` uses a fixed-size internal buffer and returns a `bufio.ErrTooLong` error (and simply stops scanning) if a single line exceeds about 64KB. If your protocol allows longer lines or unbounded messages, call `scanner.Buffer` with a larger maximum size, or switch to `bufio.NewReader(conn).ReadString('\n')`, which grows its buffer as needed.</Warning>
+
+### 8. `encoding/json`
+Turn Go structs into JSON bytes on the wire, and JSON bytes back into Go
+structs — the backbone of nearly every REST API written in Go.
+
+```go
+import "encoding/json"
+```
+
+- **Example:** Encoding an HTTP handler's response, or decoding a JSON
+  request body straight from `net/http`'s `r.Body`.
+- [Exercise: HTTP Server](../../exercises/part2/03-http-server/main.go)
+
+`encoding/json` uses reflection to walk a struct's fields and their
+`json:"..."` tags, so `net/http` and `encoding/json` are almost always
+used together: `json.NewEncoder(w).Encode(v)` writes straight to an
+`http.ResponseWriter`, and `json.NewDecoder(r.Body).Decode(&v)` reads
+straight from an incoming request without ever materializing the whole
+body as a `[]byte` in memory.
+
+<DeepDive title="Streaming encode/decode vs json.Marshal">`json.Marshal`/`json.Unmarshal` work against an in-memory `[]byte`, which is simplest for small payloads. `json.NewEncoder(w)`/`json.NewDecoder(r)` instead write to or read from any `io.Writer`/`io.Reader` as a stream, avoiding buffering the entire request or response in memory — a real difference once payloads reach megabytes, or when encoding a long stream of newline-delimited JSON objects one at a time.</DeepDive>
+
 ---
 
 ## Popular Third-Party Networking Packages
@@ -102,27 +202,111 @@ import "crypto/tls"
 
 > "Go’s ecosystem is huge—if you can dream it, there’s probably a package for it!"
 
+Almost every third-party networking library in this list is a thin layer
+over the same standard-library interfaces: `gin-gonic/gin` still runs on
+top of `net/http.Handler`, and `grpc-go` still opens its connections
+through `net.Dial` underneath. Learning the standard library first means
+third-party frameworks read as "the same primitives, with more sugar,"
+rather than a completely new mental model.
+
+<Axiom>In Go, third-party networking frameworks rarely replace the standard library — they wrap it.</Axiom>
+
 ---
 
 ## Real-World Example: Simple HTTP Server
 
 ```go
 package main
+
 import (
-    "fmt"
-    "net/http"
+	"encoding/json"
+	"fmt"
+	"net/http"
 )
+
 func handler(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "Hello from Go HTTP server!")
+	fmt.Fprintf(w, "Hello from Go HTTP server!")
 }
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	status := map[string]string{"status": "ok"}
+	json.NewEncoder(w).Encode(status)
+}
+
 func main() {
-    http.HandleFunc("/", handler)
-    fmt.Println("Server running at http://localhost:8080/")
-    http.ListenAndServe(":8080", nil)
+	http.HandleFunc("/", handler)
+	http.HandleFunc("/health", healthHandler)
+	fmt.Println("Server running at http://localhost:8080/")
+	http.ListenAndServe(":8080", nil)
 }
 ```
 
+The original `handler` still serves the plain-text greeting at `/`. The
+new `healthHandler` shows how `net/http` and `encoding/json` combine in
+practice: it sets the `Content-Type` header so clients know to expect
+JSON, then streams the response straight through `json.NewEncoder`
+instead of building a `[]byte` first.
+
 [Exercise: Simple HTTP Server](../../exercises/part2/03-http-server/main.go)
+
+---
+
+## Try It Yourself: A Buffered Echo Server
+
+Combine `net` and `bufio` to build a tiny TCP server that reads one line
+at a time and echoes it back in upper case. This exercise is a good way to
+see why `bufio` sits directly on top of `net.Conn` rather than replacing
+it.
+
+```go
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"net"
+	"strings"
+)
+
+func handleConn(conn net.Conn) {
+	defer conn.Close()
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fmt.Fprintln(conn, strings.ToUpper(line))
+	}
+}
+
+func main() {
+	ln, err := net.Listen("tcp", ":9000")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer ln.Close()
+	fmt.Println("Echo server listening on :9000")
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Println("Accept error:", err)
+			continue
+		}
+		go handleConn(conn)
+	}
+}
+```
+
+**Try it:**
+1. Run the server, then connect with `nc localhost 9000` (or
+   `telnet localhost 9000`) from another terminal.
+2. Type a line and press enter — the server echoes it back uppercased.
+3. Open a second connection at the same time and confirm both are served
+   independently; that's the "one goroutine per connection" model from the
+   DeepDive above, in action.
+4. Modify `handleConn` to also print each received line to the server's
+   own stdout, so you can watch multiple clients being served
+   concurrently from a single process.
 
 ---
 
@@ -134,6 +318,10 @@ func main() {
  [TCP]      [Web]         [Security]
    |           |              |
 [Your App] [API/Server] [HTTPS]
+   |
+ [bufio] --- line framing
+   |
+ [encoding/json] --- structured payloads
 ```
 
 ---
@@ -144,7 +332,3 @@ func main() {
 - Go’s networking code is so readable, it’s used as a teaching tool in universities.
 - The `net` package is so robust, you can build a chat app, a proxy, or even your own protocol from scratch!
 - Go’s networking stack is cross-platform—write once, run anywhere.
-
----
-
-[Previous: Go Language Basics for Networking](02-go-language-basics-for-networking.md) | [Next: Working with IP, Ports, and Addresses](04-working-with-ip-ports-and-addresses.md)

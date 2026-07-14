@@ -1,5 +1,5 @@
 ---
-id: "[3.55.0]"
+id: "[4.55.0]"
 title: "Blockchain and Cryptocurrency Networking"
 ---
 
@@ -204,9 +204,7 @@ func (n *Node) broadcast(b *Block, except net.Conn) {
 
 With this in place, mining a new block and calling `node.broadcast(newBlock, nil)` propagates it outward: each peer that accepts the block re-broadcasts to its own peers, and within a few hops the whole network converges on the same chain—the same gossip pattern real cryptocurrency networks use, just without the additional machinery (peer scoring, orphan block handling, chain-reorg logic) production systems need.
 
-<Warning title="This is a teaching model, not a wallet">
-Real cryptocurrency networks add substantial machinery this example skips entirely: transaction signing and verification with public-key cryptography, a mempool for pending transactions, incentives (block rewards) for miners, protection against Sybil and eclipse attacks, and handling competing chains (forks) by adopting the longest valid one. Never use a from-scratch toy like this to hold real value.
-</Warning>
+<Warning title="This is a teaching model, not a wallet">Real cryptocurrency networks add substantial machinery this example skips entirely: transaction signing and verification with public-key cryptography, a mempool for pending transactions, incentives (block rewards) for miners, protection against Sybil and eclipse attacks, and handling competing chains (forks) by adopting the longest valid one. Never use a from-scratch toy like this to hold real value.</Warning>
 
 ## Where Go Fits in Real Blockchain Infrastructure
 

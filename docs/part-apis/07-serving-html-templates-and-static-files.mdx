@@ -1,5 +1,5 @@
 ---
-id: "[5.7.0]"
+id: "[6.7.0]"
 title: "Serving HTML, Templates, and Static Files"
 ---
 
@@ -65,9 +65,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 
 `{{.Name}}` accesses a field, `{{if}}`/`{{range}}` handle conditionals and loops, and every value is HTML-escaped automatically — if `Name` contained `<script>`, it would render as harmless escaped text, not executable markup.
 
-<Warning title="html/template escaping is context-aware, not a substitute for validation">
-Auto-escaping protects against injecting HTML/JS through template output, but it doesn't validate or sanitize the data itself. Never rely on template escaping alone to make untrusted input "safe" for storage, logging, or use outside the template — validate and sanitize at the point of input too.
-</Warning>
+<Warning title="html/template escaping is context-aware, not a substitute for validation">Auto-escaping protects against injecting HTML/JS through template output, but it doesn't validate or sanitize the data itself. Never rely on template escaping alone to make untrusted input "safe" for storage, logging, or use outside the template — validate and sanitize at the point of input too.</Warning>
 
 ---
 
@@ -229,7 +227,8 @@ Browsers and CDNs cache aggressively based on response headers, and static asset
 ```go
 func cachedStatic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		cacheControl := "public, max-age=31536000, immutable"
+		w.Header().Set("Cache-Control", cacheControl)
 		next.ServeHTTP(w, r)
 	})
 }

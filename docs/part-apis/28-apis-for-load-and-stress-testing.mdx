@@ -1,5 +1,5 @@
 ---
-id: "[5.28.0]"
+id: "[6.28.0]"
 title: "APIs for Load and Stress Testing"
 ---
 
@@ -48,7 +48,9 @@ func loadTest(url string, concurrency int, totalRequests int) []result {
 				resp, err := client.Get(url)
 				elapsed := time.Since(start)
 				if err != nil {
-					results <- result{duration: elapsed, err: err}
+					results <- result{
+						duration: elapsed, err: err,
+					}
 					continue
 				}
 				resp.Body.Close()
@@ -73,9 +75,7 @@ func loadTest(url string, concurrency int, totalRequests int) []result {
 
 `concurrency` here caps the number of in-flight requests, which matters more than the total request count for understanding real-world behavior — a service that handles 1,000 sequential requests fine can still fall over at 50 concurrent ones if it has a small connection pool or a lock contention problem that only shows up under parallelism.
 
-<Warning title="A custom load generator on the same machine as your test client shares its network stack">
-If your Go load generator and the service under test run on the same box, you're measuring loopback performance, not real network behavior, and you can exhaust the client machine's own ephemeral port range or CPU before the server even notices load. For anything beyond quick local sanity checks, run the generator from a separate machine (or several).
-</Warning>
+<Warning title="A custom load generator on the same machine as your test client shares its network stack">If your Go load generator and the service under test run on the same box, you're measuring loopback performance, not real network behavior, and you can exhaust the client machine's own ephemeral port range or CPU before the server even notices load. For anything beyond quick local sanity checks, run the generator from a separate machine (or several).</Warning>
 
 ## Reaching for a purpose-built tool: vegeta
 
@@ -119,9 +119,7 @@ A load test that only reports "it survived" tells you little. The metrics worth 
 - **Error rate under load** — does the error rate stay near zero as concurrency rises, or does it climb sharply past some threshold (a strong signal you've found a resource limit — a connection pool, a goroutine limit, a downstream dependency).
 - **Resource usage on the server**, gathered alongside the client-side metrics — CPU, memory, open file descriptors, database connection pool utilization. The load test tool tells you what the client experienced; your service's own metrics (see the observability chapters ahead) tell you why.
 
-<DeepDive title="Stress testing means testing past the breaking point on purpose">
-Load testing validates you meet a target (say, 500 requests/second at acceptable latency). Stress testing deliberately exceeds that target to find where and how the system fails — does it degrade gracefully (slower responses, rejecting new requests with `429`) or does it fail catastrophically (crash, cascade failures to dependent services)? Run stress tests against a staging environment that mirrors production's resource limits, never against production itself, since the entire point is to find the breaking point.
-</DeepDive>
+<DeepDive title="Stress testing means testing past the breaking point on purpose">Load testing validates you meet a target (say, 500 requests/second at acceptable latency). Stress testing deliberately exceeds that target to find where and how the system fails — does it degrade gracefully (slower responses, rejecting new requests with `429`) or does it fail catastrophically (crash, cascade failures to dependent services)? Run stress tests against a staging environment that mirrors production's resource limits, never against production itself, since the entire point is to find the breaking point.</DeepDive>
 
 ## Load testing your own client code, not just the server
 

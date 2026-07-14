@@ -1,5 +1,5 @@
 ---
-id: "[4.1.0]"
+id: "[5.1.0]"
 title: "Introduction to Cybersecurity in Networking"
 ---
 
@@ -89,8 +89,8 @@ func main() {
 		if a.Exposed {
 			risk = "elevated"
 		}
-		fmt.Printf("%-14s %-20s exposed=%-5v primary-risk=%-13s posture=%s\n",
-			a.Name, a.Address, a.Exposed, a.Property, risk)
+		format := "%-14s %-20s exposed=%-5v risk=%-13s posture=%s\n"
+		fmt.Printf(format, a.Name, a.Address, a.Exposed, a.Property, risk)
 	}
 }
 ```
@@ -101,9 +101,7 @@ This is deliberately simple — a real inventory would pull from your infrastruc
 
 ## What "Hacking" Means in This Book
 
-<Warning title="Scope and authorization">
-Every scanning, sniffing, and exploitation technique in Part 3 is presented for use in environments you own or are explicitly authorized to test: your own lab, a virtual machine, a CTF, or a target covered by a signed penetration-testing agreement. Running these techniques against systems you don't own or lack permission to test is illegal in most jurisdictions and unethical regardless of jurisdiction. Chapter 4.10 covers the legal boundaries in detail — read it before pointing any tool from this book at a network that isn't yours.
-</Warning>
+<Warning title="Scope and authorization">Every scanning, sniffing, and exploitation technique in Part 3 is presented for use in environments you own or are explicitly authorized to test: your own lab, a virtual machine, a CTF, or a target covered by a signed penetration-testing agreement. Running these techniques against systems you don't own or lack permission to test is illegal in most jurisdictions and unethical regardless of jurisdiction. Chapter 4.10 covers the legal boundaries in detail — read it before pointing any tool from this book at a network that isn't yours.</Warning>
 
 "Hacking" here means the classic, technical sense: understanding a system deeply enough to find where its assumptions break down. That skill is exactly what defenders need, which is why penetration testing, red teaming, and vulnerability research are legitimate, well-paid professions built entirely on authorized versions of the same techniques attackers use.
 
@@ -120,7 +118,3 @@ The rest of this part builds up in layers:
 - **Secure design** (4.14–4.16): writing safer Go code, and structuring networks around zero trust and segmentation.
 
 By the end, you'll be able to look at a piece of networking code — yours or someone else's — and ask the right questions before it ships.
-
----
-
-[Previous: Further Resources and Next Steps](../part2/25-further-resources-and-next-steps.md) | [Next: Threat Modeling and Attack Surfaces](02-threat-modeling-and-attack-surfaces.md)

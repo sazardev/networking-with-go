@@ -1,5 +1,5 @@
 ---
-id: "[2.5.0]"
+id: "[3.5.0]"
 title: "TCP in Depth: Protocol Theory and Go Implementation"
 ---
 
@@ -11,15 +11,17 @@ title: "TCP in Depth: Protocol Theory and Go Implementation"
 
 ## What is TCP?
 
-**TCP (Transmission Control Protocol)** is the backbone of reliable communication on the internet. It’s like a polite, organized courier: every message is delivered, in order, and checked for errors. If something goes wrong, TCP tries again—no lost mail!
+**TCP (Transmission Control Protocol)** is the backbone of reliable communication on the internet. It's like a polite, organized courier: every message is delivered, in order, and checked for errors. If something goes wrong, TCP tries again—no lost mail!
 
 - **Connection-oriented:** Like a phone call—both sides say "hello" before talking.
-- **Reliable:** Every packet is acknowledged. If lost, it’s resent.
+- **Reliable:** Every packet is acknowledged. If lost, it's resent.
 - **Ordered:** Data arrives in the same order it was sent.
 - **Stream-based:** Data flows like a river, not in fixed chunks.
 
 **Analogy:**
 - TCP is a certified mail service: you get a receipt, tracking, and confirmation of delivery.
+
+<Axiom>TCP guarantees order and delivery on a stream of bytes — never on message boundaries.</Axiom>
 
 ---
 
@@ -27,8 +29,8 @@ title: "TCP in Depth: Protocol Theory and Go Implementation"
 
 1. **Three-Way Handshake:**
    - SYN: "Can we talk?" (Client asks to start a conversation)
-   - SYN-ACK: "Yes, let’s talk!" (Server agrees)
-   - ACK: "Great, I’m ready!" (Client confirms)
+   - SYN-ACK: "Yes, let's talk!" (Server agrees)
+   - ACK: "Great, I'm ready!" (Client confirms)
 2. **Data Transfer:**
    - Data is sent in segments. Each is acknowledged (ACK).
    - Lost segments are retransmitted automatically.
@@ -46,139 +48,267 @@ title: "TCP in Depth: Protocol Theory and Go Implementation"
 [Client] <--ACK-- [Server]
 ```
 
+<DeepDive title="What the kernel does during the handshake">`net.Dial("tcp", ...)` asks the OS to create a socket (`socket(2)`) and connect it (`connect(2)`); the kernel sends the SYN and blocks your goroutine until the handshake completes, entirely in kernel space, before `Dial` returns. `Accept` does not perform the handshake either: the kernel keeps a SYN queue for half-open connections and an accept queue for connections that already finished it, and `Accept` just pops one off the accept queue. If that queue fills up faster than your program calls `Accept`, the kernel drops new SYNs and clients see connection timeouts.</DeepDive>
+
+<Warning title="Dial can block far longer than you expect">`net.Dial` has no default timeout. If the remote host is unreachable in a way that produces no immediate RST (a firewall silently dropping SYN packets), your goroutine can block for the OS's default connect timeout, often over a minute. Use `net.DialTimeout` or a context-aware `net.Dialer{}.DialContext` for hosts you don't fully control.</Warning>
+
+### Flow Control and Congestion Control
+
+TCP does not just guarantee delivery — it also decides *how fast* to
+send, through two independent mechanisms:
+
+- **Flow control** protects the receiver: each ACK advertises a
+  receive window, the number of unacknowledged bytes the sender may
+  still have in flight. A slow-reading application shrinks the
+  window, and the sender backs off.
+- **Congestion control** protects the network: the sender starts
+  cautiously (slow start), doubling its congestion window each round
+  trip until it detects loss, then grows more conservatively.
+
+Go never exposes these knobs directly — they live in the kernel's
+TCP stack — but they explain behavior you will actually see: why a
+`Write` to a healthy connection can briefly block, and why throughput
+ramps up gradually instead of starting at full speed.
+
+<DeepDive title="Nagle's algorithm and TCP_NODELAY">By default, TCP batches small writes together instead of sending a tiny segment per `Write` call — Nagle's algorithm, which reduces overhead on chatty connections. It also adds latency to small, time-sensitive messages (a game update, a keystroke over SSH), since the stack waits for more data or a pending ACK before sending. Go lets you disable this per connection: type-assert the `net.Conn` to `*net.TCPConn` and call `SetNoDelay(true)`. Turn it off for small, frequent, latency-sensitive messages; leave it on for bulk transfers.</DeepDive>
+
+### Connection Teardown in Detail
+
+A clean TCP close is a negotiation, not a single event: each side
+sends a FIN when it has no more data to write, and the other side
+ACKs it, so either half can close independently (a "half-close").
+Either side can also send an RST (reset) instead, which aborts the
+connection immediately and discards any unread data — this is what
+you get if you write to a connection after the peer already closed
+its side.
+
+<DeepDive title="TIME_WAIT and SO_REUSEADDR">After the side that initiates the close sends its final ACK, its socket lingers in `TIME_WAIT` for typically twice the maximum segment lifetime (often around 60 seconds), so delayed duplicate packets from the old connection get discarded instead of confused with a new one reusing the same port. This is why restarting a Go TCP server quickly can fail with "address already in use." The OS-level fix is `SO_REUSEADDR`; Go's `net` package already sets it for you on Unix-like systems in `net.Listen`, which is why most Go servers can restart on the same port almost immediately.</DeepDive>
+
 ---
 
-## Go in Action: Simple TCP Client (Paso a Paso)
+## Go in Action: Simple TCP Client (Step by Step)
 
-Este ejemplo muestra cómo Go crea un cliente TCP, se conecta a un servidor, envía una petición HTTP y recibe la respuesta.
+This example shows how Go creates a TCP client, connects to a server,
+sends an HTTP request, and reads the response.
 
 ```go
 package main
+
 import (
-    "fmt"      // Para imprimir en consola
-    "net"      // Provee funciones de red
-    "os"       // Para salir del programa en caso de error
+    "bufio" // Buffered reads for efficient streaming
+    "fmt"   // Print to the console
+    "io"    // io.EOF sentinel error
+    "net"   // Networking primitives
+    "os"    // Exit the program on error
+    "time"  // Deadlines
 )
 
 func main() {
-    // 1. net.Dial abre una conexión TCP a example.com en el puerto 80 (HTTP)
+    // 1. net.Dial opens a TCP connection to example.com on port 80
     conn, err := net.Dial("tcp", "example.com:80")
     if err != nil {
-        fmt.Println("Error al conectar:", err)
+        fmt.Println("Error connecting:", err)
         os.Exit(1)
     }
-    // 2. Enviamos una petición HTTP simple
-    fmt.Fprintf(conn, "GET / HTTP/1.0\r\n\r\n")
-    // 3. Creamos un buffer para leer la respuesta
+    defer conn.Close() // Always close, even on an early return
+
+    // 2. A deadline bounds both the write and the read below, so a
+    //    stalled or silent server can't hang this goroutine forever.
+    conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+    // 3. Send a simple HTTP request
+    if _, err := fmt.Fprintf(conn, "GET / HTTP/1.0\r\n\r\n"); err != nil {
+        fmt.Println("Error writing request:", err)
+        os.Exit(1)
+    }
+
+    // 4. TCP is a byte stream: a single Read is not guaranteed to
+    //    return the whole response, so we loop until EOF.
+    reader := bufio.NewReader(conn)
+    var response []byte
     buf := make([]byte, 4096)
-    n, _ := conn.Read(buf) // Leemos la respuesta del servidor
-    fmt.Println(string(buf[:n])) // Imprimimos la respuesta
-    conn.Close() // Cerramos la conexión
+    for {
+        n, err := reader.Read(buf)
+        response = append(response, buf[:n]...)
+        if err == io.EOF {
+            break // Server closed the connection: we have it all
+        }
+        if err != nil {
+            fmt.Println("Error reading response:", err)
+            os.Exit(1)
+        }
+    }
+    fmt.Println(string(response))
 }
 ```
 
-- **¿Qué hace cada parte?**
-  - `net.Dial`: Abre el canal TCP y realiza el handshake.
-  - `fmt.Fprintf`: Envía datos al servidor.
-  - `conn.Read`: Recibe la respuesta.
-  - `conn.Close`: Cierra la conexión limpiamente.
+- **What does each part do?**
+  - `net.Dial`: opens the TCP channel and performs the handshake.
+  - `SetDeadline`: bounds the whole write+read exchange in time.
+  - `fmt.Fprintf`: sends data to the server.
+  - `bufio.NewReader` + loop: accumulates the full response, because
+    HTTP responses routinely arrive across several TCP segments.
+  - `conn.Close` (deferred): closes the connection cleanly.
 
-[Ejercicio: Simple TCP Client](../../exercises/part2/05-tcp-client/main.go)
+[Exercise: Simple TCP Client](../../exercises/part2/05-tcp-client/main.go)
+
+<Warning title="One Read is not the whole response">A one-shot `n, _ := conn.Read(buf)` followed by printing `buf[:n]` works against `example.com` mostly by luck, since the response fits in one segment. TCP makes no promise that a single `Read` returns a complete message; it only promises the bytes you get arrive in order. Any protocol built on TCP needs its own framing — a length prefix, a delimiter, or a fixed record size — plus a read loop like the one above, so the receiver knows when a full message has arrived.</Warning>
 
 ---
 
-## Go in Action: Simple TCP Server (Explicado)
+## Go in Action: Simple TCP Server (Explained)
 
-Este servidor TCP escucha conexiones en el puerto 8080 y responde con un mensaje a cada cliente.
+This TCP server listens for connections on port 8080 and responds
+with a message to each client, shutting down cleanly on Ctrl+C.
 
 ```go
 package main
+
 import (
-    "fmt"      // Para imprimir mensajes
-    "net"      // Para funciones de red
+    "context"
+    "fmt"
+    "net"
+    "os"
+    "os/signal"
 )
 
 func main() {
-    // 1. net.Listen crea un listener TCP en el puerto 8080
+    // 1. net.Listen creates a TCP listener on port 8080
     ln, err := net.Listen("tcp", ":8080")
     if err != nil {
         fmt.Println("Error:", err)
         return
     }
-    fmt.Println("Servidor escuchando en :8080")
+    defer ln.Close()
+    fmt.Println("Server listening on :8080")
+
+    // 2. Cancel this context on Ctrl+C to shut down gracefully
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+    defer stop()
+    go func() {
+        <-ctx.Done()
+        fmt.Println("Shutting down, closing listener...")
+        ln.Close() // Unblocks Accept below with an error
+    }()
+
     for {
-        // 2. Espera conexiones entrantes
+        // 3. Accept blocks until a new connection arrives
         conn, err := ln.Accept()
         if err != nil {
-            fmt.Println("Error al aceptar conexión:", err)
-            continue
+            select {
+            case <-ctx.Done():
+                return // We closed the listener on purpose
+            default:
+                fmt.Println("Error accepting connection:", err)
+                continue
+            }
         }
-        // 3. Atiende cada conexión en una goroutine (concurrencia)
+        // 4. Handle each connection in its own goroutine
         go func(c net.Conn) {
-            fmt.Fprintln(c, "¡Hola desde el servidor TCP en Go!") // Envía mensaje
-            c.Close() // Cierra la conexión
+            defer c.Close() // Runs even if this goroutine panics
+            fmt.Fprintln(c, "Hello from the Go TCP server!")
         }(conn)
     }
 }
 ```
 
-- **¿Qué hace cada parte?**
-  - `net.Listen`: Abre el puerto y espera conexiones.
-  - `ln.Accept`: Acepta una nueva conexión entrante.
-  - `go func`: Atiende cada cliente en paralelo (¡puedes tener miles!).
-  - `fmt.Fprintln`: Envía datos al cliente.
-  - `c.Close`: Cierra la conexión.
+- **What does each part do?**
+  - `net.Listen`: opens the port and prepares to accept connections.
+  - `signal.NotifyContext`: turns an OS signal into a cancelable
+    context.
+  - `ln.Accept`: accepts one new incoming connection at a time.
+  - `go func`: handles each client in parallel (you can have
+    thousands!).
+  - `fmt.Fprintln`: sends data to the client.
+  - `c.Close` (deferred): closes the connection.
 
-[Ejercicio: Simple TCP Server](../../exercises/part2/05-tcp-server/main.go)
+[Exercise: Simple TCP Server](../../exercises/part2/05-tcp-server/main.go)
+
+<DeepDive title="Goroutine-per-connection: why, and where it breaks">Spawning a goroutine per connection is Go's default TCP server pattern because goroutines are cheap — a few kilobytes of stack that grows on demand — so one process can comfortably hold tens of thousands of them. Still, "cheap" is not "free": a slow-client attack (connections that open, then trickle one byte per minute) holds one goroutine, one buffer, and one file descriptor each. Production servers usually add a cap — a semaphore or worker pool limiting in-flight connections — plus per-connection deadlines like the ones above, so a handful of slow or malicious clients cannot exhaust memory for everyone else.</DeepDive>
+
+<Warning title="A missing defer conn.Close() is a file descriptor leak">Every accepted connection holds a file descriptor. If a handler returns early — on an error, a panic, or a forgotten line — without closing it, that descriptor stays open until the process exits. Under sustained load this shows up as `too many open files` errors that take down the whole server. Always pair the connection with `defer c.Close()` right after the accept (or dial) succeeds.</Warning>
 
 ---
 
-## Real-World Example: Echo Server (Comentado)
+## Real-World Example: Echo Server (Explained)
 
-Un echo server devuelve exactamente lo que recibe. Es ideal para probar conexiones y entender cómo fluye la información.
+An echo server returns exactly what it receives. It is ideal for
+testing connections and understanding how data flows.
 
 ```go
 package main
+
 import (
+    "errors"
     "fmt"
+    "io"
     "net"
+    "time"
 )
 
 func main() {
     ln, _ := net.Listen("tcp", ":9000")
-    fmt.Println("Echo server en :9000")
+    fmt.Println("Echo server on :9000")
     for {
         conn, _ := ln.Accept()
         go func(c net.Conn) {
+            defer c.Close()
             buf := make([]byte, 1024)
             for {
-                n, err := c.Read(buf) // Lee datos del cliente
-                if err != nil {
-                    break // Si hay error (cliente cerró), salimos
+                // Reset the deadline on every loop: an idle client
+                // gets disconnected after 30s of silence instead of
+                // holding the goroutine open forever.
+                c.SetReadDeadline(time.Now().Add(30 * time.Second))
+                n, err := c.Read(buf) // Read data from the client
+                if n > 0 {
+                    // Write can be short: check its error, since
+                    // net.Conn.Write only returns n < len(p) together
+                    // with a non-nil error.
+                    if _, werr := c.Write(buf[:n]); werr != nil {
+                        fmt.Println("Write error:", werr)
+                        return
+                    }
                 }
-                c.Write(buf[:n]) // Reenviamos lo recibido
+                if err != nil {
+                    if !errors.Is(err, io.EOF) {
+                        fmt.Println("Read error:", err)
+                    }
+                    return // Client closed, or the deadline fired
+                }
             }
-            c.Close() // Cerramos la conexión
         }(conn)
     }
 }
 ```
 
-- **¿Qué hace cada parte?**
-  - `c.Read`: Lee datos del cliente.
-  - `c.Write`: Devuelve los mismos datos (eco).
-  - El ciclo permite múltiples mensajes por conexión.
+- **What does each part do?**
+  - `c.Read`: reads data from the client into a reusable buffer.
+  - `c.Write`: echoes the same bytes back, and its error is checked.
+  - `SetReadDeadline`: bounds how long an idle connection stays open.
+  - `errors.Is(err, io.EOF)`: tells a normal close apart from a real
+    network error, instead of logging every disconnect as a failure.
+  - The loop allows multiple messages per connection.
 
-[Ejercicio: TCP Echo Server](../../exercises/part2/05-tcp-echo-server/main.go)
+[Exercise: TCP Echo Server](../../exercises/part2/05-tcp-echo-server/main.go)
+
+<Warning title="Read's contract: check n before err">`io.Reader` can return `n > 0` and a non-nil error (including `io.EOF`) in the same call — `buf[:n]` is still valid and must be processed. Code that checks `err` first and returns on any non-nil error can silently drop the last chunk of a message.</Warning>
 
 ---
 
-## ¿Qué hace Go detrás de cámaras?
+## What Go Does Behind the Scenes
 
-- `net.Dial` y `net.Listen` usan llamadas al sistema operativo para crear sockets TCP.
-- Go gestiona el handshake, la retransmisión y el cierre de conexiones automáticamente.
-- Las goroutines permiten manejar miles de conexiones concurrentes sin esfuerzo.
-- El paquete `net` es multiplataforma: ¡tu código funciona igual en Windows, Linux y Mac!
+- `net.Dial` and `net.Listen` make operating system calls to create
+  TCP sockets (`socket`, `connect`, `bind`, `listen`, `accept`).
+- Go manages the handshake, retransmission, and connection teardown
+  through the kernel's TCP stack — none of it is reimplemented in
+  userspace.
+- Goroutines let you handle thousands of concurrent connections with
+  very little code, backed by the Go scheduler multiplexing them onto
+  a small number of OS threads.
+- The `net` package is cross-platform: the same code runs unchanged
+  on Windows, Linux, and macOS.
+
+<DeepDive title="Kernel buffers and backpressure">Every socket has a send and a receive buffer inside the kernel. `Write` only blocks your goroutine when the send buffer is full, which happens when the receiver's advertised window is small — it isn't reading fast enough. This is TCP's built-in backpressure: a slow reader naturally slows down the writer, with neither side implementing flow control itself. It also means `Write` returning without error only proves the kernel accepted the bytes into its own buffer, not that the peer received or processed them.</DeepDive>
 
 ---
 
@@ -194,13 +324,38 @@ func main() {
 
 ---
 
-## Fun Facts & Go Memes
-- TCP fue inventado en los 70s y aún es el rey de la red.
-- El stack TCP de Go es tan eficiente que lo usan Docker, Kubernetes y muchos servicios en la nube.
-- Puedes construir un chat, una herramienta de transferencia de archivos o tu propio protocolo con el paquete `net` de Go.
-- TCP es como un amigo confiable: nunca olvida, siempre entrega.
-- Las goroutines de Go hacen que manejar miles de conexiones TCP sea pan comido.
+## Try It Yourself: Frame Your Own Protocol
+
+The echo server above forwards raw bytes with no concept of a
+"message" — it is purely a stream. Extend it into a line-based
+protocol:
+
+1. Replace the raw `c.Read`/`c.Write` loop with a `bufio.Scanner`
+   wrapping the connection, using `bufio.ScanLines` (the default
+   split function) so each call to `Scan()` returns exactly one line.
+2. Add a `bufio.Writer` for output, and reply with the received line
+   uppercased instead of echoed verbatim — this proves you are
+   parsing framed messages, not just bouncing bytes.
+3. Set `scanner.Buffer` with a larger max token size, and test what
+   happens when a client sends a single line longer than that limit
+   (hint: `bufio.Scanner` returns `bufio.ErrTooLong` — decide how your
+   server should react instead of letting it crash the goroutine).
+4. Connect with `nc localhost 9000`, type multiple lines, and confirm
+   the server treats each one as an independent unit even though TCP
+   delivered them as one continuous stream of bytes.
+
+This lab is the practical proof of the framing Warning above: TCP
+gives you bytes, and your protocol has to supply the boundaries.
+
+<Axiom>A socket without a deadline is a goroutine that can block forever.</Axiom>
 
 ---
 
-[Previous: Working with IP, Ports, and Addresses](04-working-with-ip-ports-and-addresses.md) | [Next: UDP in Depth: Protocol Theory and Go Implementation](06-udp-in-depth-protocol-theory-and-go-implementation.md)
+## Fun Facts & Go Memes
+- TCP was invented in the 1970s and is still the king of the network.
+- Go's TCP stack is efficient enough that Docker, Kubernetes, and many
+  cloud services rely on it.
+- You can build a chat app, a file transfer tool, or your own protocol
+  with Go's `net` package.
+- TCP is like a reliable friend: it never forgets, it always delivers.
+- Go's goroutines make handling thousands of TCP connections a breeze.

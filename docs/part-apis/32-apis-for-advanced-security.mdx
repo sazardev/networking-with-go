@@ -1,5 +1,5 @@
 ---
-id: "[5.32.0]"
+id: "[6.32.0]"
 title: "APIs for Advanced Security"
 ---
 
@@ -49,9 +49,7 @@ func verifyToken(tokenString string) (*jwt.Token, error) {
 
 Keeping the previous key around lets tokens issued right before a rotation keep verifying until they naturally expire, while all new tokens use the new key — you retire the old key entirely only once you're confident nothing valid still references it. In systems with external consumers, this same set of public keys is what you'd expose at a `/.well-known/jwks.json` endpoint, in the JSON Web Key Set format, so other services can verify your tokens without you distributing keys out of band.
 
-<Warning title="Rotating a symmetric HMAC key is much harder to do gracefully than an asymmetric one">
-With RSA or ECDSA, you can publish new public keys freely since they don't need to stay secret. With a shared HMAC secret, every party that verifies tokens needs the new secret distributed to them before rotation completes, and there's no way to publish it safely for third-party verification — this is one of the strongest practical arguments for preferring asymmetric signing (`RS256`/`ES256`) over `HS256` for tokens verified outside your own service.
-</Warning>
+<Warning title="Rotating a symmetric HMAC key is much harder to do gracefully than an asymmetric one">With RSA or ECDSA, you can publish new public keys freely since they don't need to stay secret. With a shared HMAC secret, every party that verifies tokens needs the new secret distributed to them before rotation completes, and there's no way to publish it safely for third-party verification — this is one of the strongest practical arguments for preferring asymmetric signing (`RS256`/`ES256`) over `HS256` for tokens verified outside your own service.</Warning>
 
 ## Mutual TLS between services
 
@@ -128,9 +126,7 @@ func loadSigningKey(
 }
 ```
 
-<DeepDive title="Environment variables are a transport, not a vault">
-Environment variables are a reasonable way to *deliver* a secret into a running process, but they aren't a substitute for a system that controls who can read the secret, rotates it, and logs access to it. A secrets manager gives you all three; a `.env` file typically gives you none of them, and it's far too easy for it to end up in a container image, a log line, or a support ticket screenshot.
-</DeepDive>
+<DeepDive title="Environment variables are a transport, not a vault">Environment variables are a reasonable way to *deliver* a secret into a running process, but they aren't a substitute for a system that controls who can read the secret, rotates it, and logs access to it. A secrets manager gives you all three; a `.env` file typically gives you none of them, and it's far too easy for it to end up in a container image, a log line, or a support ticket screenshot.</DeepDive>
 
 ## Revocation: the problem signing keys alone don't solve
 

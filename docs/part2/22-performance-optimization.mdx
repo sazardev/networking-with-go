@@ -1,5 +1,5 @@
 ---
-id: "[2.22.0]"
+id: "[3.22.0]"
 title: "Performance Optimization: Concepts and Go Implementation"
 ---
 
@@ -19,6 +19,8 @@ Every server built in this book does some combination of four things, and the bo
 - **Goroutine misuse:** Either too few goroutines serializing work that could run in parallel, or so many that scheduling and memory overhead start to dominate.
 
 The `pprof` tooling in the standard library measures all four without guesswork.
+
+<Axiom>The fastest optimization is the one you don't make — every line of "faster" code you add is also a line of code that can be wrong. Measure first, then earn the complexity.</Axiom>
 
 ---
 
@@ -47,9 +49,20 @@ func main() {
 
 With that running, `go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30` captures a 30-second CPU profile, and `go tool pprof http://localhost:6060/debug/pprof/heap` captures a memory snapshot — both open into an interactive explorer that shows exactly which functions are consuming CPU or allocating memory.
 
-<Warning title="Don't expose pprof publicly">
-The `/debug/pprof/` endpoints reveal internal details (goroutine stacks, memory layout) and can be used to trigger expensive profiling on demand. Bind them to a localhost-only listener, as above, or gate them behind authentication — never leave them reachable from the public internet.
-</Warning>
+### Beyond CPU and Heap
+
+`net/http/pprof` wires up several profiles beyond the two most commonly reached for:
+
+- **`/debug/pprof/goroutine`** — every goroutine's stack, useful for spotting leaks as much as for performance.
+- **`/debug/pprof/block`** — time spent blocked on channels and mutexes. Disabled by default; enable with `runtime.SetBlockProfileRate(1)`.
+- **`/debug/pprof/mutex`** — which mutexes are most contended. Enable with `runtime.SetMutexProfileFraction(1)`.
+- **`/debug/pprof/trace`** — a fine-grained execution trace, viewable with `go tool trace`.
+
+<DeepDive title="Reading a profile as a flame graph">`go tool pprof -http=:8081 <profile-file>` opens a browser-based UI, including a flame graph view: each horizontal bar is a function, its width proportional to the time or memory attributed to it, stacked by call chain. Wide bars near the top are usually the highest-value place to start — narrow, deep call stacks rarely move the needle even if you speed them up.</DeepDive>
+
+<Warning title="Don't expose pprof publicly">The `/debug/pprof/` endpoints reveal internal details (goroutine stacks, memory layout) and can be used to trigger expensive profiling on demand. Bind them to a localhost-only listener, as above, or gate them behind authentication — never leave them reachable from the public internet.</Warning>
+
+<Warning title="Profiling an idle server tells you nothing">A CPU profile captured while the server has no real traffic mostly shows time spent waiting, not computing. Generate representative load first (a benchmark client, or `hey`/`vegeta` hitting the server) and capture the profile *during* that load, or the time spent capturing it is wasted.</Warning>
 
 ---
 
@@ -68,6 +81,25 @@ func BenchmarkParseHeader(b *testing.B) {
 ```
 
 Run it with `go test -bench=. -benchmem`, which reports iterations per second alongside allocations per operation — the `-benchmem` flag is what surfaces the GC-pressure story, not just raw speed.
+
+<Warning title="Don't let setup cost pollute the measurement">`b.ResetTimer()` exists because anything before it — building test fixtures, opening a file, generating sample data — would otherwise count against the benchmark's reported time. Any one-time setup that isn't part of what you're actually measuring belongs before `ResetTimer`; anything inside the loop is fair game and should be exactly what you're trying to measure, nothing more.</Warning>
+
+### Benchmarking Concurrent Code
+
+A single-goroutine benchmark like `BenchmarkParseHeader` doesn't tell you how a function behaves under the same concurrent load a real server subjects it to — lock contention and cache effects only show up with multiple goroutines calling it at once. `b.RunParallel` runs the benchmark body across `GOMAXPROCS` goroutines automatically:
+
+```go
+func BenchmarkParseHeaderParallel(b *testing.B) {
+	data := []byte{0, 0, 0, 0, 0, 0, 0, 10}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			parseHeader(data)
+		}
+	})
+}
+```
+
+Each goroutine loops on `pb.Next()` until the benchmark's total iteration budget is exhausted, and `-benchmem` still reports allocations the same way — this is the benchmark equivalent of the worker pool pattern later in this chapter, and it's the right tool whenever the function under test is going to be called concurrently in production.
 
 ---
 
@@ -100,9 +132,9 @@ func handleConn(conn net.Conn) {
 
 Each call to `Get` returns either a previously used buffer or a newly allocated one if the pool is empty; `Put` returns it for reuse instead of letting it become garbage. This directly reduces the allocation count a benchmark's `-benchmem` output would report.
 
-<DeepDive title="sync.Pool is not a cache">
-Objects in a `sync.Pool` can be dropped by the garbage collector at any time, including between two calls in the same request — it exists purely to reduce allocation churn under load, not to hold onto data you need later. Never rely on a pooled object still being there.
-</DeepDive>
+<DeepDive title="sync.Pool is not a cache">Objects in a `sync.Pool` can be dropped by the garbage collector at any time, including between two calls in the same request — it exists purely to reduce allocation churn under load, not to hold onto data you need later. Never rely on a pooled object still being there.</DeepDive>
+
+<Warning title="Reset pooled objects before returning them">The `[]byte` buffer above is safe to reuse because every reader treats `buf[:n]` as the only valid region. That's not true for every type: a pooled `*bytes.Buffer` or a struct with slice/map fields can leak the *previous* caller's data into the next one if `Put` back without clearing it. Reset state explicitly first: ```go func handleRequest(payload *bytes.Buffer) { defer func() { payload.Reset() // clear before returning to the pool bufferObjPool.Put(payload) }() // ... use payload ... } ``` Skipping `Reset` here doesn't just risk performance — it risks one request silently reading data left behind by a completely unrelated previous request, which is a correctness bug, not just an inefficiency.</Warning>
 
 ---
 
@@ -123,6 +155,10 @@ client := &http.Client{
 
 Raising `MaxIdleConnsPerHost` above its conservative default matters specifically when your client makes many concurrent requests to the *same* backend, since the default caps how many idle connections are kept ready per host before new connections must be dialed from scratch.
 
+<Warning title="An unclosed response body defeats connection reuse">`http.Transport` can only put a connection back in its idle pool once the previous response's body has been fully read and closed. Code that checks `resp.StatusCode` and returns without calling `resp.Body.Close()` leaks the connection: `Transport` must dial a brand-new one for the next request, silently erasing the benefit of the pooling shown above. The safe pattern is always: ```go resp, err := client.Do(req) if err != nil { return err } defer resp.Body.Close() _, _ = io.Copy(io.Discard, resp.Body) // ensure the body is drained ``` Draining matters even when you don't care about the content — a partially-read large body more often forces `Transport` to discard the connection rather than reuse it, while a small, fully-drained body is safely returned to the pool.</Warning>
+
+<DeepDive title="Why connection reuse matters at the OS level">A closed TCP connection leaves its local (ephemeral) port in the `TIME_WAIT` state for a couple of minutes, so the OS can be sure no delayed packet from the old connection reaches whatever reuses that port next. A client opening and closing thousands of short-lived connections per second can exhaust its pool of ephemeral ports, or redo TCP and TLS handshakes it didn't need to. Reusing connections — exactly what `http.Transport`'s idle pool does — sidesteps both costs.</DeepDive>
+
 ---
 
 ## Buffered I/O
@@ -138,6 +174,10 @@ line, err := reader.ReadString('\n')
 ```
 
 `io.Copy`, used throughout the file transfer chapter, already performs its own internal chunked buffering — the manual wrapping above matters most for line-oriented or small-message protocols where you're issuing many small reads yourself.
+
+<Warning title="Forgetting to flush loses data, not just performance">Nothing written to a `bufio.Writer` reaches the connection until the internal buffer fills or `Flush` is called explicitly. A handler that writes a response and returns without calling `writer.Flush()` can leave data sitting in memory that never reaches the client, especially if the connection closes right after. Always `defer writer.Flush()` right after creating the writer, as above, so it runs even on an early return.</Warning>
+
+Sizing the buffer to match your protocol also matters: the default `bufio.NewReader`/`NewWriter` size is 4096 bytes, but `bufio.NewReaderSize`/`NewWriterSize` let you pick a size that matches your typical message — too small and you're back to frequent syscalls, too large and every connection wastes memory on a buffer it rarely fills.
 
 ---
 
@@ -163,6 +203,12 @@ func main() {
 }
 ```
 
+<DeepDive title="GOMAXPROCS inside a container">`GOMAXPROCS` defaults to the number of CPUs the runtime detects on the host, which historically meant *all* of them — even inside a container whose cgroup limits it to a fraction of a core. A process that thinks it has 32 CPUs to schedule across, but is actually throttled to 2, spends more time on scheduling and GC coordination than the container is even allowed to use. The common mitigation is `go.uber.org/automaxprocs`, imported for its side effect of reading the container's real CPU quota and calling `runtime.GOMAXPROCS` accordingly at startup.</DeepDive>
+
+### Try It Yourself
+
+Benchmark the worker pool above two ways with `b.RunParallel`: once through the bounded pool of 10 workers, and once launching an unbounded `go process(job)` per job. Compare `-benchmem` output and the goroutine profile as concurrent jobs grow into the thousands — the unbounded version's problem shows up as scheduler and memory overhead long before it shows up as a crash, which is why it's easy to miss until a real traffic spike finds it.
+
 ---
 
 ## Key Takeaways
@@ -172,7 +218,6 @@ func main() {
 - `sync.Pool` reduces GC pressure by reusing short-lived buffers, but never treat it as a cache.
 - Reuse connections (`http.Transport` tuning) and batch small I/O operations (`bufio`) to cut down on handshake and syscall overhead.
 - Bound goroutine growth with a worker pool rather than launching one goroutine per unit of work without limit.
-
----
-
-[Previous: Testing and Debugging](21-testing-and-debugging.md) | [Next: Deploying Go Network Applications](23-deploying-go-network-applications.md)
+- Always close (and drain) `resp.Body`, or `http.Transport` can't reuse the connection at all — silently erasing the benefit of connection pooling.
+- Reset pooled objects before `Put`; a `sync.Pool` optimization that leaks one caller's data into another's request is a correctness bug, not just a slowdown.
+- Profile under representative load, not an idle server, and consider `automaxprocs` if the service runs inside a container.

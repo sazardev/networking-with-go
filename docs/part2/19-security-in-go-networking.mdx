@@ -1,5 +1,5 @@
 ---
-id: "[2.19.0]"
+id: "[3.19.0]"
 title: "Security in Go Networking: TLS, Encryption, and Best Practices"
 ---
 
@@ -19,6 +19,10 @@ Every TCP connection you've built so far has sent bytes in the clear. TLS (Trans
 
 Under the hood, the TLS handshake uses asymmetric cryptography (public/private key pairs) to safely agree on a shared symmetric key, then switches to fast symmetric encryption for the actual data — asymmetric crypto is too slow to encrypt an entire stream, but it's exactly what's needed to establish trust and exchange a key in the first place.
 
+<DeepDive title="Anatomy of the Handshake">A TLS 1.2 handshake takes two round trips before the first application byte moves: the client sends a `ClientHello` listing supported versions and cipher suites; the server answers with its chosen suite, its certificate, and a key-exchange message; both sides derive the same symmetric session key without ever sending it over the wire, typically via ECDHE (elliptic-curve Diffie-Hellman with a fresh, ephemeral key pair generated just for that handshake); then each side sends a `Finished` message, encrypted under the new key, proving nothing was tampered with. TLS 1.3 collapses this to one round trip. The "ephemeral" part of ECDHE is what gives modern TLS **forward secrecy**: since the key-exchange keypair is discarded right after the handshake, an attacker who later steals the server's long-term private key still cannot decrypt session traffic recorded in the past.</DeepDive>
+
+<Axiom>A certificate proves who signed a public key; a fresh ephemeral key exchange on top of it is what keeps yesterday's captured traffic safe even if tomorrow's private key leaks.</Axiom>
+
 ---
 
 ## Certificates in Brief
@@ -37,9 +41,13 @@ For local development, a self-signed certificate is enough to exercise TLS code,
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
+	"os"
+	"os/signal"
 )
 
 func main() {
@@ -59,20 +67,40 @@ func main() {
 	}
 	fmt.Println("TLS server listening on :9500")
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		fmt.Println("shutting down, closing listener")
+		ln.Close()
+	}()
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return // graceful shutdown, not a real failure
+			}
+			fmt.Println("accept error:", err)
 			continue
 		}
 		go func(c net.Conn) {
 			defer c.Close()
-			fmt.Fprintln(c, "hello over an encrypted channel")
+			_, err := fmt.Fprintln(c, "hello over an encrypted channel")
+			if err != nil {
+				fmt.Println("write to client failed:", err)
+			}
 		}(conn)
 	}
 }
 ```
 
 [Exercise: TLS Server](../../exercises/part2/19-tls-server/main.go)
+
+<Warning title="A tight accept loop can spin forever">The original loop above did `if err != nil { continue }` on every `Accept` failure. If the listener enters a bad state — closed by another goroutine, out of file descriptors — `Accept` can fail on every call, and `continue` loops straight back into another failing call with no delay, pinning a CPU core doing nothing useful. The fix distinguishes a deliberate shutdown (`net.ErrClosed`, checked with `errors.Is`), where returning is correct, from a transient error worth logging and retrying — ideally with a short backoff on repeated failures.</Warning>
+
+<Warning title="A write you don't check might as well not happen">`fmt.Fprintln(c, ...)` returns an error like any other write, and the original example discarded it. If the client disconnected mid-write, the goroutine would exit via `defer c.Close()` with no trace anything went wrong — the same silent-failure risk as ignoring `Write` on a plain `net.Conn`. Checking and logging the error turns a mystery ("why did that client see nothing?") into a line in your logs.</Warning>
 
 For an HTTP server, `http.ListenAndServeTLS(addr, certFile, keyFile, handler)` does the same thing at the HTTP layer, and is the standard way to serve HTTPS with the `net/http` server you built in the HTTP chapter.
 
@@ -95,6 +123,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"time"
 )
 
 func main() {
@@ -103,7 +132,9 @@ func main() {
 		panic(err)
 	}
 	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(caCert)
+	if !pool.AppendCertsFromPEM(caCert) {
+		panic("no valid certificates found in server.crt")
+	}
 
 	config := &tls.Config{
 		RootCAs:    pool,
@@ -116,19 +147,25 @@ func main() {
 	}
 	defer conn.Close()
 
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	buf := make([]byte, 256)
-	n, _ := conn.Read(buf)
+	n, err := conn.Read(buf)
+	if err != nil {
+		panic(fmt.Errorf("read from server failed: %w", err))
+	}
 	fmt.Println(string(buf[:n]))
 }
 ```
 
 [Exercise: TLS Client](../../exercises/part2/19-tls-client/main.go)
 
+<Warning title="AppendCertsFromPEM fails silently if ignored">`pool.AppendCertsFromPEM` returns a `bool`, not an `error` — easy to ignore entirely, as the original example did. If `server.crt` is missing, malformed, or empty, the call silently does nothing, leaving `pool` empty; the client then fails much later with a confusing "certificate signed by unknown authority" error instead of a clear message about the actual cause: a bad or missing CA file.</Warning>
+
 `RootCAs` tells the client exactly which CA certificates to trust — here, the self-signed certificate itself, since it's acting as its own CA for this local example. In production, `tls.Config{}` with no `RootCAs` set falls back to the operating system's trust store, which is what you want when connecting to a server with a certificate from a public CA.
 
-<Warning title="InsecureSkipVerify is not a shortcut">
-Setting `tls.Config{InsecureSkipVerify: true}` disables certificate verification entirely, which means the client can no longer tell a real server from an attacker impersonating it — defeating the authentication guarantee TLS exists to provide. It has legitimate uses in isolated test harnesses, but it should never reach a production build.
-</Warning>
+<DeepDive title="Why the Hostname You Dial Matters">Passing `"localhost:9500"` to `tls.Dial` does two jobs: it's the TCP address to connect to, and — unless overridden via `tls.Config.ServerName` — it's also the name checked against the server's certificate, sent in the ClientHello's SNI extension so a server hosting multiple domains behind one IP knows which certificate to present. Connecting via a raw IP or a load balancer's internal hostname while expecting to validate a certificate issued for the public domain requires setting `ServerName` explicitly to the name the certificate was actually issued for, or verification fails even though the certificate itself is valid.</DeepDive>
+
+<Warning title="InsecureSkipVerify is not a shortcut">Setting `tls.Config{InsecureSkipVerify: true}` disables certificate verification entirely, which means the client can no longer tell a real server from an attacker impersonating it — defeating the authentication guarantee TLS exists to provide. It has legitimate uses in isolated test harnesses, but it should never reach a production build.</Warning>
 
 ---
 
@@ -147,6 +184,8 @@ config := &tls.Config{
 
 With `ClientAuth: tls.RequireAndVerifyClientCert`, the handshake fails outright unless the client presents a certificate signed by a CA in `ClientCAs` — authentication is enforced at the transport layer, before a single byte of application data is exchanged.
 
+<Warning title="RootCAs and ClientCAs are not interchangeable">`RootCAs` tells a client which CAs to trust when verifying a *server's* certificate; `ClientCAs` tells a server which CAs to trust when verifying a *client's* certificate during mTLS. They serve mirror-image roles, and pointing both at the same pool without thinking through who is verifying whom is a common source of "why does my mTLS handshake fail" confusion — especially when client and server certificates happen to share an internal CA, making the mix-up easy to miss until a genuinely different CA is introduced.</Warning>
+
 ---
 
 ## Best Practices
@@ -157,6 +196,17 @@ With `ClientAuth: tls.RequireAndVerifyClientCert`, the handshake fails outright 
 - **Never log private keys or full certificates with keys attached.**
 - **Prefer TLS 1.3 where compatible:** It removes several legacy cryptographic options that were sources of past vulnerabilities and completes the handshake in fewer round trips.
 
+<DeepDive title="Pinning Instead of Skipping Verification">If `InsecureSkipVerify: true` is tempting because a service uses an internal CA your trust store doesn't recognize, there's almost always a better option: install that CA into a custom `x509.CertPool` and set it as `RootCAs`, as the client example above already does. For a tighter guarantee — trusting one specific certificate rather than anything a CA might issue — `tls.Config.VerifyConnection` lets you supply a callback that runs after standard chain validation and rejects anything that doesn't match a known certificate or public-key fingerprint. This is certificate pinning: it trades flexibility (rotating certificates now requires updating the pin) for a much smaller attack surface than "trust anything, ask no questions."</DeepDive>
+
+---
+
+## Try It Yourself: Timeouts, Shutdown, and Verification Failures
+
+- **Force a verification failure.** Point the client at a *different* self-signed certificate than the one the server presents, and identify which of TLS's three guarantees from the top of this chapter that failure protects.
+- **Add a handshake timeout.** `tls.Dial` blocks until the handshake completes or fails; use `(&tls.Dialer{Config: config}).DialContext(ctx, "tcp", addr)` with a `context.WithTimeout` instead, and confirm an unreachable address fails fast rather than hanging.
+- **Test the accept-loop fix.** Start the server, send it an interrupt signal while a client is mid-connection, and confirm the listener closes cleanly via `net.ErrClosed` instead of needing a hard kill.
+- **Build a minimal mTLS pair.** Generate a client certificate signed by the server's CA, set `ClientAuth: tls.RequireAndVerifyClientCert`, and confirm a client presenting no certificate is rejected during the handshake itself, before any application code runs.
+
 ---
 
 ## Key Takeaways
@@ -165,7 +215,4 @@ With `ClientAuth: tls.RequireAndVerifyClientCert`, the handshake fails outright 
 - `tls.Listen`/`tls.Dial` mirror `net.Listen`/`net.Dial` closely, so upgrading existing TCP code to TLS is largely a drop-in change.
 - `RootCAs` and `ClientCAs` control which certificates a client or server trusts — never bypass that check with `InsecureSkipVerify` in production.
 - Mutual TLS extends the authentication guarantees to the client as well, enforced during the handshake itself.
-
----
-
-[Previous: Authentication and Authorization](18-authentication-and-authorization.md) | [Next: Logging and Monitoring](20-logging-and-monitoring.md)
+- Ephemeral key exchange (ECDHE) is what gives modern TLS forward secrecy — check errors on every accept, read, and write around a TLS connection just as carefully as on a plain one.

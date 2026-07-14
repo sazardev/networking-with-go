@@ -1,5 +1,5 @@
 ---
-id: "[5.29.0]"
+id: "[6.29.0]"
 title: "APIs for CI/CD and DevOps"
 ---
 
@@ -93,9 +93,7 @@ func (cr *CanaryRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 In practice, most teams delegate this routing to their gateway or mesh (see the API gateway chapter) rather than reimplementing it in application code, but understanding the mechanism helps you reason about what's actually happening when a deployment tool reports "canary at 10%."
 
-<DeepDive title="Canary weight alone isn't a safe rollout — a health signal is">
-Shifting traffic percentage on a timer without checking error rates defeats the purpose of a canary. A safer version watches the canary's own error rate and latency (exposed via the observability instrumentation from later chapters) and automatically routes all traffic back to `stableProxy` if the canary's metrics degrade, rather than blindly following a pre-set schedule.
-</DeepDive>
+<DeepDive title="Canary weight alone isn't a safe rollout — a health signal is">Shifting traffic percentage on a timer without checking error rates defeats the purpose of a canary. A safer version watches the canary's own error rate and latency (exposed via the observability instrumentation from later chapters) and automatically routes all traffic back to `stableProxy` if the canary's metrics degrade, rather than blindly following a pre-set schedule.</DeepDive>
 
 ## Exposing deployment status through your own API
 
@@ -149,6 +147,4 @@ func rollbackHandler(w http.ResponseWriter, r *http.Request) {
 
 Recording every deploy's version alongside a health signal (did it pass its readiness checks, did error rates stay flat) is what makes `lastKnownGoodVersion` meaningful — a rollback endpoint that just replays "the previous version, whatever it was" can just as easily roll back into a version that was already broken.
 
-<Warning title="A rollback API needs the same auth and audit trail as a deploy API">
-It's tempting to leave rollback endpoints loosely protected because "it's just undoing something," but a rollback still changes what code is running in production. Require the same authentication, authorization, and audit logging (who triggered it, when, from what version to what version) that a forward deployment requires.
-</Warning>
+<Warning title="A rollback API needs the same auth and audit trail as a deploy API">It's tempting to leave rollback endpoints loosely protected because "it's just undoing something," but a rollback still changes what code is running in production. Require the same authentication, authorization, and audit logging (who triggered it, when, from what version to what version) that a forward deployment requires.</Warning>

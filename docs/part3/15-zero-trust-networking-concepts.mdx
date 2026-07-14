@@ -1,5 +1,5 @@
 ---
-id: "[4.15.0]"
+id: "[5.15.0]"
 title: "Zero Trust Networking Concepts"
 ---
 
@@ -21,9 +21,7 @@ That assumption breaks down constantly in practice: a phished employee's laptop,
 
 ## Core Principles
 
-<DeepDive title="What zero trust actually requires">
-**Verify explicitly** — every request is authenticated and authorized based on all available signals (identity, device health, location), not granted implicitly because of network position. **Least privilege access** — grant exactly the access a given identity needs for a specific task, scoped tightly and often just-in-time rather than standing broad access. **Assume breach** — design as though an attacker is already present somewhere in the environment, and minimize what they could reach from any single foothold — the same mindset introduced in Chapter 4.1. **Microsegmentation** — divide the network into small, tightly controlled zones so that compromising one segment doesn't grant access to the rest (the full subject of Chapter 4.16).
-</DeepDive>
+<DeepDive title="What zero trust actually requires">**Verify explicitly** — every request is authenticated and authorized based on all available signals (identity, device health, location), not granted implicitly because of network position. **Least privilege access** — grant exactly the access a given identity needs for a specific task, scoped tightly and often just-in-time rather than standing broad access. **Assume breach** — design as though an attacker is already present somewhere in the environment, and minimize what they could reach from any single foothold — the same mindset introduced in Chapter 4.1. **Microsegmentation** — divide the network into small, tightly controlled zones so that compromising one segment doesn't grant access to the rest (the full subject of Chapter 4.16).</DeepDive>
 
 None of these principles require a single specific vendor product — zero trust is an architectural philosophy, described in vendor-neutral terms in publications like NIST SP 800-207, and it can be approached incrementally rather than as an all-or-nothing rewrite.
 
@@ -73,7 +71,3 @@ Most organizations adopt zero trust incrementally: starting with the most sensit
 ## Where This Leads
 
 Zero trust and network segmentation are two sides of the same coin: zero trust is the *policy* philosophy (verify everyone, trust no default position), and segmentation, covered next in Chapter 4.16, is the *structural* tool that makes enforcing that policy practical at scale — by making sure there are fewer, smaller, more controllable boundaries to enforce it at in the first place.
-
----
-
-[Previous: Secure Coding Practices in Go](14-secure-coding-practices-in-go.md) | [Next: Network Segmentation and Microsegmentation](16-network-segmentation-and-microsegmentation.md)

@@ -1,5 +1,5 @@
 ---
-id: "[5.25.0]"
+id: "[6.25.0]"
 title: "APIs for Multi-Tenancy and SaaS"
 ---
 
@@ -38,9 +38,7 @@ func tenantFromContext(ctx context.Context) (string, bool) {
 
 This middleware runs after authentication and before every handler that touches tenant data, so `tenantFromContext` is the single source of truth downstream code relies on — no handler should ever read a tenant ID from a query parameter or request body, because that would let one tenant simply ask for another tenant's ID.
 
-<Warning title="Never trust a client-supplied tenant ID">
-If a tenant identifier can be set via a header or query string the client controls, it can be forged. Derive it from something the server verified — a signed token claim, or a session looked up server-side — never from raw request input.
-</Warning>
+<Warning title="Never trust a client-supplied tenant ID">If a tenant identifier can be set via a header or query string the client controls, it can be forged. Derive it from something the server verified — a signed token claim, or a session looked up server-side — never from raw request input.</Warning>
 
 ## Isolating data: three levels of strictness
 
@@ -62,9 +60,7 @@ func listOrders(ctx context.Context, db *sql.DB) ([]Order, error) {
 }
 ```
 
-<DeepDive title="Postgres row-level security as a safety net">
-Application-level filtering is only as reliable as the discipline of every developer who touches the query layer. Postgres row-level security (RLS) policies let you enforce `tenant_id = current_setting('app.tenant_id')` at the database level, so even a handler that forgets the `WHERE` clause still can't read another tenant's rows — the database rejects the leak rather than the application preventing it. Setting `app.tenant_id` per connection (via `SET LOCAL` inside the request's transaction) from the same middleware that resolves the tenant keeps both layers in sync.
-</DeepDive>
+<DeepDive title="Postgres row-level security as a safety net">Application-level filtering is only as reliable as the discipline of every developer who touches the query layer. Postgres row-level security (RLS) policies let you enforce `tenant_id = current_setting('app.tenant_id')` at the database level, so even a handler that forgets the `WHERE` clause still can't read another tenant's rows — the database rejects the leak rather than the application preventing it. Setting `app.tenant_id` per connection (via `SET LOCAL` inside the request's transaction) from the same middleware that resolves the tenant keeps both layers in sync.</DeepDive>
 
 ## Per-tenant configuration and limits
 
@@ -99,7 +95,8 @@ Shared infrastructure means one tenant's traffic spike can degrade service for e
 func perTenantRateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, _ := tenantFromContext(r.Context())
-		limiter := limiterFor(tenantID) // one token bucket per tenant, cached
+		// One token bucket per tenant, cached across requests.
+		limiter := limiterFor(tenantID)
 		if !limiter.Allow() {
 			http.Error(w, "rate limit exceeded",
 				http.StatusTooManyRequests)

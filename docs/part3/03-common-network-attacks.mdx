@@ -1,5 +1,5 @@
 ---
-id: "[4.3.0]"
+id: "[5.3.0]"
 title: "Common Network Attacks (DoS, MITM, Spoofing, etc.)"
 ---
 
@@ -13,9 +13,7 @@ title: "Common Network Attacks (DoS, MITM, Spoofing, etc.)"
 
 This chapter catalogs the attack categories you'll hear about constantly in networking and security work: denial of service, man-in-the-middle, and spoofing, plus a few close relatives. The goal is recognition and defense — understanding how each attack works mechanically so you can spot the conditions that enable it and close them, not a step-by-step guide to causing outages on infrastructure you don't own.
 
-<Warning title="Authorized use only">
-Testing any of the techniques described below — flooding a service, intercepting traffic, forging packets — is only appropriate against systems you own or a target explicitly covered by a signed authorization (a lab, a CTF, a scoped penetration test). Doing this against networks you don't control is illegal in most jurisdictions and can cause real, unintended damage.
-</Warning>
+<Warning title="Authorized use only">Testing any of the techniques described below — flooding a service, intercepting traffic, forging packets — is only appropriate against systems you own or a target explicitly covered by a signed authorization (a lab, a CTF, a scoped penetration test). Doing this against networks you don't control is illegal in most jurisdictions and can cause real, unintended damage.</Warning>
 
 ---
 
@@ -136,7 +134,3 @@ The specific numbers matter less than the pattern: every connection-accepting se
 ## Recognizing the Pattern
 
 Notice that nearly every defense above reduces to a small set of ideas repeated throughout this book: authenticate and encrypt (TLS), validate what you trust implicitly (source addresses, DNS responses), and bound what any single actor can consume (timeouts, rate limits, connection caps). Chapter 4.4 puts you on the other side of this equation — using Go to discover what's exposed on a network before an attacker does.
-
----
-
-[Previous: Threat Modeling and Attack Surfaces](02-threat-modeling-and-attack-surfaces.md) | [Next: Network Scanning and Enumeration with Go](04-network-scanning-and-enumeration-with-go.md)

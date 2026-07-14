@@ -1,5 +1,5 @@
 ---
-id: "[5.20.0]"
+id: "[6.20.0]"
 title: "APIs for Graph Databases and NoSQL"
 ---
 
@@ -63,9 +63,7 @@ func getProduct(w http.ResponseWriter, r *http.Request) {
 
 Notice the `bson` struct tags mirroring `json` tags — MongoDB documents are optional-field friendly by design, which is exactly why the `Tags` field uses `omitempty`: a product with no tags simply omits the field rather than storing an empty array or a null placeholder. This flexibility is MongoDB's main appeal for APIs whose resource shape evolves over time (adding a new optional field doesn't require a migration).
 
-<Warning title="Flexible schema is not the same as no schema">
-Just because MongoDB doesn't enforce a schema at write time doesn't mean your API should skip validation. Decode into a typed struct, validate required fields explicitly, and consider MongoDB's own JSON Schema validation on the collection if multiple services write to it.
-</Warning>
+<Warning title="Flexible schema is not the same as no schema">Just because MongoDB doesn't enforce a schema at write time doesn't mean your API should skip validation. Decode into a typed struct, validate required fields explicitly, and consider MongoDB's own JSON Schema validation on the collection if multiple services write to it.</Warning>
 
 ## Graph databases: Neo4j
 
@@ -111,9 +109,7 @@ func recommendFriends(
 
 The API layer around this is deliberately thin: your HTTP handler validates the incoming user ID, calls `recommendFriends`, and serializes the slice as JSON. The interesting logic — "friend of a friend, not already followed" — lives entirely in the Cypher query, not in Go loops. That's the general shape of graph-backed APIs: push relationship traversal down to the database, keep the Go layer focused on request handling and serialization.
 
-<DeepDive title="Sessions are not connections">
-`driver.NewSession` doesn't open a new TCP connection each time — the driver pools connections internally, and sessions are cheap, short-lived objects you create per unit of work and close promptly. Holding a session open across multiple unrelated requests defeats the pooling and can starve other goroutines of connections.
-</DeepDive>
+<DeepDive title="Sessions are not connections">`driver.NewSession` doesn't open a new TCP connection each time — the driver pools connections internally, and sessions are cheap, short-lived objects you create per unit of work and close promptly. Holding a session open across multiple unrelated requests defeats the pooling and can starve other goroutines of connections.</DeepDive>
 
 ## Redis: the supporting cast
 
@@ -155,7 +151,8 @@ func listProducts(
 	if afterID != "" {
 		filter["_id"] = bson.M{"$gt": afterID}
 	}
-	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}).SetLimit(limit)
+	sortBy := bson.D{{Key: "_id", Value: 1}}
+	opts := options.Find().SetSort(sortBy).SetLimit(limit)
 
 	cursor, err := products.Find(ctx, filter, opts)
 	if err != nil {

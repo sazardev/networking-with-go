@@ -1,5 +1,5 @@
 ---
-id: "[5.31.0]"
+id: "[6.31.0]"
 title: "APIs for Edge Computing and CDN"
 ---
 
@@ -46,9 +46,7 @@ func main() {
 
 `fsthttp.ServeFunc` replaces `http.ListenAndServe` entirely — there's no port to bind, no listener, because the platform itself is the server and invokes your compiled function per request. `r.Send(ctx, "origin")` forwards the request to a named backend configured outside your code (in Fastly's service configuration), which is how edge code typically talks to your actual origin server when it needs data it can't answer itself.
 
-<Warning title="This is not a drop-in replacement for net/http">
-`fsthttp` mirrors `net/http`'s shape closely enough to be readable, but the underlying execution model (WebAssembly, no goroutine scheduler in the usual sense, strict CPU-time budgets) means code that spawns background goroutines or expects to run past the response being sent will not behave the way it does on a normal server. Edge functions should do one focused thing per request and return.
-</Warning>
+<Warning title="This is not a drop-in replacement for net/http">`fsthttp` mirrors `net/http`'s shape closely enough to be readable, but the underlying execution model (WebAssembly, no goroutine scheduler in the usual sense, strict CPU-time budgets) means code that spawns background goroutines or expects to run past the response being sent will not behave the way it does on a normal server. Edge functions should do one focused thing per request and return.</Warning>
 
 ## What edge code is actually good for
 
@@ -90,9 +88,7 @@ func productHandler(w http.ResponseWriter, r *http.Request) {
 
 `stale-while-revalidate` tells the CDN it can serve a slightly stale cached response immediately while it revalidates against origin in the background — a meaningful latency win for data that doesn't need to be perfectly fresh on every single request, like a product listing that changes rarely. The edge layer honors these headers without your edge function needing custom caching logic at all, as long as your origin sets them correctly.
 
-<DeepDive title="Cache keys need to match your actual variance, not less and not more">
-If your API returns different content per user (personalized recommendations) but caches on the URL alone, you'll serve one user's personalized data to another. If it returns identical content for everyone but includes `Vary: Cookie` unnecessarily, you fragment the cache into one entry per session and get almost no cache hit rate at all. Get the `Vary` header (or the CDN's equivalent cache-key configuration) to match exactly what actually varies in the response.
-</DeepDive>
+<DeepDive title="Cache keys need to match your actual variance, not less and not more">If your API returns different content per user (personalized recommendations) but caches on the URL alone, you'll serve one user's personalized data to another. If it returns identical content for everyone but includes `Vary: Cookie` unnecessarily, you fragment the cache into one entry per session and get almost no cache hit rate at all. Get the `Vary` header (or the CDN's equivalent cache-key configuration) to match exactly what actually varies in the response.</DeepDive>
 
 ## Where the origin still matters
 

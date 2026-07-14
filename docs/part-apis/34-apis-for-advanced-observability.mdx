@@ -1,5 +1,5 @@
 ---
-id: "[5.34.0]"
+id: "[6.34.0]"
 title: "APIs for Advanced Observability"
 ---
 
@@ -123,7 +123,9 @@ The real payoff of tracing isn't the trace view alone — it's linking it to the
 **Trace-aware logging**: pull the current trace and span ID out of context and attach them to every structured log line, so a log line and a trace span referencing the same request can be found by the same ID:
 
 ```go
-func logWithTrace(ctx context.Context, logger *slog.Logger, msg string, args ...any) {
+func logWithTrace(
+	ctx context.Context, logger *slog.Logger, msg string, args ...any,
+) {
 	span := trace.SpanFromContext(ctx)
 	sc := span.SpanContext()
 	args = append(args,
@@ -144,9 +146,7 @@ requestDuration.(prometheus.ExemplarObserver).ObserveWithExemplar(
 )
 ```
 
-<DeepDive title="Exemplars are a bridge, not a replacement for either signal">
-A metric answers "how much" and "how often" cheaply, across all traffic, with tiny storage cost. A trace answers "what exactly happened, in order" for one specific request, at much higher storage cost per event. Exemplars deliberately keep both: you still aggregate on the cheap metric for dashboards and alerts, and only pay the cost of pulling a full trace when a specific data point is worth investigating.
-</DeepDive>
+<DeepDive title="Exemplars are a bridge, not a replacement for either signal">A metric answers "how much" and "how often" cheaply, across all traffic, with tiny storage cost. A trace answers "what exactly happened, in order" for one specific request, at much higher storage cost per event. Exemplars deliberately keep both: you still aggregate on the cheap metric for dashboards and alerts, and only pay the cost of pulling a full trace when a specific data point is worth investigating.</DeepDive>
 
 ## Sampling: you don't need every trace
 

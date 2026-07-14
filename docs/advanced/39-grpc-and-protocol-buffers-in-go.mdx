@@ -1,5 +1,5 @@
 ---
-id: "[3.39.0]"
+id: "[4.39.0]"
 title: "gRPC and Protocol Buffers in Go"
 ---
 
@@ -36,9 +36,7 @@ message HelloReply {
 
 Those trailing numbers (`= 1`) are not defaults or indexes into an array -- they are field tags, baked permanently into the binary wire format. Protobuf encodes each field as a tag/type pair followed by a value, using variable-length integers (varints) for anything that fits, so small numbers cost a single byte. This is why protobuf payloads are consistently smaller and faster to parse than the equivalent JSON: there are no field names on the wire at all, no quotes, no whitespace.
 
-<DeepDive title="Why the field numbers matter forever">
-Once a message ships to production, its field numbers are a contract. Renaming a Go struct field is free; renumbering a protobuf field is a breaking change, because the receiver decodes by tag number, not by name. Removing a field safely means marking its number `reserved`, never reusing it for something else.
-</DeepDive>
+<DeepDive title="Why the field numbers matter forever">Once a message ships to production, its field numbers are a contract. Renaming a Go struct field is free; renumbering a protobuf field is a breaking change, because the receiver decodes by tag number, not by name. Removing a field safely means marking its number `reserved`, never reusing it for something else.</DeepDive>
 
 ### Generating Go Code
 
@@ -146,9 +144,7 @@ func main() {
 
 The `context.Context` you pass in is not decoration -- gRPC uses it to propagate deadlines and cancellation across the network call, exactly the same `context` package you already use for `net/http` requests. If the caller's context expires, the in-flight RPC is cancelled on both ends.
 
-<Warning title="insecure.NewCredentials() is for development only">
-That call disables transport encryption entirely. Any production gRPC service should be configured with real TLS credentials (`credentials.NewTLS`), and most internal deployments layer mutual TLS on top so both sides authenticate each other, not just the server.
-</Warning>
+<Warning title="insecure.NewCredentials() is for development only">That call disables transport encryption entirely. Any production gRPC service should be configured with real TLS credentials (`credentials.NewTLS`), and most internal deployments layer mutual TLS on top so both sides authenticate each other, not just the server.</Warning>
 
 ### Why Reach for gRPC Instead of REST
 

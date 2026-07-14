@@ -1,5 +1,5 @@
 ---
-id: "[2.17.0]"
+id: "[3.17.0]"
 title: "NAT Traversal and P2P Networking: Concepts and Go Implementation"
 ---
 
@@ -21,6 +21,10 @@ NAT works fine for outbound connections: your laptop opens a connection out, the
 - **Restricted cone:** Only external hosts the internal host has already sent traffic to can reply through the mapping.
 - **Symmetric:** A new external port is assigned for every distinct destination, making the external mapping unpredictable ahead of time. The hardest to traverse.
 
+<DeepDive title="How the OS Actually Tracks a NAT Mapping">Every consumer router runs a connection-tracking table (Linux calls it `conntrack`) with one row per active flow: internal address:port, external address:port, protocol, and an idle timer. TCP can use the handshake and `FIN`/`RST` packets to know when a flow ends, but UDP has neither — the kernel's only signal is silence. Once no packet matches a UDP row for some idle period (commonly around 30 seconds, though routers vary), the row is evicted and the hole is gone, even though nothing failed on the wire. This is why hole-punched UDP sessions send periodic traffic even after the connection succeeds: to keep the conntrack row from expiring, not to keep the application alive.</DeepDive>
+
+<Axiom>A NAT mapping is not a connection, it's a fading memory — stop sending, and the router forgets you exist.</Axiom>
+
 ---
 
 ## Hole Punching
@@ -31,15 +35,15 @@ UDP is far friendlier to this than TCP, since it's connectionless — you don't 
 
 To punch a hole, both peers first need to *learn* their own public address and *exchange* it with the other peer — neither can see its own NAT mapping from the inside. That requires a third party both peers can already reach: a **rendezvous server**.
 
-<DeepDive title="STUN, TURN, and ICE">
-Production P2P systems (WebRTC, many VoIP tools) use standardized protocols for this: **STUN** servers tell a peer its own public IP/port; **TURN** servers relay traffic when direct punching fails (typically against symmetric NAT); **ICE** is the framework that tries direct connections first and falls back to a TURN relay. The rendezvous server we build below is a simplified, hand-rolled stand-in for what a STUN server provides.
-</DeepDive>
+<DeepDive title="STUN, TURN, and ICE">Production P2P systems (WebRTC, many VoIP tools) use standardized protocols for this: **STUN** servers tell a peer its own public IP/port; **TURN** servers relay traffic when direct punching fails (typically against symmetric NAT); **ICE** is the framework that tries direct connections first and falls back to a TURN relay. The rendezvous server we build below is a simplified, hand-rolled stand-in for what a STUN server provides.</DeepDive>
 
 ---
 
 ## Go Implementation: A Rendezvous Server
 
 The rendezvous server has one job: when a peer connects, record the public address the connection *appears* to come from (its NAT-mapped address, not whatever private IP the peer thinks it has), and hand that address to the other peer that registers under the same session.
+
+<Warning title="An unmatched session is a memory leak">If a peer registers under a session ID and its counterpart never shows up — a typo, a peer that crashed, a client that gave up — the naive version of this server keeps that entry in the `peers` map forever. On a long-running rendezvous server handling many sessions per day, that's an unbounded, ever-growing map. Any server-side state keyed by client-supplied input needs an eviction policy, not just an insertion path.</Warning>
 
 ```go
 package main
@@ -48,11 +52,17 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
+
+type pendingPeer struct {
+	addr   *net.UDPAddr
+	joined time.Time
+}
 
 type rendezvous struct {
 	mu    sync.Mutex
-	peers map[string]*net.UDPAddr // session ID -> first peer's address
+	peers map[string]pendingPeer // session ID -> first peer's address
 }
 
 func (r *rendezvous) handle(conn *net.UDPConn, addr *net.UDPAddr, session string) {
@@ -62,14 +72,35 @@ func (r *rendezvous) handle(conn *net.UDPConn, addr *net.UDPAddr, session string
 	other, ok := r.peers[session]
 	if !ok {
 		// First peer for this session: remember its address and wait.
-		r.peers[session] = addr
+		r.peers[session] = pendingPeer{addr: addr, joined: time.Now()}
 		return
 	}
 
 	// Second peer arrived: tell each peer the other's public address.
-	conn.WriteToUDP([]byte(other.String()), addr)
-	conn.WriteToUDP([]byte(addr.String()), other)
+	// Checking the error matters here — a silently dropped reply means
+	// one peer waits forever for an address that was actually sent.
+	if _, err := conn.WriteToUDP([]byte(other.addr.String()), addr); err != nil {
+		fmt.Println("notify second peer failed:", err)
+	}
+	if _, err := conn.WriteToUDP([]byte(addr.String()), other.addr); err != nil {
+		fmt.Println("notify first peer failed:", err)
+	}
 	delete(r.peers, session)
+}
+
+// sweep evicts sessions whose first peer never got a match within
+// maxAge, so an abandoned or mistyped session ID doesn't sit in
+// memory for the life of the server.
+func (r *rendezvous) sweep(maxAge time.Duration) {
+	for range time.Tick(30 * time.Second) {
+		r.mu.Lock()
+		for session, p := range r.peers {
+			if time.Since(p.joined) > maxAge {
+				delete(r.peers, session)
+			}
+		}
+		r.mu.Unlock()
+	}
 }
 
 func main() {
@@ -80,7 +111,9 @@ func main() {
 	defer conn.Close()
 	fmt.Println("rendezvous server listening on :9400")
 
-	r := &rendezvous{peers: make(map[string]*net.UDPAddr)}
+	r := &rendezvous{peers: make(map[string]pendingPeer)}
+	go r.sweep(2 * time.Minute)
+
 	buf := make([]byte, 256)
 	for {
 		n, addr, err := conn.ReadFromUDP(buf)
@@ -95,39 +128,55 @@ func main() {
 
 Because the server reads the packet's source address itself (`addr` from `ReadFromUDP`) rather than trusting anything the client claims, it naturally learns each peer's real public IP and NAT-assigned port — exactly the information neither peer can see on its own.
 
+<DeepDive title="Why the Source Address Can't Be Spoofed Here (But the Session Can)">`addr` in `ReadFromUDP` is filled in by the kernel from the packet's actual IP header — a peer cannot lie about it by writing something different into the UDP payload. That's what makes the rendezvous server a trustworthy witness to each peer's public address. The session string is different: it travels inside the payload, entirely under the sender's control. Anyone who guesses a session ID before the intended second peer arrives can register in their place. For anything beyond a classroom exercise, generate session IDs as long random tokens (`crypto/rand`), not a short numeric counter.</DeepDive>
+
 ---
 
 ## Go Implementation: The Peer
 
 Each peer registers with the rendezvous server under a shared session name, receives the other peer's public address, and starts sending UDP packets directly to it — punching the hole in its own NAT in the process.
 
+<DeepDive title="Why One Socket, Not Two">The peer opens exactly one `net.UDPConn` and uses it both to talk to the rendezvous server and, afterward, to punch toward the other peer — a deliberate choice, not a shortcut. The NAT mapping a router creates is keyed by the local socket's source port. A second socket on a different local port would get its own, different external mapping — one the rendezvous exchange never learned and the other peer never received. Reusing the same socket guarantees the address the rendezvous server observed is the one the punch traffic actually originates from.</DeepDive>
+
 ```go
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"time"
 )
 
 func main() {
 	session := os.Args[1] // both peers must use the same session ID
 
-	rendezvousAddr, _ := net.ResolveUDPAddr("udp", "rendezvous.example.com:9400")
+	rendezvousAddr, err := net.ResolveUDPAddr(
+		"udp", "rendezvous.example.com:9400")
+	if err != nil {
+		panic(err)
+	}
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: 0})
 	if err != nil {
 		panic(err)
 	}
 	defer conn.Close()
 
-	// Register with the rendezvous server.
-	conn.WriteToUDP([]byte(session), rendezvousAddr)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
+	// Register with the rendezvous server.
+	if _, err := conn.WriteToUDP([]byte(session), rendezvousAddr); err != nil {
+		panic(err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	buf := make([]byte, 64)
 	n, _, err := conn.ReadFromUDP(buf)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("no reply from rendezvous server: %w", err))
 	}
 	peerAddr, err := net.ResolveUDPAddr("udp", string(buf[:n]))
 	if err != nil {
@@ -135,25 +184,58 @@ func main() {
 	}
 	fmt.Println("peer public address:", peerAddr)
 
+	// connected signals the punch goroutine to stop once we've heard
+	// back from the peer at least once — the hole is open, and from
+	// here on application traffic itself keeps the NAT mapping alive.
+	connected := make(chan struct{})
+
 	// Punch: send directly to the peer's public address. The first few
 	// packets may be dropped by the peer's NAT before its own outbound
 	// packets have opened a matching hole — that's expected and why
 	// both sides keep sending on a short interval.
 	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
 		for {
-			conn.WriteToUDP([]byte("ping"), peerAddr)
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return
+			case <-connected:
+				return
+			case <-ticker.C:
+				_, err := conn.WriteToUDP([]byte("ping"), peerAddr)
+				if err != nil {
+					fmt.Println("punch send failed:", err)
+				}
+			}
 		}
 	}()
 
+	announced := false
 	for {
-		n, from, _ := conn.ReadFromUDP(buf)
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, from, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				fmt.Println("shutting down")
+				return
+			default:
+				continue // still waiting for the hole to open
+			}
+		}
+		if !announced {
+			close(connected)
+			announced = true
+		}
 		fmt.Printf("received %q from %s\n", buf[:n], from)
 	}
 }
 ```
 
 [Exercise: UDP Hole Punching](../../exercises/part2/17-udp-hole-punching/main.go)
+
+<Warning title="A retry goroutine needs a way to stop">An earlier, simpler version of the punch loop above ran `for { ... time.Sleep(...) }` with no exit condition — it would keep firing a UDP packet every 500ms for the entire life of the process, even long after the connection succeeded. That wastes bandwidth and makes the goroutine impossible to stop cleanly on shutdown. Any background retry loop should have an explicit stop signal, whether a `context.Context` cancellation, a dedicated `done` channel like `connected` above, or both.</Warning>
 
 Once each router sees outbound traffic from its own peer toward the other's address, it opens a mapping that lets the other peer's replies through — the "hole" is punched, and from that point the two peers are talking directly, with no traffic passing through the rendezvous server at all.
 
@@ -163,6 +245,19 @@ Once each router sees outbound traffic from its own peer toward the other's addr
 
 Hole punching reliably works against full-cone and restricted-cone NATs. Against **symmetric NAT**, the external port assigned to a peer changes per destination, so the address learned via the rendezvous server (which the peer contacted from a different destination than the eventual peer-to-peer target) may already be stale by the time the other peer tries it. In that case, a relay — a server both peers *can* reach that simply forwards traffic between them, the same byte-shuffling proxy pattern from the previous chapter — becomes the only reliable fallback, which is exactly the role TURN servers play in production ICE implementations.
 
+<Warning title="A relay is not a free fallback">Falling back to a TURN-style relay isn't just a config flag — it changes the cost and performance profile of the whole system. Every byte of every message now transits a server you operate and pay bandwidth for, and every round trip gains the relay's own latency on top of the direct path. Production ICE stacks treat the relay strictly as a last resort precisely because of this: they try direct candidates first (including hole-punched ones) and only commit to relaying once negotiation proves nothing better is reachable.</Warning>
+
+---
+
+## Try It Yourself: Making the Punch Observable
+
+The rendezvous and peer programs above are enough to punch a hole, but they don't show what's happening at the network layer. Extend the exercise code:
+
+- **Count dropped punches.** Increment a counter each time the punch goroutine sends a ping, and print it once the first reply arrives — a quick way to compare how "aggressive" different router models are about opening a mapping.
+- **Add a keepalive after the hole opens.** Once `connected` closes, start a slower ticker (every 15 seconds) sending a tiny keepalive — this is what stops the conntrack row from expiring, tying back to the OS-level deep dive earlier in this chapter.
+- **Simulate a lost rendezvous reply.** Comment out one `conn.WriteToUDP` call in `handle` and see whether the peer that never gets a reply hangs, or whether the `SetReadDeadline` you added actually saves it.
+- **Swap the transport.** Try a direct `net.Dial("tcp", ...)` to the reported address instead of UDP — it fails far more often, a concrete demonstration of why hole punching is a UDP technique first.
+
 ---
 
 ## Key Takeaways
@@ -171,7 +266,3 @@ Hole punching reliably works against full-cone and restricted-cone NATs. Against
 - A rendezvous server's core value is observing each peer's real public address — something neither peer can determine from the inside.
 - UDP's connectionless model makes it far more forgiving for hole punching than TCP.
 - Symmetric NAT often defeats hole punching outright, which is why production systems keep a relay (TURN-style) as a fallback.
-
----
-
-[Previous: DNS: Theory and Go Implementation](16-dns-theory-and-go-implementation.md) | [Next: Authentication and Authorization](18-authentication-and-authorization.md)

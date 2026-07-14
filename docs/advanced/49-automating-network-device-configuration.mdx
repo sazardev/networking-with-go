@@ -1,5 +1,5 @@
 ---
-id: "[3.49.0]"
+id: "[4.49.0]"
 title: "Automating Network Device Configuration"
 ---
 
@@ -26,9 +26,7 @@ Network devices expose configuration through two broad styles, and it matters wh
 
 **Model-driven APIs**—NETCONF and its younger sibling gNMI—exchange structured data (XML for NETCONF, protobuf for gNMI) instead of freeform text, validated against a formal schema (YANG). You ask for "the operational state of interface 3" and get a typed structure back, not a paragraph you have to regex. These are the right long-term answer, but not every device in a real network supports them yet, which is why screen-scraping automation is still a large, legitimate part of the job.
 
-<DeepDive title="NETCONF and gNMI, briefly">
-NETCONF (RFC 6241) runs over SSH and exchanges XML "configuration datastores." gNMI is Google's newer, gRPC-based equivalent, exchanging protobuf messages and supporting streaming telemetry as well as configuration. Both are modeled against YANG schemas defined by the OpenConfig project or the vendor. Go has real client libraries for both ecosystems (for example `openconfig/gnmic` for gNMI), but the concepts—not a specific API—are what you need to recognize when you meet them in a real network.
-</DeepDive>
+<DeepDive title="NETCONF and gNMI, briefly">NETCONF (RFC 6241) runs over SSH and exchanges XML "configuration datastores." gNMI is Google's newer, gRPC-based equivalent, exchanging protobuf messages and supporting streaming telemetry as well as configuration. Both are modeled against YANG schemas defined by the OpenConfig project or the vendor. Go has real client libraries for both ecosystems (for example `openconfig/gnmic` for gNMI), but the concepts—not a specific API—are what you need to recognize when you meet them in a real network.</DeepDive>
 
 ## Go Implementation
 
@@ -78,9 +76,7 @@ func runCommand(addr, user, password, cmd string) (string, error) {
 }
 ```
 
-<Warning title="Never ship InsecureIgnoreHostKey">
-`ssh.InsecureIgnoreHostKey()` accepts any host key, which means it cannot detect a man-in-the-middle attack. Real automation tooling verifies the host key against a known-hosts file with `ssh.FixedHostKey` or a custom `HostKeyCallback`.
-</Warning>
+<Warning title="Never ship InsecureIgnoreHostKey">`ssh.InsecureIgnoreHostKey()` accepts any host key, which means it cannot detect a man-in-the-middle attack. Real automation tooling verifies the host key against a known-hosts file with `ssh.FixedHostKey` or a custom `HostKeyCallback`.</Warning>
 
 ### Generating Configuration from a Template
 

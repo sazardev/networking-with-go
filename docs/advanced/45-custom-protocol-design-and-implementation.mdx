@@ -1,5 +1,5 @@
 ---
-id: "[3.45.0]"
+id: "[4.45.0]"
 title: "Custom Protocol Design and Implementation"
 ---
 
@@ -158,8 +158,6 @@ Because every message is self-delimiting, this loop works whether the peer sends
 
 Put the version byte in from day one, even if you only ever ship `Version1` for the first year. When you need to add a field, you have two honest options: bump the version and require both ends to negotiate a shared version during connection setup, or design the payload format itself to be forward-compatible (a length-prefixed list of optional fields, similar in spirit to protobuf's tag-based approach from the gRPC chapter). Retrofitting either strategy after a protocol has shipped without a version field is far more painful than reserving the byte up front.
 
-<DeepDive title="State machines keep protocols honest">
-Beyond framing, most real protocols have a notion of valid message *order* -- a handshake must complete before data messages are accepted, a `Close` message ends the conversation. Modeling this explicitly as a state machine (a `type connState int` with defined transitions, rejecting messages that arrive in the wrong state) turns "what should never happen" into something your code actively checks for, instead of an assumption baked silently into control flow.
-</DeepDive>
+<DeepDive title="State machines keep protocols honest">Beyond framing, most real protocols have a notion of valid message *order* -- a handshake must complete before data messages are accepted, a `Close` message ends the conversation. Modeling this explicitly as a state machine (a `type connState int` with defined transitions, rejecting messages that arrive in the wrong state) turns "what should never happen" into something your code actively checks for, instead of an assumption baked silently into control flow.</DeepDive>
 
 <Axiom>A protocol is not the bytes you send -- it is the promises both sides agree to keep about what those bytes mean.</Axiom>

@@ -1,5 +1,5 @@
 ---
-id: "[3.56.0]"
+id: "[4.56.0]"
 title: "Big Data, AI, and Streaming Networks"
 ---
 
@@ -130,7 +130,8 @@ import (
 func streamTokens(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		http.Error(w,
+			"streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
@@ -156,9 +157,7 @@ func main() {
 
 A browser client (or any HTTP client that reads the response body incrementally) sees each token as soon as `flusher.Flush()` is called, rather than waiting for the handler to return—the same mechanism that makes chat-style AI interfaces feel responsive instead of freezing until the whole answer is ready.
 
-<DeepDive title="SSE vs. WebSockets for streaming">
-SSE is one-directional (server to client) and rides on plain HTTP, which means it works through the same proxies, load balancers, and infrastructure as any other HTTP endpoint, and it reconnects automatically in browsers. WebSockets (covered earlier in Part 2) are bidirectional and lower-overhead per message, but need their own upgrade handshake and don't always traverse older infrastructure as transparently. For one-way streaming—like AI token output or a live log feed—SSE is often the simpler, more compatible choice.
-</DeepDive>
+<DeepDive title="SSE vs. WebSockets for streaming">SSE is one-directional (server to client) and rides on plain HTTP, which means it works through the same proxies, load balancers, and infrastructure as any other HTTP endpoint, and it reconnects automatically in browsers. WebSockets (covered earlier in Part 2) are bidirectional and lower-overhead per message, but need their own upgrade handshake and don't always traverse older infrastructure as transparently. For one-way streaming—like AI token output or a live log feed—SSE is often the simpler, more compatible choice.</DeepDive>
 
 ## Key Takeaways
 

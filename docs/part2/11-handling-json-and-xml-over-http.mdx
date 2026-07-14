@@ -1,5 +1,5 @@
 ---
-id: "[2.11.0]"
+id: "[3.11.0]"
 title: "Handling JSON and XML over HTTP: Concepts and Go Implementation"
 ---
 
@@ -14,6 +14,10 @@ title: "Handling JSON and XML over HTTP: Concepts and Go Implementation"
 - **Human-Readable:** Both formats are text-based and easy to debug.
 - **Widely Supported:** Every major programming language can read and write JSON and XML.
 - **Analogy:** Like using a customs form—everyone knows how to read it, no matter where it’s from.
+
+<DeepDive title="When Would You Actually Pick XML Today?">Most new HTTP APIs default to JSON: it's smaller on the wire, maps cleanly onto JavaScript objects, and Go's `encoding/json` is fast and ergonomic. XML still shows up constantly at the edges of a system, though — SOAP services, many banking and government integrations, configuration formats, and document-oriented data (think RSS feeds or anything with mixed text and markup) rely on XML's richer structure: attributes vs. elements, namespaces, and schemas (XSD) for strict validation. If you're integrating with an older enterprise system, don't be surprised if XML is the only option on the table.</DeepDive>
+
+<Axiom>Content-Type tells the reader how to parse what you sent; get it wrong and every decoder downstream fails silently or loudly.</Axiom>
 
 ---
 
@@ -60,6 +64,99 @@ See: [`json_client.go`](../../exercises/part2/11-json-xml-examples/json_client.g
 - Use `curl` to test GET: `curl http://localhost:8080/users`
 - Use `curl` to test POST: `curl -X POST -H "Content-Type: application/json" -d '{"name":"Test","email":"test@example.com"}' http://localhost:8080/users`
 
+### A Closer Look: Marshal/Unmarshal, Struct Tags, and Exported Fields
+
+Before decoding a real HTTP body, it helps to see the raw building
+blocks `encoding/json` gives you: `Marshal`/`Unmarshal` work entirely
+in memory on `[]byte`, while `Encoder`/`Decoder` stream to and from any
+`io.Writer`/`io.Reader` (like `w` and `r.Body` in a handler).
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+)
+
+type User struct {
+    ID       int    `json:"id"`
+    Name     string `json:"name"`
+    Email    string `json:"email,omitempty"`
+    password string // unexported: encoding/json can't see it at all
+}
+
+func main() {
+    u := User{ID: 1, Name: "Ada", password: "secret"}
+
+    data, err := json.Marshal(u)
+    if err != nil {
+        fmt.Println("marshal error:", err)
+        return
+    }
+    fmt.Println(string(data)) // Email omitted, password never appears
+
+    var decoded User
+    if err := json.Unmarshal(data, &decoded); err != nil {
+        fmt.Println("unmarshal error:", err)
+        return
+    }
+    fmt.Printf("%+v\n", decoded)
+}
+```
+
+<Warning title="Unexported Fields Are Silently Skipped">`encoding/json` (and `encoding/xml`) can only see **exported** struct fields — those starting with an uppercase letter — because reflection cannot read unexported fields from another package, and the encoders don't special-case "same package" either. A lowercase `password` field above simply never appears in the JSON, with no error and no warning. This is a common source of "why is my field missing?!" bugs; the fix is always to export the field and, if it truly must stay hidden from clients, tag it `json:"-"` instead of leaving it unexported.</Warning>
+
+<Warning title="Always Check the Decode/Unmarshal Error">A malformed or type-mismatched JSON body doesn't crash your program — `json.Unmarshal` and `Decoder.Decode` just return an `error` and leave the target at its zero value (or partially filled). Skipping the error check is one of the most common Go beginner mistakes: your handler looks like it worked, but silently processed empty data. Always branch on `err != nil` and respond with `http.StatusBadRequest` before using the decoded value.</Warning>
+
+### Streaming Decode: Why json.NewDecoder(r.Body) Beats ReadAll+Unmarshal
+
+`ioutil.ReadAll(r.Body)` followed by `json.Unmarshal` first buffers the
+**entire** request body into a `[]byte`, then parses it — for a large
+body that's two full copies of the data sitting in memory before you've
+validated a single field. `json.NewDecoder(r.Body).Decode(&v)` instead
+parses directly from the stream, token by token, without ever holding
+the whole body in memory at once. Combined with `http.MaxBytesReader`,
+this also caps the *worst case* memory a single request can consume:
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+)
+
+type CreateUserRequest struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+const maxBodyBytes = 1 << 20 // 1 MiB
+
+func createUserHandler(w http.ResponseWriter, r *http.Request) {
+    r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
+    var req CreateUserRequest
+    dec := json.NewDecoder(r.Body)
+    dec.DisallowUnknownFields() // reject fields the struct doesn't have
+
+    if err := dec.Decode(&req); err != nil {
+        http.Error(w, "invalid JSON: "+err.Error(),
+            http.StatusBadRequest)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]string{
+        "status": "created",
+        "name":   req.Name,
+    })
+}
+```
+
+<DeepDive title="MaxBytesReader Is Your DoS Safety Valve">Without a limit, `r.Body` is effectively unbounded — a client (malicious or just buggy) can stream gigabytes at your handler and exhaust server memory before you ever get to validate anything. `http.MaxBytesReader` wraps the body so that reading past the limit returns an error instead of continuing, and it also closes the connection to stop the client from sending more. Since Go 1.19, exceeding the limit produces a `*http.MaxBytesError` you can detect with `errors.As` to respond with `413 Payload Too Large` instead of a generic `400 Bad Request`. `DisallowUnknownFields` is a separate, complementary safeguard: it rejects a body containing fields your struct doesn't define, which catches typos and API misuse early instead of silently ignoring them.</DeepDive>
+
 ---
 
 ## Go in Action: Serving and Consuming XML (with Nested Elements)
@@ -94,6 +191,68 @@ See: [`xml_client.go`](../../exercises/part2/11-json-xml-examples/xml_client.go)
 - Use `curl` to test GET: `curl http://localhost:8081/products`
 - Use `curl` to test POST: `curl -X POST -H "Content-Type: application/xml" -d '<product><name>Test</name><tags><tag>foo</tag></tags></product>' http://localhost:8081/products`
 
+<Warning title="XML Namespaces Fail Silently, Not Loudly">A struct tag like `xml:"product"` only matches an element named `product` in the **default** (no) namespace. If the incoming XML declares `xmlns="urn:example:catalog"`, that same tag won't match, and `Decode` returns no error at all — the target struct is simply left with its zero values. To match a namespaced element you must include the URI in the tag, for example `xml:"urn:example:catalog product"`, or decode into a type with an explicit `XMLName xml.Name` field so you can inspect the namespace yourself. Always confirm the exact `xmlns` a partner system sends, not just the element names.</Warning>
+
+### Content Negotiation: One Endpoint, JSON or XML
+
+Real APIs often serve both formats from the same route, choosing the
+response based on the client's `Accept` header while trusting
+`Content-Type` to describe whatever the client actually sent:
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "encoding/xml"
+    "net/http"
+    "strings"
+)
+
+type Product struct {
+    XMLName xml.Name `xml:"product" json:"-"`
+    ID      int      `xml:"id" json:"id"`
+    Name    string   `xml:"name" json:"name"`
+}
+
+func productHandler(w http.ResponseWriter, r *http.Request) {
+    products := []Product{{ID: 1, Name: "Widget"}}
+
+    accept := r.Header.Get("Accept")
+    switch {
+    case strings.Contains(accept, "application/xml"):
+        w.Header().Set("Content-Type", "application/xml")
+        xml.NewEncoder(w).Encode(products)
+    default:
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(products)
+    }
+}
+```
+
+<DeepDive title="Content-Type vs. Accept: Two Different Questions">`Content-Type` on a request describes the body the client *is sending right now* — it tells your decoder how to parse it. `Accept` on a request describes what the client *would prefer to receive back* — a hint your handler can honor or ignore. On a response, `Content-Type` is the server's turn to describe what it just wrote, and every client decoder depends on it being accurate. Mixing these up — for example, trusting `Accept` to describe the request body — is a common source of "it works in curl but not in the real client" bugs, since browsers and libraries often send a permissive `Accept: */*` by default.</DeepDive>
+
+---
+
+## Try It Yourself: Safe Decoding and Content Negotiation
+
+1. Wire up `createUserHandler` from earlier behind `/users` and confirm
+   a valid POST body succeeds while `DisallowUnknownFields` rejects a
+   body with an extra, misspelled field (e.g. `"naem"` instead of
+   `"name"`).
+2. Send a POST body larger than `maxBodyBytes` (a 2 MiB JSON blob works)
+   and confirm the handler now returns an error instead of silently
+   allocating an unbounded buffer — inspect the error message to see
+   the `MaxBytesReader` limit kick in.
+3. Wire up `productHandler` and request the same URL twice: once with
+   `curl -H "Accept: application/json" ...` and once with
+   `curl -H "Accept: application/xml" ...`. Confirm the `Content-Type`
+   of each response matches what you asked for.
+4. Bonus: remove the `err != nil` check after a `Decode` call on
+   purpose and feed the handler garbage input — observe how the zero
+   value flows silently through the rest of the program until it fails
+   somewhere confusing, far from the real bug.
+
 ---
 
 ## Practical Exercise Files
@@ -111,7 +270,11 @@ See: [`xml_client.go`](../../exercises/part2/11-json-xml-examples/xml_client.go)
 - Use Go’s `encoding/json` and `encoding/xml` for safe, automatic encoding/decoding.
 - For nested/child data, use slices and struct tags.
 - Test with `curl` or Postman for real-world scenarios.
-
----
-
-[Previous: HTTP: Protocol Theory and Go Implementation](10-http-protocol-theory-and-go-implementation.md) | [Next: WebSockets: Real-Time Communication](12-websockets-real-time-communication.md)
+- Prefer `Decoder`/`Encoder` streaming over `ReadAll`+`Unmarshal` for
+  HTTP bodies, and always check the returned error.
+- Guard request bodies with `http.MaxBytesReader` to prevent unbounded
+  memory use from a single request.
+- Remember only exported struct fields are encoded/decoded—unexported
+  fields vanish silently.
+- Watch for XML namespace mismatches: a wrong `xmlns` fails silently,
+  leaving zero values instead of an error.

@@ -1,5 +1,5 @@
 ---
-id: "[3.48.0]"
+id: "[4.48.0]"
 title: "Network Simulation and Virtual Labs"
 ---
 
@@ -138,9 +138,7 @@ func main() {
 
 `exec()` here is doing the same job `docker exec` always does -- running a command inside an already-running container's namespace -- which means this small orchestrator can drive arbitrarily complex setup inside each node (configuring routes, installing `tc` traffic-control rules for latency injection, running your own Go binary as the workload under test) without this book needing to reimplement any of that plumbing.
 
-<DeepDive title="Why not just call Docker's Go SDK directly?">
-`github.com/docker/docker/client` is a real, officially maintained option, and production tooling (Containerlab included) does use it. This chapter favors `os/exec` against the `docker` CLI instead because the CLI's behavior is stable and easy to verify by hand, whereas the client SDK's API shifts across Docker Engine versions -- for a teaching example, a shorter, verifiably correct approach beats a longer one that risks drifting out of sync with a specific SDK version.
-</DeepDive>
+<DeepDive title="Why not just call Docker's Go SDK directly?">`github.com/docker/docker/client` is a real, officially maintained option, and production tooling (Containerlab included) does use it. This chapter favors `os/exec` against the `docker` CLI instead because the CLI's behavior is stable and easy to verify by hand, whereas the client SDK's API shifts across Docker Engine versions -- for a teaching example, a shorter, verifiably correct approach beats a longer one that risks drifting out of sync with a specific SDK version.</DeepDive>
 
 ### Choosing the Right Level of Fidelity
 

@@ -1,5 +1,5 @@
 ---
-id: "[5.4.0]"
+id: "[6.4.0]"
 title: "Building RESTful APIs with net/http"
 ---
 
@@ -260,9 +260,7 @@ http.ListenAndServe(":8080", handler)
 
 Because each middleware only depends on `http.Handler`, you can stack as many as you need, in any order, without touching the handlers themselves.
 
-<DeepDive title="Why a panic recovery middleware matters">
-By default, an unhandled panic in one request's goroutine crashes only that goroutine — `net/http` already recovers panics per-request so the whole server doesn't go down. A custom recovery middleware is still worth adding because it lets you log the panic with context and return a clean JSON error body instead of an abruptly closed connection.
-</DeepDive>
+<DeepDive title="Why a panic recovery middleware matters">By default, an unhandled panic in one request's goroutine crashes only that goroutine — `net/http` already recovers panics per-request so the whole server doesn't go down. A custom recovery middleware is still worth adding because it lets you log the panic with context and return a clean JSON error body instead of an abruptly closed connection.</DeepDive>
 
 ---
 
@@ -279,7 +277,9 @@ go func() {
 	}
 }()
 
-ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+ctx, stop := signal.NotifyContext(
+	context.Background(), os.Interrupt, syscall.SIGTERM,
+)
 defer stop()
 <-ctx.Done()
 

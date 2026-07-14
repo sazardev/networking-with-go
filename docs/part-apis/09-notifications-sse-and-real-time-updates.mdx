@@ -1,5 +1,5 @@
 ---
-id: "[5.9.0]"
+id: "[6.9.0]"
 title: "Notifications, SSE, and Real-Time Updates"
 ---
 
@@ -32,7 +32,8 @@ The key requirement on the server side is an `http.Flusher` — without explicit
 func notificationsHandler(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		http.Error(w,
+			"streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
@@ -59,9 +60,7 @@ func notificationsHandler(w http.ResponseWriter, r *http.Request) {
 
 Two details matter here: `r.Context().Done()` fires the moment the client disconnects, so the handler's goroutine exits instead of leaking forever; and every write is followed by `flusher.Flush()`, forcing the bytes out onto the wire immediately.
 
-<DeepDive title="Why r.Context() matters for streaming handlers">
-For a normal, short-lived handler, request context cancellation rarely comes up — the handler finishes before anyone would cancel it. Streaming handlers are different: they can run for minutes, and the client closing the tab is the only signal you get that the goroutine should stop. Always select on `r.Context().Done()` in any handler that holds the connection open indefinitely.
-</DeepDive>
+<DeepDive title="Why r.Context() matters for streaming handlers">For a normal, short-lived handler, request context cancellation rarely comes up — the handler finishes before anyone would cancel it. Streaming handlers are different: they can run for minutes, and the client closing the tab is the only signal you get that the goroutine should stop. Always select on `r.Context().Done()` in any handler that holds the connection open indefinitely.</DeepDive>
 
 ---
 

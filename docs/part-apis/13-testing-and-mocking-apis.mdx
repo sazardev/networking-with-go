@@ -1,5 +1,5 @@
 ---
-id: "[5.13.0]"
+id: "[6.13.0]"
 title: "Testing and Mocking APIs"
 ---
 
@@ -153,9 +153,7 @@ func (f *fakeStore) Get(id int) (Task, error) {
 
 The production `Store` type from chapter 4 and this `fakeStore` both satisfy `TaskStore`; the handler code only ever calls through the interface, so a test can inject `&fakeStore{tasks: map[int]Task{1: {ID: 1, Text: "seed"}}}` and control exactly what the "database" returns without touching a real one.
 
-<DeepDive title="Do you need a mocking library?">
-For simple interfaces with one or two methods, a small hand-written fake struct like the one above is usually clearer than a generated mock. Libraries like `github.com/stretchr/testify/mock` or code-generated mocks from `go.uber.org/mock/mockgen` earn their keep once an interface has many methods, or you need to assert call counts and argument values precisely — reach for them when hand-writing fakes becomes repetitive, not by default.
-</DeepDive>
+<DeepDive title="Do you need a mocking library?">For simple interfaces with one or two methods, a small hand-written fake struct like the one above is usually clearer than a generated mock. Libraries like `github.com/stretchr/testify/mock` or code-generated mocks from `go.uber.org/mock/mockgen` earn their keep once an interface has many methods, or you need to assert call counts and argument values precisely — reach for them when hand-writing fakes becomes repetitive, not by default.</DeepDive>
 
 ---
 

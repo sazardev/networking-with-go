@@ -1,5 +1,5 @@
 ---
-id: "[2.21.0]"
+id: "[3.21.0]"
 title: "Testing and Debugging Go Network Applications: Theory and Practice"
 ---
 
@@ -18,6 +18,10 @@ Every chapter so far has built code that depends on things outside your program'
 - **Concurrency bugs:** Race conditions may only appear under specific timing, making them easy to miss with a single test run.
 
 The fix isn't to avoid testing network code — it's to remove the actual network from the test wherever possible, and to lean on Go's tooling for the concurrency-specific risks.
+
+This chapter works through the same layers in order: eliminate the real socket where the test doesn't need one (`httptest`, `net.Pipe`), lean on the tools built for concurrency bugs (`-race`, `context.WithTimeout`), and finally, for whatever still slips through into a running system, use the live-debugging tools (`pprof`, goroutine dumps, `delve`).
+
+<Axiom>A flaky test isn't a bad test to ignore — it's a real bug your test happened to catch before your users did.</Axiom>
 
 ---
 
@@ -72,6 +76,10 @@ func TestUploadEndToEnd(t *testing.T) {
 
 [Exercise: Testing HTTP Handlers](../../exercises/part2/21-http-handler-tests/main_test.go)
 
+<Warning title="httptest.NewRecorder doesn't implement every ResponseWriter extra">`httptest.NewRecorder` gives you a `*httptest.ResponseRecorder`, which satisfies `http.ResponseWriter` but not `http.Hijacker` or (until you opt in) streaming-friendly flushing the way a real `net/http` connection does. A handler that hijacks the connection to speak raw bytes, or one that relies on `Flush` reaching the client incrementally, cannot be fully exercised this way — for those, reach for `httptest.NewServer` instead, which really does listen on a socket and gives handlers a genuine `http.ResponseWriter` backed by the real HTTP server.</Warning>
+
+<DeepDive title="Testing HTTPS handlers with httptest.NewTLSServer">`httptest.NewTLSServer` is a drop-in variant of `httptest.NewServer` that additionally generates a throwaway self-signed certificate and serves over TLS. The returned `*httptest.Server` exposes a preconfigured `Client()` method that already trusts that certificate, so a test can exercise TLS-specific handler logic (redirecting insecure requests, reading `r.TLS` fields) without needing a certificate of your own on disk.</DeepDive>
+
 ---
 
 ## Testing Raw TCP Code with `net.Pipe`
@@ -101,9 +109,11 @@ func TestEchoHandler(t *testing.T) {
 
 Because `handleConn` receives a plain `net.Conn` interface value, it can't tell the difference between the in-memory pipe and a real TCP connection from `net.Listen` — the same handler code is exercised either way, which is exactly why designing around the `net.Conn` interface (rather than a concrete type) pays off in tests.
 
-<Warning title="net.Pipe is synchronous">
-Unlike a real socket, `net.Pipe`'s `Write` blocks until a corresponding `Read` consumes the data — there's no OS-level buffer. Tests that write and read on the same goroutine without a matching concurrent reader will deadlock; always drive one side from a separate goroutine, as in the example above.
-</Warning>
+<Warning title="net.Pipe is synchronous">Unlike a real socket, `net.Pipe`'s `Write` blocks until a corresponding `Read` consumes the data — there's no OS-level buffer. Tests that write and read on the same goroutine without a matching concurrent reader will deadlock; always drive one side from a separate goroutine, as in the example above.</Warning>
+
+<DeepDive title="net.Pipe still supports deadlines">Despite having no real socket underneath, both ends returned by `net.Pipe` implement `SetDeadline`, `SetReadDeadline`, and `SetWriteDeadline` just like a TCP connection does, so code that relies on deadlines to bound a blocking `Read` can be exercised in a test exactly as it would run in production — you don't need a real listener just to test timeout-handling logic.</DeepDive>
+
+<Warning title="A leaked goroutine can outlive the test that started it">`go handleConn(serverConn)` above only exits once `serverConn` returns an error or the handler decides to stop. If `TestEchoHandler` returned early — a later assertion failed and skipped the rest — a handler blocked on `clientConn.Read` with no matching writer would leak for the life of the whole test binary. This is exactly what `t.Cleanup` (to guarantee `Close` calls run) and `go.uber.org/goleak` (`defer goleak.VerifyNone(t)`) exist to catch — `goleak` snapshots running goroutines at test end and fails it if any of the test's own are still alive.</Warning>
 
 ---
 
@@ -139,6 +149,8 @@ func TestConcurrentHandlers(t *testing.T) {
 	}
 }
 ```
+
+<Warning title="-race must run somewhere other than your own memory">The race detector only flags races that actually happen during the instrumented run — it can't find a race in a code path that never executed. A test suite that passes `go test -race` locally on a quiet laptop can still hide a race that only shows up under the scheduling pattern of a busier CI machine or a differently-configured `GOMAXPROCS`. Make `-race` part of CI, not just something you occasionally remember to run by hand, and don't treat one clean local run as proof a concurrent function is safe.</Warning>
 
 Bound every test that talks to a real network resource with a timeout via `context.WithTimeout`, so a hung connection fails the test loudly instead of hanging the whole test suite:
 
@@ -189,6 +201,31 @@ func TestParseHeader(t *testing.T) {
 
 ---
 
+## Fuzz Testing Parsers
+
+Table-driven tests only cover the inputs you thought to write down. Wire-format parsers like `parseHeader` are exactly the kind of code that breaks on inputs a human wouldn't think to try — a length field that overflows an `int`, a byte slice one shorter than the header format requires. Go's built-in fuzzing (`go test -fuzz`, part of the standard `testing` package since Go 1.18) generates those inputs for you:
+
+```go
+func FuzzParseHeader(f *testing.F) {
+	// Seed corpus: known-good and known-bad inputs to start from.
+	f.Add([]byte{0, 0, 0, 0, 0, 0, 0, 10})
+	f.Add([]byte{0, 0, 0})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// parseHeader must never panic, no matter the input —
+		// a malformed length prefix should return an error,
+		// not crash the goroutine reading off the wire.
+		_, _ = parseHeader(data)
+	})
+}
+```
+
+Running `go test -fuzz=FuzzParseHeader -fuzztime=30s` mutates the seed inputs for 30 seconds, looking specifically for inputs that make the function under test panic or fail an assertion inside `f.Fuzz`. Any failing input it finds is saved under `testdata/fuzz/` and replayed automatically by future `go test` runs, so a fuzz-discovered bug becomes a permanent regression test with no extra effort.
+
+<Axiom>Any code that parses bytes from a socket you don't control should assume the bytes are hostile until proven otherwise — fuzzing is how you find out where that assumption breaks.</Axiom>
+
+---
+
 ## Debugging Live Network Issues
 
 - **`net/http/pprof`:** Importing it for its side effects (`import _ "net/http/pprof"`) exposes goroutine dumps, CPU profiles, and heap snapshots over HTTP — invaluable for diagnosing a hung or leaking server without attaching a debugger.
@@ -196,15 +233,25 @@ func TestParseHeader(t *testing.T) {
 - **Wire-level tools:** For anything that isn't explained by your own logs, packet capture tools like `tcpdump` or Wireshark show what's actually crossing the wire — useful for catching cases where your Go code believes it sent something the network never delivered.
 - **`delve`:** Go's standard debugger (`dlv`) supports breakpoints, stepping, and inspecting goroutines live, including attaching to a running process for production incident debugging.
 
+**Using delve on a stuck server:** `dlv attach <pid>` connects to an already-running process without restarting it — essential when a bug only reproduces after hours of uptime. Once attached, `goroutines` lists every goroutine with its current state, and `goroutine <n> bt` prints its stack trace, showing exactly which line each blocked goroutine is stuck on.
+
+<Warning title="Attaching a debugger pauses the whole process">`dlv attach` stops every goroutine the moment it connects, not just the one you're inspecting — the Go runtime has no way to pause a single goroutine in isolation. On a server actively serving traffic, that means every in-flight request stalls for as long as the session holds the process paused. Prefer `net/http/pprof`'s goroutine dump (`/debug/pprof/goroutine?debug=2`), which captures stacks without stopping execution; save `dlv attach` for cases that snapshot can't explain.</Warning>
+
+<DeepDive title="Detecting goroutine leaks before they page you">A goroutine leak is invisible in a dashboard until it's accumulated enough to matter. `runtime.NumGoroutine()` returns the current count and can be exposed as a metric — a steadily climbing count under steady traffic is the signature of a leak. The `go.uber.org/goleak` package automates the same check inside tests, failing one that leaves behind goroutines it started. Catching the leak in a test is far cheaper than diagnosing it from a climbing graph weeks later in production.</DeepDive>
+
+---
+
+### Try It Yourself
+
+Take `parseHeader` from this chapter and write `FuzzParseHeader` as shown above. Run `go test -fuzz=FuzzParseHeader -fuzztime=30s` and see whether it finds a panicking input — if `parseHeader` trusts its length field without checking it against the actual slice length, it likely will. Then add `defer goleak.VerifyNone(t)` to `TestEchoHandler` and deliberately return early, before `clientConn.Close()` runs, to watch `goleak` catch the goroutine that `go handleConn(serverConn)` left behind.
+
 ---
 
 ## Key Takeaways
 
 - Prefer `httptest` and `net.Pipe` over real sockets in tests — they're faster, deterministic, and exercise the exact same handler code.
-- Always run concurrent code through `go test -race`; timing-dependent bugs rarely show up otherwise.
+- Always run concurrent code through `go test -race`, in CI as well as locally; timing-dependent bugs rarely show up otherwise.
 - Bound network-touching tests with `context.WithTimeout` so a hang fails fast instead of stalling the suite.
-- `net/http/pprof` and goroutine dumps are the fastest way to answer "why is this server stuck" in a live system.
-
----
-
-[Previous: Logging and Monitoring](20-logging-and-monitoring.md) | [Next: Performance Optimization](22-performance-optimization.md)
+- `net/http/pprof` and goroutine dumps are the fastest way to answer "why is this server stuck" in a live system, and they don't pause the process the way attaching a debugger does.
+- Fuzz parsers that read untrusted bytes off the wire; hand-written table-driven cases only cover inputs you already thought of.
+- Catch goroutine leaks in tests (`goleak.VerifyNone`) rather than as a slowly climbing count in a production dashboard.

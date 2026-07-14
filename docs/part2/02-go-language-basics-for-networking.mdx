@@ -1,5 +1,5 @@
 ---
-id: "[2.2.0]"
+id: "[3.2.0]"
 title: "Go Language Basics for Networking"
 ---
 
@@ -15,6 +15,14 @@ Go (Golang) was born at Google to solve real-world problems: speed, simplicity, 
 
 - **Analogy:** If C is a race car and Python is a comfy sedan, Go is a Tesla—fast, modern, and easy to drive.
 - **Fun Fact:** Go’s mascot, the gopher, is so iconic that it has its own plushies, comics, and even a song!
+
+This chapter isn't a full Go tutorial — it's the subset of the language
+you'll lean on constantly once you start writing servers and clients: how
+to model a connection with a struct, read bytes into a slice, report a
+dropped connection with an error, and serve many clients at once with
+goroutines. Later chapters assume you're comfortable with everything below.
+
+<Axiom>Go's networking code isn't a special dialect of the language — it's ordinary Go: structs, errors, and goroutines, applied to bytes moving over a wire.</Axiom>
 
 ---
 
@@ -34,6 +42,10 @@ func main() {
 
 [Try this exercise ](../../exercises/part2/02-hello-go/main.go)
 
+<DeepDive title="package main and func main">Every Go executable needs exactly one `package main` with exactly one `func main()` — the entry point the linker wires up. `go run` compiles to a temp binary and runs it in one step; `go build` produces a standalone binary you can copy anywhere, which matters once you're deploying a server.</DeepDive>
+
+<Warning title="go run vs go build for anything long-running">`go run` is great for quick checks, but it recompiles on every invocation. For a server you'll actually deploy, `go build -o server` once and run the resulting binary instead.</Warning>
+
 ---
 
 ### 2. Variables and Types
@@ -47,6 +59,10 @@ fmt.Printf("%s Listening on port %d\n", message, port)
 ```
 
 [Exercise: Variables and Types](../../exercises/part2/02-variables-and-types/main.go)
+
+<DeepDive title="Zero values and type inference">Go never leaves a declared variable undefined — `var port int` starts at `0`, `var host string` at `""`. The `:=` short form infers the type from the right side, so `port := 8080` is an `int` — but a real port number is never negative or above 65535, and the type alone doesn't enforce that.</DeepDive>
+
+<Warning title="int is not a port number">A TCP/UDP port is a 16-bit unsigned value (0-65535), but Go code almost always stores it in a plain `int`. Nothing stops you from writing `port := 99999` and only discovering the mistake when `Dial` returns a cryptic error at runtime — validate user-supplied ports early.</Warning>
 
 ---
 
@@ -62,6 +78,10 @@ fmt.Println(greet("Gopher"))
 ```
 
 [Exercise: Functions](../../exercises/part2/02-functions/main.go)
+
+<DeepDive title="Multiple return values, everywhere">Almost every networking call in Go returns two values: a result and an error, like `conn, err := net.Dial(...)`. Ordinary functions like `greet` above could just as easily return `(string, error)` — once that pattern feels natural, `net`, `io`, and `bufio` signatures stop feeling foreign.</DeepDive>
+
+<Warning title="Discarding one of two return values">`conn, _ := net.Dial("tcp", addr)` is syntactically valid but throws away the error — betting the connection always succeeds, a bet that fails the first time DNS is slow or the remote host is down. Name and check every `err` you receive.</Warning>
 
 ---
 
@@ -80,6 +100,10 @@ if port == 8080 {
 
 [Exercise: Control Structures](../../exercises/part2/02-control-structures/main.go)
 
+<DeepDive title="for is Go's only loop keyword">Go has no `while` or `do-while` — `for` covers every case. The three-clause form is above; `for condition { }` behaves like `while`; bare `for { }` loops forever, exactly the shape of an accept loop waiting for the next client. `range` is a special form of `for` for slices, maps, and channels.</DeepDive>
+
+<Warning title="A bare for {} needs its own exit">`for { }` never stops on its own — it relies on `break`, `return`, or the body blocking (like `ln.Accept()` waiting on the network) to avoid spinning your CPU at 100%. A bare `for {}` around non-blocking work with no exit condition is a busy-loop, not a server.</Warning>
+
 ---
 
 ### 5. Structs and Methods
@@ -95,6 +119,30 @@ func (s Server) Address() string {
     return fmt.Sprintf("%s:%d", s.Host, s.Port)
 }
 ```
+
+`Address` uses a **value receiver** — `s` is a copy of the `Server` it was
+called on, which is fine here since we only read fields. Once a struct
+starts holding a live connection or a mutex, that changes:
+
+```go
+type Client struct {
+    conn net.Conn
+    tag  string
+}
+
+func (c *Client) Connect(addr string) error {
+    conn, err := net.Dial("tcp", addr)
+    if err != nil {
+        return err
+    }
+    c.conn = conn
+    return nil
+}
+```
+
+<DeepDive title="Value receivers vs pointer receivers">`Connect` uses a **pointer receiver** (`*Client`) on purpose: it mutates `c.conn`, and a value receiver would only set the field on a throwaway copy, doing nothing to the original. Rule of thumb: if a method changes the struct, or the struct holds a `net.Conn`, `sync.Mutex`, or buffer that shouldn't be copied, give it a pointer receiver.</DeepDive>
+
+<Warning title="Copying a struct that holds a connection">Passing a `Client` by value copies the struct, `net.Conn` field included. Both copies now share the same underlying connection, but writes to one copy's other fields never reach the original — a frequent source of "why didn't my change take effect?" bugs. Pass connection-holding structs by pointer.</Warning>
 
 [Exercise: Structs and Methods](../../exercises/part2/02-structs-and-methods/main.go)
 
@@ -117,6 +165,10 @@ for name, port := range ports {
 
 [Exercise: Slices and Maps](../../exercises/part2/02-slices-and-maps/main.go)
 
+<DeepDive title="Slices are how you'll move bytes over the network">A slice is a small header (pointer, length, capacity) over an underlying array. `make([]byte, 4096)` allocates a buffer once; `conn.Read(buf)` fills part of it and returns how many bytes it wrote, so you slice `buf[:n]` rather than assuming the whole buffer was used — the pattern behind every `Read`/`Write` call from Chapter 5 onward.</DeepDive>
+
+<Warning title="Map iteration order is not deterministic">Go deliberately randomizes the order `range` visits a map's keys, on every run — the `ports` loop above prints in a different order each time. If you're building a routing table where check order matters, sort the keys explicitly rather than relying on map iteration order.</Warning>
+
 ---
 
 ### 7. Error Handling
@@ -129,6 +181,10 @@ if err != nil {
     log.Fatal(err)
 }
 ```
+
+<Warning title="log.Fatal skips your defers">`log.Fatal` logs and then calls `os.Exit(1)` immediately, so any `defer conn.Close()` written earlier never runs. Harmless in a one-shot script, but inside a long-running server, calling `log.Fatal` on a per- connection error kills the *entire process* over one bad client. Prefer `log.Println` plus `return` (or `continue` in an accept loop) instead.</Warning>
+
+<DeepDive title="Checking *what kind* of error you got">A plain `if err != nil` only tells you *something* went wrong. `net` package errors implement `net.Error`, which adds `Timeout() bool`, so `if ne, ok := err.(net.Error); ok && ne.Timeout()` can retry on a timeout but give up on a permanent failure. Wrapped errors (`%w`) still match correctly through `errors.Is(err, io.EOF)`.</DeepDive>
 
 [Exercise: Error Handling](../../exercises/part2/02-error-handling/main.go)
 
@@ -151,6 +207,12 @@ messages := make(chan string)
 go func() { messages <- "Ping!" }()
 fmt.Println(<-messages)
 ```
+
+<DeepDive title="Unbuffered vs buffered channels">`make(chan string)` above is **unbuffered**: the send blocks until something receives, and the receive blocks until something sends. That handshake is what makes the two-line example work without a `sync.WaitGroup`. `make(chan string, 10)` instead creates a **buffered** channel that holds up to 10 values before a send blocks — useful for smoothing out bursts.</DeepDive>
+
+<Warning title="A goroutine per connection isn't free">Spawning `go handleConn(conn)` per connection is the standard Go pattern, and goroutines are cheap (a few KB of stack each) — but not free. A server under a connection flood with no limit on concurrent goroutines can still exhaust memory or file descriptors; real servers eventually pair this pattern with a connection limit or a worker pool.</Warning>
+
+<Warning title="Sending with no receiver deadlocks">Writing `messages <- "Ping!"` on the same goroutine that will later read `<-messages`, with no `go` in front of the send, deadlocks: the send blocks forever waiting for a receiver that can never run. Go's runtime detects this and panics with "all goroutines are asleep — deadlock!" rather than hanging silently.</Warning>
 
 [Exercise: Goroutines and Channels](../../exercises/part2/02-goroutines-channels/main.go)
 
@@ -179,7 +241,66 @@ func main() {
 }
 ```
 
+<Warning title="conn.Close() at the end of main isn't a safe habit">`conn.Close()` runs at the bottom of `main` above — but if `conn.Read` panicked, or a future edit added an early `return`, the connection would leak: the file descriptor stays open until the process exits. `defer conn.Close()` right after `Dial` guarantees it always runs.</Warning>
+
+<Warning title="The ignored Read error, and partial reads">`n, _ := conn.Read(buf)` also discards its error, and reads only *once*. TCP has no concept of "messages" — a single `Read` may return part of a response, all of it, or signal `io.EOF`. One `Read` call is not guaranteed to capture a whole HTTP response, especially past a few KB.</Warning>
+
+A more careful version fixes both by deferring the close and looping over
+`Read` until `io.EOF`:
+
+```go
+package main
+
+import (
+	"fmt"
+	"io"
+	"net"
+	"os"
+)
+
+func main() {
+	conn, err := net.Dial("tcp", "example.com:80")
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	fmt.Fprintf(conn, "GET / HTTP/1.0\r\n\r\n")
+
+	buf := make([]byte, 4096)
+	for {
+		n, err := conn.Read(buf)
+		fmt.Print(string(buf[:n]))
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Println("read error:", err)
+			break
+		}
+	}
+}
+```
+
+Note `buf[:n]` prints *before* checking `err` — `Read` can return both
+data and `io.EOF` in the same call, so discarding it on error would drop
+the tail of the response.
+
 [Exercise: Simple TCP Client](../../exercises/part2/02-tcp-client/main.go)
+
+### Try It Yourself: Count the Bytes
+
+Extend the careful client above to report how much data it received:
+
+1. Add a `total := 0` before the loop, and `total += n` each iteration.
+2. After the loop ends, print `fmt.Println("bytes received:", total)`.
+3. Change the request line to `HEAD / HTTP/1.0\r\n\r\n` and compare the
+   byte count — a `HEAD` response has headers but no body.
+4. **Bonus:** wrap the `Dial` call in a loop that retries up to 3 times
+   with a short pause, printing which attempt finally succeeded.
+
+<Axiom>Every byte a TCP connection hands you comes through the same three-step ritual: read into a slice, check the error, decide whether to keep going.</Axiom>
 
 ---
 
@@ -205,7 +326,3 @@ func main() {
 - The Go Playground lets you run code in your browser—try it out!
 - Go’s motto: "Make the easy things easy, and the hard things possible."
 - Go is used by giants: Google, Uber, Netflix, Docker, Kubernetes, and more.
-
----
-
-[Previous: Setting Up Your Go Development Environment](01-setting-up-your-go-development-environment.md) | [Next: Go Networking Packages Overview](03-go-networking-packages-overview.md)

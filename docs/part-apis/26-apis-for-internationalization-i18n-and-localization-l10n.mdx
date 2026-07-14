@@ -1,5 +1,5 @@
 ---
-id: "[5.26.0]"
+id: "[6.26.0]"
 title: "APIs for Internationalization (i18n) and Localization (l10n)"
 ---
 
@@ -68,9 +68,7 @@ func cartSummaryHandler(w http.ResponseWriter, r *http.Request) {
 
 For anything beyond a handful of strings, `message.SetString` calls scattered through `init()` functions become unmanageable — real projects extract translatable strings into `.gotext.json` catalog files (using the `gotext` command-line tool that ships alongside this package) and load them per locale at startup, keeping the translation content out of the Go source entirely so translators can work in it without touching code.
 
-<DeepDive title="Don't localize error codes, only their messages">
-An API consumed by other programs, not just humans in a browser, should still return a stable machine-readable error code (`"code": "invalid_email"`) alongside the localized message (`"message": "Adresse e-mail invalide"`). Client code should branch on the code, never on the translated text — otherwise a translation update silently breaks every client that was pattern-matching against the English string.
-</DeepDive>
+<DeepDive title="Don't localize error codes, only their messages">An API consumed by other programs, not just humans in a browser, should still return a stable machine-readable error code (`"code": "invalid_email"`) alongside the localized message (`"message": "Adresse e-mail invalide"`). Client code should branch on the code, never on the translated text — otherwise a translation update silently breaks every client that was pattern-matching against the English string.</DeepDive>
 
 ## Formatting numbers, dates, and currency
 
@@ -87,9 +85,7 @@ func formatPrice(amount float64, locale language.Tag) string {
 
 For dates, prefer sending machine-parseable timestamps (RFC 3339, always in UTC) from your API and letting the client format them for display in the user's locale and timezone, rather than trying to pre-format dates server-side for every possible client locale. This keeps your API's data contract simple and pushes presentation concerns to the layer that actually knows the user's timezone.
 
-<Warning title="Timezones are a data problem, not a display problem">
-Storing and transmitting local time without a timezone offset (`2026-07-14 15:00:00` with no `Z` or offset) is a bug waiting to surface the first time a client in a different timezone reads it. Store and transmit UTC with an explicit offset (`2026-07-14T15:00:00Z`) always, and localize only at the final rendering step.
-</Warning>
+<Warning title="Timezones are a data problem, not a display problem">Storing and transmitting local time without a timezone offset (`2026-07-14 15:00:00` with no `Z` or offset) is a bug waiting to surface the first time a client in a different timezone reads it. Store and transmit UTC with an explicit offset (`2026-07-14T15:00:00Z`) always, and localize only at the final rendering step.</Warning>
 
 ## Structuring the API around locale from the start
 

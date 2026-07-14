@@ -16,7 +16,7 @@ pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
 ## Repository structure
 
 - `README.md` — the master table of contents for the whole book, linking every chapter in reading order. **If you add, remove, rename, or reorder a chapter file in `docs/`, update the corresponding entry/link in `README.md` too** — the two are expected to stay in sync.
-- `docs/part1/` — networking theory (OSI/TCP-IP, IP addressing, protocols, etc.), pure prose, no code.
+- `docs/part1/` — networking theory (OSI/TCP-IP, IP addressing, protocols, etc.). Originally pure prose with no code; each chapter now also ends with a "Try It Yourself in Go" hands-on section (standard-library only) that lets the reader directly observe the concept just explained.
 - `docs/part2/` — core Go networking topics (TCP/UDP, HTTP, WebSockets, DNS, concurrency, context, security, etc.); each chapter pairs theory with Go code samples inline. `exercises/part2/` contains the runnable counterparts to these chapters.
 - `docs/advanced/` — specialized/advanced networking topics (gRPC, WebRTC, MQTT, SDN, NFV, etc.).
 - `docs/part3/` — cybersecurity/offensive-defensive networking topics (scanning, sniffing, TLS/PKI, IDS/IPS, red/blue team, honeypots, etc.).

@@ -1,5 +1,5 @@
 ---
-id: "[3.53.0]"
+id: "[4.53.0]"
 title: "High Availability and Load Balancing"
 ---
 
@@ -183,9 +183,7 @@ func watchPrimary(primaryAddr string, checkEvery time.Duration, onFailover func(
 
 Requiring several consecutive missed checks (`maxMisses`) before failing over avoids "flapping"—treating one dropped packet as a full outage and triggering an unnecessary, disruptive promotion.
 
-<DeepDive title="Split-brain">
-If a network partition makes the primary and standby unable to see each other, but both are still reachable by clients, a naive failover scheme can end up with two nodes both believing they're the primary—a "split-brain" that can corrupt data. Real systems (etcd, ZooKeeper, Consul) solve this with a consensus protocol requiring a majority of nodes to agree before a failover is accepted, rather than letting any single standby decide unilaterally.
-</DeepDive>
+<DeepDive title="Split-brain">If a network partition makes the primary and standby unable to see each other, but both are still reachable by clients, a naive failover scheme can end up with two nodes both believing they're the primary—a "split-brain" that can corrupt data. Real systems (etcd, ZooKeeper, Consul) solve this with a consensus protocol requiring a majority of nodes to agree before a failover is accepted, rather than letting any single standby decide unilaterally.</DeepDive>
 
 ## Where L4 and DNS-Level HA Fit In
 

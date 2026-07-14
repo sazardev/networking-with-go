@@ -1,5 +1,5 @@
 ---
-id: "[2.23.0]"
+id: "[3.23.0]"
 title: "Deploying Go Network Applications: Best Practices"
 ---
 
@@ -18,6 +18,10 @@ Cross-compilation is built into the toolchain: building a Linux binary from a Wi
 ```
 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
 ```
+
+<DeepDive title="When 'static' isn't fully static">The "no cgo dependencies" claim has an asterisk: as soon as a package uses cgo — commonly `net`'s hostname resolver on some platforms — `go build` links dynamically against the host's C library (glibc) unless `CGO_ENABLED=0` is set explicitly. A binary built with cgo enabled on Ubuntu can fail to even start on a minimal Alpine container, because Alpine ships `musl` instead of `glibc`. Forcing `CGO_ENABLED=0` switches to the pure-Go DNS resolver, trading a little resolver nuance for a binary that truly runs anywhere.</DeepDive>
+
+<Axiom>A binary that "just runs" everywhere isn't an accident — it's `CGO_ENABLED=0` doing its job.</Axiom>
 
 ---
 
@@ -72,9 +76,32 @@ func main() {
 
 `srv.Shutdown` stops the listener immediately, then waits (up to the deadline on `shutdownCtx`) for active handlers to finish before returning — exactly the "finish what's in flight, refuse anything new" behavior a load balancer expects when it stops routing traffic to an instance and waits for it to drain.
 
-<Warning title="Orchestrators expect a grace period">
-Container schedulers like Kubernetes send `SIGTERM` and then wait a configurable grace period (commonly 30 seconds) before sending `SIGKILL`, which cannot be caught or delayed. Your shutdown timeout must be comfortably shorter than that grace period, or in-flight requests get killed anyway.
-</Warning>
+<Warning title="Orchestrators expect a grace period">Container schedulers like Kubernetes send `SIGTERM` and then wait a configurable grace period (commonly 30 seconds) before sending `SIGKILL`, which cannot be caught or delayed. Your shutdown timeout must be comfortably shorter than that grace period, or in-flight requests get killed anyway.</Warning>
+
+<Warning title="Shutdown only covers what you tell it to">`srv.Shutdown` only knows about the HTTP server's own listener and connections. A handler-owned database pool, a background worker draining a queue, or an open log file each need their own explicit `Close` or cancellation after `srv.Shutdown` returns — otherwise the process can exit mid-write on a worker, or leave a pool cleaned up only when the OS reclaims the process. Fold cleanup into the same shutdown path instead of assuming draining the HTTP server drains everything else too.</Warning>
+
+<DeepDive title="How signal.NotifyContext works under the hood">`SIGINT`/`SIGTERM` are asynchronous: the kernel can deliver them at any point, interrupting whatever goroutine is running. Go never runs your handling code directly in that interrupt context — `os/signal.Notify` (which `NotifyContext` wraps) registers interest in the signals, and the runtime forwards them onto an ordinary buffered channel your code reads like any other. The returned `ctx` is cancelled exactly once, on the first matching signal; `stop` restores the default OS behavior afterward, so a stuck shutdown can still be force-killed with a second signal.</DeepDive>
+
+A load balancer typically stops routing to an instance only once its
+readiness probe fails, and that probe has its own polling interval — so
+new traffic can still arrive after the shutdown signal fires but before
+`srv.Shutdown` starts draining. Failing readiness the instant the signal is
+observed gives the load balancer a head start on rerouting away first:
+
+```go
+var ready atomic.Bool // read by the /ready handler
+
+// during startup, once the server is accepting connections:
+ready.Store(true)
+
+// as the very first line after <-ctx.Done():
+ready.Store(false) // fail /ready immediately, then drain in-flight work
+```
+
+The `/ready` handler itself just checks `ready.Load()` and returns 200 or
+503 — the same liveness/readiness distinction the health checks section
+covers below, wired directly into the shutdown path rather than only
+reflecting whether the process is alive.
 
 ---
 
@@ -94,6 +121,10 @@ addr := getEnvOrDefault("SERVER_ADDR", ":8080")
 ```
 
 For anything beyond a couple of values, the standard library's `flag` package or a small typed configuration struct populated from environment variables keeps configuration centralized and self-documenting, rather than scattered `os.Getenv` calls throughout the codebase.
+
+<Warning title="Environment variables are not a secrets vault">Environment variables suit non-sensitive settings (ports, feature flags, backend URLs), but they're visible to anything that can read `/proc/<pid>/environ` on the host, and they get swept into crash dumps or logged accidentally by a library printing its own startup configuration. For passwords, API keys, and TLS private keys, prefer a dedicated secrets manager (Kubernetes Secrets mounted as files, Vault, a cloud provider's secrets service) or a file read once at startup with restrictive permissions.</Warning>
+
+<DeepDive title="Layering configuration sources">Real deployments often need more than one configuration source, layered by precedence: compiled-in defaults, then a config file, then environment variables, then flags, each overriding the one before it. This mirrors the twelve-factor app methodology's config principle — keep configuration in the environment, strictly separate from code, so the same binary moves unchanged between staging and production. Populating one `Config` struct in that order at startup, rather than reading `os.Getenv` at arbitrary points, also makes it possible to validate every setting once before the server starts accepting connections and fail fast with a clear error.</DeepDive>
 
 ---
 
@@ -117,6 +148,10 @@ ENTRYPOINT ["/server"]
 
 `CGO_ENABLED=0` guarantees a fully static binary with no dependency on the target system's C libraries, which is what makes it possible to run on a distroless base image containing nothing but the binary itself — no shell, no package manager, a dramatically reduced attack surface compared to a full OS image.
 
+<Warning title="Containers default to running as root">Unless a Dockerfile switches users, the process inside a container runs as root by default — and a container is not a full security boundary against a compromised process trying to escape to the host. Distroless ships a `:nonroot` tag variant; adding `USER nonroot` (or an explicit numeric UID) means a vulnerability in handler code can't casually attempt privilege escalation inside the container, even if it doesn't eliminate every container-escape risk on its own.</Warning>
+
+<DeepDive title="Choosing a base image: scratch, distroless, or alpine">`FROM scratch` produces the smallest possible image — nothing but the binary — but ships no CA certificates, so outbound TLS fails with a certificate verification error unless `/etc/ssl/certs` is copied in separately. `distroless/static` (used above) bundles CA certificates and timezone data while still shipping no shell or package manager. `alpine`-based images are friendlier for debugging — `docker exec` gives a working shell and `apk` — at the cost of a larger image and, if cgo gets accidentally re-enabled, a `musl` versus `glibc` mismatch. For a statically linked binary with no debugging needs, distroless is usually the better default.</DeepDive>
+
 ---
 
 ## Health Checks for Orchestrators
@@ -126,11 +161,50 @@ Deployment platforms need a way to know an instance is actually ready to serve t
 - **Liveness probe:** "Is the process still responsive?" A failing probe triggers a restart.
 - **Readiness probe:** "Should traffic be routed to this instance right now?" Useful for taking an instance temporarily out of rotation (e.g., while it's still warming up a cache) without restarting it.
 
+The two probes should not share one handler. A liveness check that also
+verifies a downstream database is a common way to trigger a restart loop
+that never actually fixes anything:
+
+```go
+mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK) // process is up; nothing more to prove
+})
+
+mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+})
+```
+
+<Warning title="Don't fail liveness on a dependency you don't control">If `/health` (liveness) pings the database and the database has a brief outage, every replica fails liveness at once and the orchestrator restarts all of them — fixing nothing and adding a thundering herd of reconnects on top of an already struggling dependency. Liveness should only answer "is this process itself stuck," independent of other services. Readiness is the right place to check dependencies, since a failing readiness probe only removes the instance from rotation — it doesn't restart anything.</Warning>
+
 ---
 
 ## Logs and Metrics in Production
 
 Once deployed, a process typically can't be attached to interactively. Structured logs written to `stdout`/`stderr` (as covered in the logging chapter) are collected by the container runtime or orchestrator and shipped to a central log store — write to standard streams rather than local files that may not survive a container restart or be accessible at all.
+
+<DeepDive title="Why structured fields matter more once deployed">A human reading logs at a terminal can parse a free-form sentence just fine; a log aggregation pipeline ingesting millions of lines a day cannot. `log/slog`'s key-value fields (`slog.String("remote_addr", addr)`, `slog.Duration("latency", d)`) let the collector index and query on those fields directly — "every request over 500ms from this backend" becomes a structured query, not a regular expression against prose. Logging the same field names consistently is what makes that querying possible once dozens of services share one log store.</DeepDive>
+
+<Warning title="Structured logging makes it easier to leak data, too">The same fields that make logs queryable also make it trivial to accidentally index a password, an auth token, or personal data straight into a searchable store, retained far longer and read far more broadly than the request that produced it. Treat the fields a handler logs as part of its API surface, review them the way you'd review a response body, and scrub anything sensitive before it reaches `slog`, not after.</Warning>
+
+---
+
+## Try It Yourself: Zero-Downtime Reload
+
+Take the graceful shutdown example, add the `/ready` handler from the
+health checks section, and wire the readiness flag to flip false the
+instant `ctx.Done()` fires. Send `SIGTERM` from another terminal and
+confirm the order: `/ready` returns 503 immediately, while a slow in-flight
+request (add `time.Sleep(5 * time.Second)` to one handler to simulate one)
+still completes before the process exits. Fail readiness first, drain
+second — that ordering is the difference between a deploy that briefly
+serves errors and one that doesn't.
 
 ---
 
@@ -141,7 +215,3 @@ Once deployed, a process typically can't be attached to interactively. Structure
 - Externalize configuration through environment variables rather than hardcoding addresses and secrets.
 - A small, `CGO_ENABLED=0`, multi-stage Docker build produces a minimal, more secure runtime image.
 - Health check endpoints and stdout-based logging are what let orchestrators and log pipelines manage your service without manual intervention.
-
----
-
-[Previous: Performance Optimization](22-performance-optimization.md) | [Next: Real-World Projects and Case Studies](24-real-world-projects-and-case-studies.md)

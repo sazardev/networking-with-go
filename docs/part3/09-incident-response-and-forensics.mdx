@@ -1,5 +1,5 @@
 ---
-id: "[4.9.0]"
+id: "[5.9.0]"
 title: "Incident Response and Forensics"
 ---
 
@@ -19,9 +19,7 @@ Everything earlier in Part 3 has been about reducing the odds and impact of an a
 
 The widely taught NIST model breaks incident response into four phases:
 
-<DeepDive title="The four IR phases">
-**Preparation** — everything done before an incident: logging enabled and retained, monitoring in place, an IR plan written down, contacts and escalation paths known in advance. **Detection and analysis** — noticing that something is actually wrong, and figuring out what it is: which systems, what access, what's the likely scope. **Containment, eradication, and recovery** — stopping the bleeding (isolate affected hosts), removing the cause (revoke stolen credentials, remove malware, close the entry point), and restoring normal operation. **Post-incident activity** — the lessons-learned review: what let this happen, what should change, and updating the preparation phase for next time.
-</DeepDive>
+<DeepDive title="The four IR phases">**Preparation** — everything done before an incident: logging enabled and retained, monitoring in place, an IR plan written down, contacts and escalation paths known in advance. **Detection and analysis** — noticing that something is actually wrong, and figuring out what it is: which systems, what access, what's the likely scope. **Containment, eradication, and recovery** — stopping the bleeding (isolate affected hosts), removing the cause (revoke stolen credentials, remove malware, close the entry point), and restoring normal operation. **Post-incident activity** — the lessons-learned review: what let this happen, what should change, and updating the preparation phase for next time.</DeepDive>
 
 Notice the cycle closes back on itself — a good post-incident review directly strengthens preparation for the next one, which is why mature organizations treat every incident, however small, as an opportunity to improve rather than just an emergency to survive.
 
@@ -42,9 +40,7 @@ For network-facing incidents specifically, a few categories of evidence recur co
 
 If an incident might lead to legal action, employee discipline, or regulatory reporting, evidence handling matters as much as evidence discovery. **Chain of custody** means being able to show, unbroken, who collected each piece of evidence, when, how it was stored, and that it wasn't altered along the way. In practice this means: hashing captured files immediately (so any later modification is detectable), logging who accessed evidence and when, and preferring read-only copies over working directly against a live, mutable system.
 
-<Warning title="Evidence handling has legal weight">
-How you collect and store evidence during an incident can determine whether it's usable later — in an internal investigation, a legal proceeding, or a regulatory disclosure. When in doubt, involve legal counsel and, if available, someone specifically trained in digital forensics before altering anything on a potentially compromised system.
-</Warning>
+<Warning title="Evidence handling has legal weight">How you collect and store evidence during an incident can determine whether it's usable later — in an internal investigation, a legal proceeding, or a regulatory disclosure. When in doubt, involve legal counsel and, if available, someone specifically trained in digital forensics before altering anything on a potentially compromised system.</Warning>
 
 ---
 
@@ -112,7 +108,3 @@ This is intentionally simple — a real detection pipeline would use structured 
 ## Forensics vs. Response
 
 **Incident response** is about restoring safe, normal operation as quickly as reasonably possible. **Forensics** is about understanding, in as much verified detail as possible, exactly what happened — sometimes after the fact, sometimes in parallel with response. The two goals can pull in different directions: response wants to isolate and rebuild a compromised host immediately; forensics wants to preserve it exactly as-is for analysis. A mature IR plan decides in advance how to balance that tension rather than improvising it live, mid-incident.
-
----
-
-[Previous: Penetration Testing Workflows](08-penetration-testing-workflows.md) | [Next: Ethical Hacking and Legal Considerations](10-ethical-hacking-and-legal-considerations.md)

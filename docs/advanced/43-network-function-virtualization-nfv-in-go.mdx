@@ -1,5 +1,5 @@
 ---
-id: "[3.43.0]"
+id: "[4.43.0]"
 title: "Network Function Virtualization (NFV) in Go"
 ---
 
@@ -123,14 +123,10 @@ func main() {
 
 This is intentionally close to what a real VNFM does, just without the formal descriptors (TOSCA or ETSI NFV templates) that a production orchestrator would use to describe a VNF's resource requirements and lifecycle hooks. Shelling out to the Docker CLI keeps the example honest about what is actually happening -- starting and stopping a containerized process -- without pretending to a full orchestration framework this chapter cannot responsibly cover in a few hundred words.
 
-<DeepDive title="NFV versus SDN, side by side">
-SDN is about *where decisions are made* -- centralizing routing and forwarding logic away from individual boxes. NFV is about *what the boxes are* -- replacing dedicated appliances with software on commodity hardware. They compose well together: an NFV-deployed virtual firewall can itself be managed by an SDN controller that steers traffic through it, and both ideas converge in modern service meshes, which are essentially NFV (proxies doing the work of network appliances) combined with SDN (a control plane that programs those proxies centrally).
-</DeepDive>
+<DeepDive title="NFV versus SDN, side by side">SDN is about *where decisions are made* -- centralizing routing and forwarding logic away from individual boxes. NFV is about *what the boxes are* -- replacing dedicated appliances with software on commodity hardware. They compose well together: an NFV-deployed virtual firewall can itself be managed by an SDN controller that steers traffic through it, and both ideas converge in modern service meshes, which are essentially NFV (proxies doing the work of network appliances) combined with SDN (a control plane that programs those proxies centrally).</DeepDive>
 
 ### Benefits and Honest Tradeoffs
 
 The pitch for NFV is elasticity (spin up a second firewall instance in seconds, not weeks of procurement), cost (commodity servers instead of specialized hardware), and agility (a bug fix or new feature is a software deployment, not a hardware refresh). The tradeoff is performance: a purpose-built ASIC in a hardware firewall will out-throughput a software equivalent running the same logic on a general-purpose CPU, especially at very high packet rates. Most real deployments accept that tradeoff everywhere except the small set of places (core routers, extremely high-throughput links) where it still matters, and that boundary keeps moving in software's favor as CPUs, kernel bypass techniques (like DPDK), and smart NICs improve.
 
-<Warning title="This example manages containers, not the network path itself">
-Actually rerouting traffic through a VNF chain (so packets really flow firewall to load balancer to application) requires additional plumbing -- container networking rules, a service mesh, or an SDN controller like the one in the previous chapter. The manager above shows lifecycle control; production service chaining needs the data-plane wiring to match.
-</Warning>
+<Warning title="This example manages containers, not the network path itself">Actually rerouting traffic through a VNF chain (so packets really flow firewall to load balancer to application) requires additional plumbing -- container networking rules, a service mesh, or an SDN controller like the one in the previous chapter. The manager above shows lifecycle control; production service chaining needs the data-plane wiring to match.</Warning>

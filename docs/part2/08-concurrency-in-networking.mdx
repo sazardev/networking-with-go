@@ -1,5 +1,5 @@
 ---
-id: "[2.8.0]"
+id: "[3.8.0]"
 title: "Concurrency in Networking: Theory and Go Implementation"
 ---
 
@@ -83,6 +83,8 @@ func main() {
 
 [Ejercicio: Canales Básicos](../../exercises/part2/08-channels-basic/main.go)
 
+<DeepDive title="Buffered vs. Unbuffered Channels">The channel above, `make(chan string)`, is **unbuffered**: a send blocks until another goroutine is ready to receive, so the two sides briefly synchronize on the handoff. A **buffered** channel, `make(chan string, 3)`, lets up to 3 sends complete with no receiver present — the sender only blocks once the buffer fills up. Use unbuffered channels when you need a guarantee that the value was actually received; use buffered channels to absorb bursts of work between producers and consumers, like a small queue.</DeepDive>
+
 ---
 
 ## Go in Action: Concurrent TCP Server
@@ -144,6 +146,8 @@ func main() {
 ```
 
 [Ejercicio: Channel Broadcast](../../exercises/part2/08-channel-broadcast/main.go)
+
+<Warning title="Closed and Nil Channels Are Not the Same as Empty">Sending on a **closed** channel panics immediately with `send on closed channel`, even though receiving from it keeps returning the zero value forever — that asymmetry is why only the sender should ever call `close`. A **nil** channel (a `chan T` left at its zero value, never initialized with `make`) blocks forever on both send and receive; a `select` with a nil-channel case simply never picks it, which is a handy trick to "disable" a case at runtime.</Warning>
 
 ---
 
@@ -492,4 +496,43 @@ func main() {
 
 ---
 
-[Previous: Error Handling and Debugging](07-error-handling-and-debugging.md) | [Next: Context and Cancellation](09-context-and-cancellation.md)
+## Try It Yourself: Catching a Race Condition
+
+<Axiom>Goroutines are cheap to start, but a leaked or racy one costs correctness forever.</Axiom>
+
+The race detector mentioned earlier isn't just theory — trigger one on
+purpose. This program has many goroutines incrementing the same `int`
+with no synchronization at all:
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func main() {
+    var wg sync.WaitGroup
+    counter := 0
+
+    for i := 0; i < 1000; i++ {
+        wg.Add(1) // Always Add before starting the goroutine, never inside it
+        go func() {
+            defer wg.Done()
+            counter++ // Unsynchronized read-modify-write: a data race
+        }()
+    }
+
+    wg.Wait()
+    fmt.Println("Counter:", counter)
+}
+```
+
+Run it with `go run main.go` a few times: the printed count often lands
+below 1000 and changes between runs, because `counter++` is not atomic.
+Now run `go run -race main.go` — Go instruments every memory access and
+reports the exact two goroutines racing on `counter`, with file and line
+numbers. Fix it by guarding the counter with a `sync.Mutex`
+(`mu.Lock()`/`counter++`/`mu.Unlock()`) or by switching to `sync/atomic`,
+then confirm `-race` goes quiet.

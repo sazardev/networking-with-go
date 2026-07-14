@@ -1,5 +1,5 @@
 ---
-id: "[5.5.0]"
+id: "[6.5.0]"
 title: "Building APIs with Gin"
 ---
 
@@ -208,9 +208,7 @@ func requireAPIKey(validKey string) gin.HandlerFunc {
 
 Attach middleware globally with `r.Use(requestID())`, or scope it to a single group: `api := r.Group("/api/v1", requireAPIKey(key))`.
 
-<DeepDive title="gin.Default() vs gin.New()">
-`gin.Default()` attaches the `Logger()` and `Recovery()` middleware automatically — good defaults for development and most production services. `gin.New()` gives you a bare engine with no middleware at all, useful when you want full control over logging format or need to swap in your own recovery/observability stack (for example, wiring in OpenTelemetry tracing middleware instead).
-</DeepDive>
+<DeepDive title="gin.Default() vs gin.New()">`gin.Default()` attaches the `Logger()` and `Recovery()` middleware automatically — good defaults for development and most production services. `gin.New()` gives you a bare engine with no middleware at all, useful when you want full control over logging format or need to swap in your own recovery/observability stack (for example, wiring in OpenTelemetry tracing middleware instead).</DeepDive>
 
 ---
 

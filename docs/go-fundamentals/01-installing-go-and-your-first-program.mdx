@@ -1,0 +1,293 @@
+---
+id: "[2.1.0]"
+title: "Installing Go and Your First Program"
+---
+
+# Installing Go and Your First Program
+
+> Think of this chapter as moving into a new workshop. Before you can build
+> anything, you need the bench installed, the tools within reach, and one
+> quick test cut to prove the saw actually turns on.
+
+Part 1 of this book explained networking as a set of ideas: nodes, links,
+protocols, packets. Starting with Part 2, those ideas turn into working code,
+and the language doing the work is Go. But Part 2 assumes you already know
+how to write, run, and reason about a Go program. This short part fills that
+gap. It teaches Go itself — the syntax, the type system, the idioms — with
+no networking in sight, so that by the time you reach Part 2's first TCP
+server, the Go code is familiar and the networking is the only new thing
+left to learn.
+
+This chapter gets Go installed on your machine, explains just enough about
+how Go organizes code to avoid early confusion, and walks you through
+writing, running, and building your very first program.
+
+## Why Go?
+
+Go (sometimes called Golang) was created at Google in 2007 by Robert
+Griesemer, Rob Pike, and Ken Thompson, and released publicly in 2009. Its
+design goal was almost contrarian for its time: instead of adding more
+features to programming languages, Go's creators asked what could be
+*removed* while still keeping a language productive for large teams writing
+networked, concurrent software. The result has no classes, no exceptions, no
+implicit type conversions, and a compiler that refuses to build code with an
+unused import or variable. Every one of those omissions is deliberate, and
+you will see the reasoning behind each one as this part unfolds.
+
+<Axiom>Go is a language designed to be read more than it is designed to be written — every feature it leaves out is one less thing you have to hold in your head when reading someone else's code six months from now.</Axiom>
+
+What Go keeps is a small, orthogonal set of tools: a fast compiler, a
+built-in formatter, a built-in test runner, built-in dependency management,
+and a concurrency model (goroutines and channels, covered later in this
+book) that made it one of the natural choices for network programming. That
+is precisely why this book uses it.
+
+## Installing Go
+
+Go ships as a single self-contained toolchain: one download gives you the
+compiler, the standard library, and every command-line tool you will use
+(`go build`, `go run`, `go test`, `gofmt`, and more). There is no separate
+runtime to install and no package manager you're required to use, though
+your OS's package manager is a perfectly good way to install Go itself.
+
+**macOS.** The easiest path is Homebrew, if you have it:
+
+```sh
+brew install go
+```
+
+Alternatively, download the `.pkg` installer from
+[go.dev/dl](https://go.dev/dl/) and run it like any other macOS installer —
+it places the toolchain in `/usr/local/go` and wires up your `PATH`
+automatically.
+
+**Windows.** Download the `.msi` installer from
+[go.dev/dl](https://go.dev/dl/) and run it. It installs to
+`C:\Program Files\Go` by default and updates your `PATH` for you. If you use
+`winget`, this also works from PowerShell:
+
+```sh
+winget install GoLang.Go
+```
+
+**Linux.** Most distributions package Go, but distro repositories often lag
+behind the latest release. On Debian/Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install golang-go
+```
+
+For the latest version instead, download the tarball from
+[go.dev/dl](https://go.dev/dl/) and extract it to `/usr/local`:
+
+```sh
+curl -LO https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
+```
+
+Then add Go's `bin` directory to your `PATH` by appending this line to
+`~/.bashrc` or `~/.zshrc`:
+
+```sh
+export PATH=$PATH:/usr/local/go/bin
+```
+
+<Warning title="PATH changes need a new shell">Editing `.bashrc` or `.zshrc` only affects terminal sessions opened *after* the edit. If `go version` still says "command not found" right after editing the file, either open a new terminal window or run `source ~/.zshrc` (or `~/.bashrc`) to reload it into the current one.</Warning>
+
+**Verifying the install.** Regardless of platform, confirm the toolchain is
+on your `PATH` and check its version:
+
+```sh
+go version
+```
+
+You should see output resembling:
+
+```
+go version go1.22.0 linux/amd64
+```
+
+If the command is not found, or reports a version much older than what you
+just installed, see the warning below before continuing.
+
+<Warning title="Multiple Go installations fighting over your PATH">Installing Go through a package manager (`apt`, `brew`, `winget`) *and* the official installer can leave two `go` binaries on disk, and whichever appears first in `PATH` silently wins — even if it is the older one. Run `which go` (macOS/Linux) or `where go` (Windows) to see exactly which binary is being used, and remove or reorder the stale one.</Warning>
+
+## GOPATH vs. Modules: A Brief History
+
+If you read older Go tutorials or Stack Overflow answers, you will see
+constant references to `GOPATH` and a rule that all Go code had to live
+inside a single directory tree (`$GOPATH/src/github.com/you/project`). That
+requirement existed because, before 2018, Go had no per-project dependency
+manifest — the *location* of your code on disk was how the compiler found
+your packages and their dependencies.
+
+Go modules, introduced in Go 1.11 and the default since Go 1.16, replaced
+that entirely. A module is simply a directory containing a `go.mod` file
+that declares the project's name and its dependencies; it can live
+anywhere on disk. `GOPATH` still exists, but its job today is much smaller:
+it points to a cache directory (`~/go` by default) where downloaded
+dependencies and tools installed via `go install` are kept. You do not need
+to set it manually, and you never need to place your own project inside it.
+
+<DeepDive title="Why this history matters even though you'll never use GOPATH mode">Every chapter in this book creates a module with `go mod init` and runs code with `go run` or `go build` — pure modules workflow, start to finish. The history matters only so that when you see an old blog post insisting your project must live under `GOPATH/src`, you recognize it as outdated advice and safely ignore it.</DeepDive>
+
+## Hello, Go
+
+With Go installed, create a project directory and turn it into a module:
+
+```sh
+mkdir hello-go
+cd hello-go
+go mod init example.com/hello-go
+```
+
+`go mod init` writes a `go.mod` file — the manifest that names your module
+and records the minimum Go version it requires. Look at it:
+
+```sh
+cat go.mod
+```
+
+```
+module example.com/hello-go
+
+go 1.22
+```
+
+The module path (`example.com/hello-go` here) does not need to be a real,
+reachable URL for local practice code like this — it only has to be a
+unique importable name. Real, published projects use their actual
+repository path (`github.com/you/project`) so others can `go get` them.
+
+Now create `main.go` in that same directory:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, Go!")
+}
+```
+
+Every executable Go program needs exactly this shape: a `package main`
+declaration, and a `func main()` inside it — that combination is what tells
+the compiler "this package produces a runnable binary, and here is where
+execution starts." The `import "fmt"` line pulls in the standard library's
+formatted-I/O package so `fmt.Println` is available.
+
+Run it directly, without a separate compile step:
+
+```sh
+go run main.go
+```
+
+```
+Hello, Go!
+```
+
+`go run` compiles the program to a temporary binary, executes it, and
+deletes the binary afterward — perfect for quick iteration. When you want a
+binary you can keep and distribute, use `go build` instead:
+
+```sh
+go build
+./hello-go
+```
+
+```
+Hello, Go!
+```
+
+`go build` (with no filename argument, run from inside the module) compiles
+every `.go` file in the current package and names the resulting binary
+after the module's directory — `hello-go` here, or `hello-go.exe` on
+Windows. That binary is statically linked: it can be copied to another
+machine of the same OS and architecture and run with no separate Go
+installation required, which is one of Go's most-loved deployment
+properties.
+
+<Warning title="go run vs go build — pick the right one on purpose">Reaching for `go run` out of habit even for a program you'll execute repeatedly wastes a full compile on every invocation. Use `go run` while actively writing and testing a single file; use `go build` once you have something worth keeping, then run the compiled binary directly.</Warning>
+
+## Tooling You'll Use Constantly
+
+Three commands will become reflexes well before you finish this book.
+
+**`gofmt` (and `go fmt`).** Go ships an opinionated code formatter, and the
+community treats its output as non-negotiable — there is essentially no
+argument in Go circles about brace placement or indentation because the
+tool decides for everyone. Run it against your current package with:
+
+```sh
+go fmt ./...
+```
+
+Configure your editor to run this automatically on save; you will never
+manually align a struct field or worry about tabs versus spaces again.
+
+**`go vet`.** Where `gofmt` cares about *style*, `go vet` looks for
+*likely bugs* — mismatched `Printf` verbs, unreachable code, suspicious
+struct tags, and more. It ships with the toolchain, costs nothing to run,
+and catches mistakes the compiler's type checker does not:
+
+```sh
+go vet ./...
+```
+
+**An editor that understands modules.** VS Code with the official Go
+extension, or JetBrains GoLand, both work well out of the box: they run
+`gofmt` on save, surface `go vet` warnings inline, and provide
+autocomplete powered by `gopls`, the official Go language server. Either
+choice needs to be opened at the module root — the folder containing
+`go.mod` — to see your project the way the compiler does.
+
+<DeepDive title="What gopls needs to work properly">`gopls` resolves imports and offers completions by reading your `go.mod`, exactly like the compiler does. Opening a single loose `.go` file, or a subfolder that isn't the module root, puts the editor into a degraded mode with far fewer features and a "no packages found" warning. Always open the folder that directly contains `go.mod`.</DeepDive>
+
+### Try It Yourself
+
+Extend `hello-go`'s `main.go` so it prints a second line showing which Go
+version built it, using the `runtime` package:
+
+```go
+package main
+
+import (
+	"fmt"
+	"runtime"
+)
+
+func main() {
+	fmt.Println("Hello, Go!")
+	fmt.Println("Built with:", runtime.Version())
+}
+```
+
+1. Add the `runtime` import and the second `fmt.Println` call above.
+2. Run it with `go run main.go` and confirm the version line matches the
+   output of `go version` you ran earlier.
+3. Run `go build` and execute the resulting binary from a different
+   directory (`cd ..` first) to see that it needs no `go.mod` nearby —
+   the binary is fully self-contained.
+4. **Bonus:** delete `go.mod` temporarily and try `go run main.go` again —
+   read the error message the toolchain gives you, then restore the file
+   with `go mod init example.com/hello-go`.
+
+<Axiom>A Go binary carries its own runtime with it. There is no "install Go on the server first" step for deployment — you build once and ship one file.</Axiom>
+
+## Key Takeaways
+
+- Go installs as one self-contained toolchain: compiler, standard library,
+  and tools like `gofmt`, `go vet`, and `go test` all come together.
+- Modules (`go.mod`, since Go 1.11, default since 1.16) replaced the old
+  `GOPATH`-directory requirement — your project can live anywhere on disk.
+- `go mod init <module-path>` starts a new module; `go run` compiles and
+  executes in one step; `go build` produces a standalone, distributable
+  binary.
+- `gofmt`/`go fmt` enforces one formatting standard for the whole
+  community; `go vet` catches likely bugs the compiler's type checker
+  misses. Run both often, and wire your editor to run `gofmt` on save.
+- Every executable Go program needs `package main` and a `func main()` —
+  that is the entry point the compiler and OS agree on.

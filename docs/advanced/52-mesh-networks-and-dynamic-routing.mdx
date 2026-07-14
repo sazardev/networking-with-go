@@ -1,5 +1,5 @@
 ---
-id: "[3.52.0]"
+id: "[4.52.0]"
 title: "Mesh Networks and Dynamic Routing"
 ---
 
@@ -62,8 +62,8 @@ func (rt *RoutingTable) Update(dest, viaNeighbor string, advertisedCost int) boo
 	newCost := advertisedCost + 1 // one more hop to reach the neighbor itself
 	current, exists := rt.routes[dest]
 
-	// Adopt the route if it's better, new, or a refresh from our current next hop
-	// (so that a neighbor's own cost increases correctly propagate to us too).
+	// Adopt the route if it's better, new, or a refresh from our current
+	// next hop (so a neighbor's own cost increases propagate to us too).
 	if !exists || newCost < current.Cost || current.NextHop == viaNeighbor {
 		sameNextHop := exists && current.NextHop == viaNeighbor
 		if sameNextHop && newCost == current.Cost {
@@ -115,7 +115,10 @@ type Advertisement struct {
 }
 
 func advertiseLoop(
-	nodeName string, rt *RoutingTable, neighbors []string, interval time.Duration,
+	nodeName string,
+	rt *RoutingTable,
+	neighbors []string,
+	interval time.Duration,
 ) {
 	conn, err := net.ListenPacket("udp", ":0")
 	if err != nil {
@@ -196,9 +199,7 @@ func listenLoop(nodeName string, rt *RoutingTable, listenAddr string) error {
 }
 ```
 
-<Warning title="Loop prevention needs more than this sketch">
-This simplified example omits split-horizon and hop-limit handling, both of which real distance-vector protocols need to avoid routing loops and "count-to-infinity" problems when a route disappears. Production implementations (like RIP's split-horizon-with-poison-reverse) add these explicitly; don't deploy the sketch above unmodified.
-</Warning>
+<Warning title="Loop prevention needs more than this sketch">This simplified example omits split-horizon and hop-limit handling, both of which real distance-vector protocols need to avoid routing loops and "count-to-infinity" problems when a route disappears. Production implementations (like RIP's split-horizon-with-poison-reverse) add these explicitly; don't deploy the sketch above unmodified.</Warning>
 
 ## Real-World Go Mesh Networking
 

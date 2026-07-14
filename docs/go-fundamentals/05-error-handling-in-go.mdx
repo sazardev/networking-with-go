@@ -1,0 +1,310 @@
+---
+id: "[2.5.0]"
+title: "Error Handling in Go"
+---
+
+# Error Handling in Go
+
+> Go treats failure the way a careful engineer treats a warning light on a
+> dashboard: it doesn't stop the car for you and it doesn't hide the light
+> either — it puts the light directly in front of you, at the exact moment
+> it turns on, and trusts you to look.
+
+Go has no `try`/`catch` and no exceptions. Every operation that can fail
+returns an ordinary value — an `error` — alongside its result, and it is
+the caller's job to check it. This chapter explains why Go made that
+choice, how to build and inspect errors idiomatically, and the narrow
+cases where Go does use something exception-like: `panic` and `recover`.
+
+## The error Interface
+
+`error` is a built-in interface with exactly one method:
+
+```go
+type error interface {
+	Error() string
+}
+```
+
+Any type with an `Error() string` method satisfies it — which means an
+error is just a value like any other, comparable, storable, and passable
+around like an `int` or a `string`. The simplest way to create one is
+`errors.New`:
+
+```go
+import "errors"
+
+func withdraw(balance, amount float64) (float64, error) {
+	if amount > balance {
+		return balance, errors.New("insufficient funds")
+	}
+	return balance - amount, nil
+}
+```
+
+The idiomatic caller pattern checks the error immediately, before touching
+the result:
+
+```go
+newBalance, err := withdraw(100, 150)
+if err != nil {
+	fmt.Println("withdrawal failed:", err)
+	return
+}
+fmt.Println("new balance:", newBalance)
+```
+
+<Axiom>An error you don't check is a bug you haven't found yet. Go's design makes that bug visible in the source code itself: an ignored `err` is a line that stands out to any reviewer scanning for a missing `if err != nil` block.</Axiom>
+
+<Warning title="Forgetting to check an error is easy to write and easy to miss in review">`result, _ := doSomething()` compiles perfectly and silently discards whatever went wrong. Nothing in the language forces you to check `err` — the discipline is cultural, not compiler-enforced. Tools like `go vet` and linters such as `errcheck` exist specifically to flag ignored errors that slipped past review.</Warning>
+
+## Why Go Rejected Exceptions
+
+Languages with exceptions let an error thrown deep in a call stack
+propagate upward invisibly until some `catch` block, possibly many frames
+away, decides to handle it — or doesn't, and the program crashes. Go's
+designers considered this a readability problem: you cannot tell, just by
+reading a function, which of its calls might fail or where that failure
+will actually be handled. Returning errors as ordinary values makes every
+possible failure point visible in the function's own signature and body —
+the tradeoff is more `if err != nil` lines, in exchange for control flow
+that never has an invisible side door.
+
+<DeepDive title="This isn't a purity argument — it changes real code shape">Because errors are just values, they can be wrapped, compared, logged, and passed to other functions like anything else — you'll see exactly this in the wrapping and `errors.Is`/`errors.As` sections below. Exceptions, by contrast, unwind the stack automatically, which is powerful but makes it much harder to reason locally about what a given function does when something goes wrong, since the answer might live in a completely different file.</DeepDive>
+
+## Formatting Errors with fmt.Errorf and %w
+
+`fmt.Errorf` builds a formatted error message, and its `%w` verb
+specifically wraps another error inside the new one, preserving a link
+back to the original cause:
+
+```go
+func loadConfig(path string) error {
+	_, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("loading config from %s: %w", path, err)
+	}
+	return nil
+}
+```
+
+The resulting error's message reads naturally as a chain
+("loading config from app.conf: open app.conf: no such file or
+directory"), and — critically — the original `*fs.PathError` underneath is
+still programmatically reachable through the wrapping, not just visible in
+the text.
+
+<Warning title="%v and %s discard the wrapping chain; only %w preserves it">`fmt.Errorf("failed: %v", err)` produces a similar-looking message, but the resulting error has no relationship to `err` as far as `errors.Is` and `errors.As` are concerned — the chain is broken. Use `%w` specifically whenever the underlying error should remain inspectable by callers further up the stack.</Warning>
+
+## Inspecting Wrapped Errors: errors.Is and errors.As
+
+`errors.Is` walks the wrapping chain looking for a specific sentinel error
+value:
+
+```go
+var ErrNotFound = errors.New("not found")
+
+func find(id int) error {
+	if id != 1 {
+		return fmt.Errorf("looking up id %d: %w", id, ErrNotFound)
+	}
+	return nil
+}
+```
+
+```go
+err := find(42)
+if errors.Is(err, ErrNotFound) {
+	fmt.Println("no such record")
+}
+```
+
+`errors.As` instead walks the chain looking for an error of a specific
+*type*, and populates a variable of that type if found — useful when you
+need fields off a custom error, not just to detect its presence:
+
+```go
+type ValidationError struct {
+	Field string
+}
+
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("invalid field: %s", e.Field)
+}
+```
+
+```go
+err := fmt.Errorf("processing request: %w",
+	&ValidationError{Field: "email"})
+
+var verr *ValidationError
+if errors.As(err, &verr) {
+	fmt.Println("bad field:", verr.Field)
+}
+```
+
+| Tool | Question it answers | Compares by |
+|---|---|---|
+| `errors.Is(err, target)` | "Is this exact error (or one it wraps) `target`?" | Value equality (or an `Is` method) |
+| `errors.As(err, &target)` | "Does this chain contain an error of this type? If so, give it to me." | Type match, then assigns |
+| `err == target` | Same question as `errors.Is`, but does **not** unwrap | Identity only, no unwrapping |
+
+<Warning title="== on errors ignores wrapping entirely">`err == ErrNotFound` only succeeds if `err` *is* `ErrNotFound` directly — if it was wrapped even once with `fmt.Errorf("...: %w", ErrNotFound)`, the comparison silently fails even though `errors.Is(err, ErrNotFound)` would correctly report `true`. Prefer `errors.Is` over `==` for any error that might have passed through wrapping.</Warning>
+
+## Custom Error Types
+
+Beyond `errors.New`, defining a type that implements `Error() string` lets
+an error carry structured data instead of just a message string, as
+`ValidationError` did above. This is the idiomatic way to let callers make
+decisions based on *what kind* of failure occurred, not just its text:
+
+```go
+type HTTPError struct {
+	Code int
+	Msg  string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.Code, e.Msg)
+}
+```
+
+```go
+func fetch(status int) error {
+	if status >= 400 {
+		return &HTTPError{Code: status, Msg: "request failed"}
+	}
+	return nil
+}
+```
+
+```go
+err := fetch(404)
+var httpErr *HTTPError
+if errors.As(err, &httpErr) && httpErr.Code == 404 {
+	fmt.Println("resource missing")
+}
+```
+
+## Combining Multiple Errors with errors.Join
+
+Sometimes a single operation can fail in more than one independent way at
+once — validating several fields, or closing several resources during
+cleanup, where you want to report every failure rather than just the
+first one encountered. `errors.Join` (added in Go 1.20) combines several
+errors into one, and that combined error still works correctly with
+`errors.Is` and `errors.As` for any of the errors it contains:
+
+```go
+func closeAll(closers ...io.Closer) error {
+	var errs []error
+	for _, c := range closers {
+		if err := c.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+```
+
+`errors.Join(errs...)` returns `nil` if `errs` is empty, and otherwise
+returns a single error whose message lists each wrapped error on its own
+line — checking `errors.Is(combined, ErrSomeSpecific)` still finds a match
+if any one of the joined errors satisfies it.
+
+<DeepDive title="errors.Join versus wrapping with %w">`fmt.Errorf("...: %w", err)` links exactly one underlying error to a new, more specific message. `errors.Join` is for the different situation where there are multiple *independent* errors from the same operation and none of them is more "the cause" than another — closing three files where two failed is a good example, since neither failure caused the other.</DeepDive>
+
+## panic and recover: When (Rarely) to Use Them
+
+`panic` immediately stops normal execution and begins unwinding the call
+stack, running any deferred functions along the way; `recover`, called
+inside a deferred function, stops that unwinding and lets the program
+continue. This looks like exception handling, but idiomatic Go uses it far
+more narrowly:
+
+```go
+func safeDivide(a, b int) (result int, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("recovered: %v", r)
+		}
+	}()
+	result = a / b // panics on b == 0: integer divide by zero
+	return result, nil
+}
+```
+
+`panic` is idiomatic only for programmer errors that should never happen
+in correct code — an index genuinely out of range, a precondition
+violated by the calling code itself — not for expected, recoverable
+failures like a missing file or a closed network connection, which should
+always be a returned `error` instead. `recover` shows up almost
+exclusively at the boundary of a goroutine or an HTTP handler, as a safety
+net that converts an unexpected panic into a logged error rather than
+crashing the whole process.
+
+<Axiom>If you would tell a colleague "this should never actually happen in correct code," panic is a reasonable choice. If you would tell them "this happens sometimes and here's how to handle it," return an error instead.</Axiom>
+
+<Warning title="Using panic/recover as a substitute for normal error handling">Reaching for `panic` to signal an ordinary, expected failure (a record not found, a network timeout) forces every caller up the stack to either `recover` or crash — exactly the invisible control flow Go's designers built the `error` interface to avoid. Reserve `panic` for truly unrecoverable programmer mistakes, and let those cases crash loudly in development rather than papering over them with a stray `recover`.</Warning>
+
+## Error Handling Patterns at a Glance
+
+| Pattern | Use when |
+|---|---|
+| `errors.New("message")` | A simple, one-off error with no extra data |
+| `fmt.Errorf("context: %w", err)` | Adding context while preserving the original error for inspection |
+| Custom error type (`Error() string`) | Callers need structured data (a code, a field name) from the error |
+| `errors.Is` | Checking for a specific known sentinel error, possibly wrapped |
+| `errors.As` | Checking for (and extracting) a specific error *type*, possibly wrapped |
+| `panic`/`recover` | Unrecoverable programmer errors, or a top-level safety net only |
+
+### Try It Yourself
+
+Build a tiny validation function that returns a custom, wrapped error, and
+practice unwrapping it at the call site:
+
+```go
+var ErrTooYoung = errors.New("must be at least 18")
+
+type AgeError struct {
+	Age int
+}
+
+func (e *AgeError) Error() string {
+	return fmt.Sprintf("age %d is invalid", e.Age)
+}
+
+func validateAge(age int) error {
+	if age < 18 {
+		return fmt.Errorf("validating age %d: %w: %v",
+			age, ErrTooYoung, &AgeError{Age: age})
+	}
+	return nil
+}
+```
+
+1. The `%w: %v` in `validateAge` only wraps the *first* error passed to
+   `%w` (`ErrTooYoung`) — confirm with `errors.Is` that it's detected, and
+   confirm with `errors.As` that `*AgeError` is **not** found, since it was
+   formatted with `%v`, not `%w`.
+2. Fix `validateAge` so both errors are wrapped and inspectable, using
+   Go 1.20+'s support for multiple `%w` verbs in one `fmt.Errorf` call:
+   `fmt.Errorf("validating age %d: %w: %w", age, ErrTooYoung, &AgeError{Age: age})`.
+3. Re-run both `errors.Is(err, ErrTooYoung)` and
+   `errors.As(err, &ageErr)` and confirm both now succeed.
+4. **Bonus:** write a second sentinel, `ErrTooOld`, and extend
+   `validateAge` to return it for `age > 130`, then handle both sentinels
+   in the caller with two `errors.Is` checks.
+
+## Key Takeaways
+
+- `error` is a one-method interface (`Error() string`) — Go has no
+  exceptions, so every fallible operation returns its error explicitly.
+- `fmt.Errorf` with `%w` wraps an underlying error while adding context;
+  plain `%v`/`%s` breaks the chain that `errors.Is`/`errors.As` rely on.
+- `errors.Is` checks for a specific sentinel value (even wrapped);
+  `errors.As` checks for (and extracts) a specific error type.
+- Custom error types implementing `Error() string` let callers act on
+  structured data, not just a message string.
+- `panic`/`recover` exist for unrecoverable programmer errors and
+  top-level safety nets — not as a substitute for ordinary error returns.

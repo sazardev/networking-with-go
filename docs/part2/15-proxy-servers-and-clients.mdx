@@ -1,5 +1,5 @@
 ---
-id: "[2.15.0]"
+id: "[3.15.0]"
 title: "Proxy Servers and Clients: Concepts and Go Implementation"
 ---
 
@@ -19,6 +19,35 @@ Two shapes come up constantly:
 - **Reverse proxy:** Sits in front of servers, accepting inbound requests and forwarding them to one of several backend servers. Load balancers, API gateways, and CDN edge nodes are reverse proxies — clients don't even know the backend exists.
 
 The difference is whose identity the proxy hides: a forward proxy hides the client from the destination; a reverse proxy hides the backend from the client.
+
+<Axiom>A proxy doesn't change what gets said — it changes who's allowed to hear it, and from where.</Axiom>
+
+---
+
+## Real-World Proxy Protocols
+
+Not every proxy speaks the same language to its clients:
+
+- **HTTP proxy:** The client sends ordinary HTTP requests, but with the
+  full URL (`GET http://example.com/page HTTP/1.1`) instead of just the
+  path, and points its request at the proxy's address. Works only for
+  plain HTTP; HTTPS needs the `CONNECT` tunneling method covered later in
+  this chapter.
+- **SOCKS5:** A lower-level, protocol-agnostic proxy standard (RFC 1928).
+  The client performs a small binary handshake — negotiate an
+  authentication method, then send a connect request naming the
+  destination host and port — after which the proxy relays raw bytes,
+  same as our TCP proxy below. Because SOCKS5 doesn't parse HTTP at all,
+  it works for any TCP (and even UDP, via `UDP ASSOCIATE`) traffic, which
+  is why it's the protocol behind most VPN-client and Tor configurations.
+- **Transparent proxy:** Intercepts traffic at the network layer (via
+  firewall rules or routing) without the client configuring anything.
+  The client has no idea a proxy is involved at all.
+
+This chapter builds the two easiest to implement correctly in Go — a
+byte-level TCP proxy (which is structurally identical to a SOCKS5 relay
+once the handshake is done) and an HTTP reverse proxy — plus the `CONNECT`
+tunnel that makes an HTTP proxy usable for HTTPS.
 
 ---
 
@@ -104,9 +133,50 @@ func main() {
 
 Notice how this reuses the same `context.Context` cancellation pattern from the context chapter: `signal.NotifyContext` ties the proxy's shutdown to `SIGINT`/`SIGTERM`, and `DialContext` respects that same cancellation when opening new upstream connections.
 
-<DeepDive title="Why two goroutines instead of one?">
-TCP is full-duplex — a client can be sending while the server is also sending. A single goroutine reading and writing in a loop can only move data in one direction at a time. Running one `io.Copy` per direction means both directions flow independently, exactly the way a real network conversation does.
-</DeepDive>
+<DeepDive title="Why two goroutines instead of one?">TCP is full-duplex — a client can be sending while the server is also sending. A single goroutine reading and writing in a loop can only move data in one direction at a time. Running one `io.Copy` per direction means both directions flow independently, exactly the way a real network conversation does.</DeepDive>
+
+<DeepDive title="Why does proxyConn only wait for one done signal?">`done` is buffered with capacity 2, but `proxyConn` reads from it only once (`<-done`) instead of twice. This is intentional: once *either* direction finishes — because one side closed its connection, sent EOF, or hit an error — there's nothing useful left for the proxy to do, so the deferred `client.Close()` and `upstream.Close()` run immediately. Closing both connections then unblocks whichever `io.Copy` was still running: its read (or write) returns an error, it sends its own value into `done`, and its goroutine exits cleanly. The buffer size of 2 matters here — without it, that second, unread send would block forever and leak the goroutine, since nothing ever drains a second value from an unbuffered channel that no one is listening to anymore.</DeepDive>
+
+<Warning title="No deadlines means a hung peer can pin resources forever">`proxyConn` never calls `SetDeadline`, `SetReadDeadline`, or `SetWriteDeadline` on either connection. A client that opens a connection and then simply never sends or reads anything — accidentally or as a denial-of-service tactic — keeps both `io.Copy` calls blocked indefinitely, along with the goroutines, file descriptors, and any upstream connection slots they hold. A production proxy should set a read (and often an overall idle) deadline on both sides and reset it on every successful read, closing the pair if it's ever exceeded.</Warning>
+
+Extending `proxyConn` with an idle timeout is a small, realistic addition:
+
+```go
+func proxyConn(
+	ctx context.Context, client net.Conn, upstreamAddr string,
+) {
+	defer client.Close()
+
+	var dialer net.Dialer
+	upstream, err := dialer.DialContext(ctx, "tcp", upstreamAddr)
+	if err != nil {
+		fmt.Println("failed to reach upstream:", err)
+		return
+	}
+	defer upstream.Close()
+
+	const idleTimeout = 5 * time.Minute
+	client.SetDeadline(time.Now().Add(idleTimeout))
+	upstream.SetDeadline(time.Now().Add(idleTimeout))
+
+	done := make(chan struct{}, 2)
+	go func() {
+		io.Copy(upstream, client)
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(client, upstream)
+		done <- struct{}{}
+	}()
+	<-done
+}
+```
+
+This sets a single deadline covering the whole relayed session rather than
+resetting it per read; a proxy that needs to tolerate long idle gaps
+between bursts of traffic (rather than bounding total session length)
+would instead reset the deadline inside a custom `io.Reader` wrapper each
+time bytes actually arrive.
 
 ---
 
@@ -161,6 +231,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	defer destConn.Close()
 
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
@@ -168,13 +239,24 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 			"hijacking not supported", http.StatusInternalServerError)
 		return
 	}
-	clientConn, _, err := hijacker.Hijack()
+	clientConn, bufrw, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer clientConn.Close()
 
 	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+
+	// bufrw may already hold bytes the http package buffered from the
+	// client while parsing headers, ahead of the CONNECT request itself.
+	// Drain that buffer to destConn before relaying raw bytes directly,
+	// or those leading bytes of the tunneled protocol get silently lost.
+	if n := bufrw.Reader.Buffered(); n > 0 {
+		buffered := make([]byte, n)
+		bufrw.Read(buffered)
+		destConn.Write(buffered)
+	}
 
 	go io.Copy(destConn, clientConn)
 	io.Copy(clientConn, destConn)
@@ -182,6 +264,10 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 ```
 
 `http.Hijacker` is the key piece here: it lets a handler take over the raw TCP connection underneath an `http.ResponseWriter`, stepping outside the request/response model entirely so the proxy can relay opaque bytes for the rest of the connection's life.
+
+<Warning title="The original handler leaked both connections">The first version of this handler above never called `destConn.Close()` or `clientConn.Close()` — once hijacked, `net/http` no longer manages the connection's lifecycle for you, so if you don't close it yourself, nobody does. Every tunneled request would leak one upstream socket and one client socket until the process ran out of file descriptors. Hijacking hands you full ownership, `defer` included.</Warning>
+
+<DeepDive title="Why bufrw and not just the raw net.Conn?">`hijacker.Hijack()` returns three things: the raw `net.Conn`, a `*bufio.ReadWriter` wrapping it, and an error. The `net/http` server already read from the connection using a buffered reader to parse the request line and headers — if the client's TCP segment happened to contain a few bytes past the end of those headers (uncommon for a bare `CONNECT` request, but a real possibility with pipelining or an aggressive TLS client), those bytes are sitting in that buffer, not on the wire anymore. Reading directly from the raw `net.Conn` after hijacking would skip right past them.</DeepDive>
 
 ---
 
@@ -192,9 +278,36 @@ Two details matter for any real proxy:
 - **Hop-by-hop headers** (`Connection`, `Keep-Alive`, `Transfer-Encoding`, `Proxy-Authenticate`) describe the connection between one pair of endpoints and should be stripped before forwarding — passing them through unmodified can confuse the next hop.
 - **Timeouts** prevent one slow or hung backend from exhausting the proxy's connections. Use `http.Transport`'s `ResponseHeaderTimeout` and `DialContext` with a bounded context, or set deadlines with `conn.SetDeadline` on raw TCP proxies.
 
-<Warning title="An open proxy is a liability">
-A forward proxy that accepts connections from anyone and forwards them anywhere can be abused to launder malicious traffic or scan other networks. Always authenticate clients and restrict destinations in anything beyond a local development tool.
-</Warning>
+<Warning title="An open proxy is a liability">A forward proxy that accepts connections from anyone and forwards them anywhere can be abused to launder malicious traffic or scan other networks. Always authenticate clients and restrict destinations in anything beyond a local development tool.</Warning>
+
+<Axiom>Every hop you add to a request is another place trust has to be re-established from scratch.</Axiom>
+
+---
+
+## Try It Yourself: Adding Proxy Authentication
+
+Both the TCP proxy and the `CONNECT` handler in this chapter accept every
+connection unconditionally — fine for local development, unacceptable for
+anything reachable from outside a trusted network. Extend the `CONNECT`
+handler to require a shared secret:
+
+1. Require the client to send a `Proxy-Authorization: Basic <base64>`
+   header on the initial `CONNECT` request, the same header format
+   ordinary HTTP `Authorization` uses.
+2. In `handleConnect`, check `r.Header.Get("Proxy-Authorization")` before
+   dialing the destination. If it's missing or doesn't match the expected
+   credentials, respond with `407 Proxy Authentication Required` and a
+   `Proxy-Authenticate: Basic realm="proxy"` header instead of hijacking
+   the connection.
+3. Add a small allowlist of destination hosts (a `map[string]bool`) and
+   reject `CONNECT` requests for anything not on it — this alone turns
+   the open proxy from the warning above into a proxy scoped to a known
+   set of destinations.
+
+This mirrors how real forward proxies authenticate: the credentials travel
+on the one HTTP request that establishes the tunnel, and every byte after
+that is opaque to the proxy, so there's no way (and no need) to
+re-authenticate mid-stream.
 
 ---
 
@@ -204,7 +317,3 @@ A forward proxy that accepts connections from anyone and forwards them anywhere 
 - At the TCP level, a proxy is just two `io.Copy` calls wired back to back — the same primitive you used for file transfer.
 - `httputil.ReverseProxy` gives you a correct, header-aware HTTP reverse proxy without reimplementing HTTP semantics.
 - `http.Hijacker` and the `CONNECT` method let a proxy tunnel encrypted traffic (like HTTPS) without ever decrypting it.
-
----
-
-[Previous: File Transfer Applications](14-file-transfer-applications.md) | [Next: DNS: Theory and Go Implementation](16-dns-theory-and-go-implementation.md)

@@ -1,5 +1,5 @@
 ---
-id: "[4.21.0]"
+id: "[5.21.0]"
 title: "Red Team vs Blue Team: Concepts and Labs"
 ---
 
@@ -15,17 +15,13 @@ A **blue team** plays the defender: monitoring, detecting, and responding to the
 
 A **purple team** exercise removes the adversarial framing and has both sides collaborate in real time: the red team executes a specific technique, and the blue team immediately checks whether it was detected, adjusting detection rules on the spot. Purple teaming trades some of the realism of a blind red-team engagement for much faster feedback loops on detection coverage.
 
-<DeepDive title="Adversary Emulation Frameworks">
-Rather than improvising attacker behavior, many red teams structure engagements around the MITRE ATT&CK framework, which catalogs real-world adversary tactics and techniques (initial access, lateral movement, exfiltration, and so on) observed across many actual incidents. Tools like Atomic Red Team package individual ATT&CK techniques as small, runnable tests, and Caldera automates chaining them into full emulated campaigns. This gives both sides a shared, well-documented vocabulary for what happened and what should have been detected.
-</DeepDive>
+<DeepDive title="Adversary Emulation Frameworks">Rather than improvising attacker behavior, many red teams structure engagements around the MITRE ATT&CK framework, which catalogs real-world adversary tactics and techniques (initial access, lateral movement, exfiltration, and so on) observed across many actual incidents. Tools like Atomic Red Team package individual ATT&CK techniques as small, runnable tests, and Caldera automates chaining them into full emulated campaigns. This gives both sides a shared, well-documented vocabulary for what happened and what should have been detected.</DeepDive>
 
 ## Rules of Engagement
 
 No red team exercise should start without a written rules-of-engagement (RoE) document, agreed to in advance by people with the authority to approve it. At minimum, it should define: exact scope (which systems, networks, and accounts are in bounds), explicit exclusions (production systems that must never be touched, third-party systems out of the organization's control), the time window, an emergency stop procedure, and who holds the "get out of jail" authorization letter in case an operation is mistaken for a real attack mid-exercise.
 
-<Warning title="Authorization Is Not Optional">
-Every technique described in this book's red-team-adjacent chapters assumes explicit, written, in-scope authorization from someone with the legal authority to grant it. Without that authorization, the exact same actions are simply unauthorized computer intrusion, regardless of intent. This is covered in more depth in the ethical and legal considerations chapter earlier in the book, and it applies with equal force here.
-</Warning>
+<Warning title="Authorization Is Not Optional">Every technique described in this book's red-team-adjacent chapters assumes explicit, written, in-scope authorization from someone with the legal authority to grant it. Without that authorization, the exact same actions are simply unauthorized computer intrusion, regardless of intent. This is covered in more depth in the ethical and legal considerations chapter earlier in the book, and it applies with equal force here.</Warning>
 
 ## Exercise Formats
 

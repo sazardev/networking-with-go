@@ -1,5 +1,5 @@
 ---
-id: "[5.24.0]"
+id: "[6.24.0]"
 title: "APIs for OAuth2, SSO, SAML, OpenID Connect"
 ---
 
@@ -58,9 +58,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 
 The `state` parameter is not optional decoration — it's what prevents a cross-site request forgery attack where an attacker tricks a victim into completing an OAuth flow the attacker initiated. Always generate it randomly per login attempt, store it (a short-lived cookie is fine), and reject the callback if it doesn't match.
 
-<Warning title="An access token is not proof of identity">
-OAuth2 on its own only proves the app was granted some scope of access — the userinfo endpoint call above is what tells you who the user is, and it's a convention some providers support, not part of the OAuth2 spec itself. If identity matters (and it usually does for login), reach for OpenID Connect instead of trying to bolt identity onto plain OAuth2 yourself.
-</Warning>
+<Warning title="An access token is not proof of identity">OAuth2 on its own only proves the app was granted some scope of access — the userinfo endpoint call above is what tells you who the user is, and it's a convention some providers support, not part of the OAuth2 spec itself. If identity matters (and it usually does for login), reach for OpenID Connect instead of trying to bolt identity onto plain OAuth2 yourself.</Warning>
 
 ## OpenID Connect: identity, formally
 
@@ -86,9 +84,7 @@ func verifyIDToken(
 
 `oidc.NewProvider` fetches the provider's `.well-known/openid-configuration` document, which points to the JSON Web Key Set (JWKS) used to verify token signatures — you never hardcode the provider's public key, because it rotates. `verifier.Verify` checks the signature, the issuer, the audience (your client ID), and the expiry all in one call. Once verified, `idToken.Claims(&myStruct)` decodes the payload — typically `sub` (a stable user identifier), `email`, and `email_verified`.
 
-<DeepDive title="sub, not email, is the identifier to store">
-Email addresses can be reused or changed by the identity provider; the `sub` claim is a stable, provider-scoped identifier meant precisely for linking to your local user record. Store `sub` (and which provider it came from) as your foreign key, and treat `email` as a display value you refresh on each login.
-</DeepDive>
+<DeepDive title="sub, not email, is the identifier to store">Email addresses can be reused or changed by the identity provider; the `sub` claim is a stable, provider-scoped identifier meant precisely for linking to your local user record. Store `sub` (and which provider it came from) as your foreign key, and treat `email` as a display value you refresh on each login.</DeepDive>
 
 ## SAML: enterprise single sign-on
 
@@ -126,6 +122,4 @@ func clientFromStoredToken(ctx context.Context, stored *oauth2.Token) *http.Clie
 
 Every call made through the returned client checks whether the current access token has expired and, if so, uses the refresh token to fetch a new one automatically before the request goes out — your application code never has to check expiry itself. The one operational responsibility this pushes onto you is persisting the refreshed token: `tokenSource.Token()` returns the current token including any renewal, and if your storage doesn't get updated when that happens, the next process restart falls back to the stale one.
 
-<Warning title="A refresh token is more sensitive than the access token it renews">
-An access token expires in minutes and its blast radius is limited by that short window; a refresh token can mint new access tokens indefinitely and is exactly what an attacker wants if your storage is compromised. Encrypt refresh tokens at rest and treat their storage with the same care you'd give a password hash, not the same casualness you might give a short-lived session token.
-</Warning>
+<Warning title="A refresh token is more sensitive than the access token it renews">An access token expires in minutes and its blast radius is limited by that short window; a refresh token can mint new access tokens indefinitely and is exactly what an attacker wants if your storage is compromised. Encrypt refresh tokens at rest and treat their storage with the same care you'd give a password hash, not the same casualness you might give a short-lived session token.</Warning>

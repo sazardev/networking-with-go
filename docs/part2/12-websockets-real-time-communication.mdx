@@ -1,5 +1,5 @@
 ---
-id: "[2.12.0]"
+id: "[3.12.0]"
 title: "WebSockets: Real-Time Communication in Go"
 ---
 
@@ -286,6 +286,44 @@ See: [`main.go`](../../exercises/part2/12-websocket-hello-server-gorilla/main.go
 
 ---
 
+## Production Nuances: Concurrency and Connection Health
+
+The examples above keep one goroutine per connection doing a simple
+read-then-write loop, which is safe. Real servers usually need a
+background writer too (periodic pings, broadcasts triggered from
+another goroutine), and that's where two classic bugs creep in.
+
+<Warning title="Concurrent writes will corrupt your connection">A `*websocket.Conn` (like a raw `net.Conn`) is **not** safe for concurrent writes. If two goroutines call `WriteMessage` on the same connection at the same time, the frames can interleave and corrupt the stream — gorilla's own documentation says so explicitly. The fix is to serialize every write, either behind a `sync.Mutex` or, better, through a single dedicated writer goroutine that reads from an outbound channel. Every other goroutine that wants to send a message just pushes it onto that channel instead of touching the connection directly. Reads are fine on their own goroutine — the restriction is only on writes, so one reader plus one writer goroutine per connection is the standard, safe shape.</Warning>
+
+```go
+// A safe pattern: one writer goroutine per connection, fed by a
+// buffered channel. Every other goroutine sends here instead of
+// calling conn.WriteMessage directly.
+send := make(chan []byte, 16)
+
+go func() {
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+    for {
+        select {
+        case msg, ok := <-send:
+            if !ok {
+                return
+            }
+            conn.WriteMessage(websocket.TextMessage, msg)
+        case <-ticker.C:
+            conn.WriteMessage(websocket.PingMessage, nil)
+        }
+    }
+}()
+```
+
+<DeepDive title="Keeping connections healthy: ping/pong and message size limits">TCP alone won't tell you when a peer has vanished without closing cleanly — a laptop that sleeps, a phone that loses signal, or a NAT device that silently drops an idle mapping all look "connected" from the server's side. WebSocket control frames solve this: send a `PingMessage` on a `time.Ticker`, let the client library answer automatically with a `PongMessage`, and reset `conn.SetReadDeadline` in a `SetPongHandler`. If no pong arrives before the deadline, treat the connection as dead and close it — otherwise a long-running broadcast server slowly fills up with zombie clients. While you're hardening a handler, also call `conn.SetReadLimit(maxBytes)` right after the upgrade; without it, a single misbehaving client can stream an unbounded amount of data into one frame and exhaust server memory.</DeepDive>
+
+<Axiom>A WebSocket connection is a TCP socket wearing a framing protocol — every concurrency and resource-exhaustion rule you already know for `net.Conn` still applies.</Axiom>
+
+---
+
 ## Practical Exercise Files
 - [WebSocket Echo Server Example (Gorilla)](../../exercises/part2/12-websocket-echo-server/main.go)
 - [WebSocket Client Example (Gorilla)](../../exercises/part2/12-websocket-client/main.go)
@@ -302,7 +340,3 @@ See: [`main.go`](../../exercises/part2/12-websocket-hello-server-gorilla/main.go
 - For learning, you can implement the protocol natively using only the standard library.
 - Always handle errors and close connections properly.
 - Test with browser dev tools, `wscat`, or your own Go client.
-
----
-
-[Previous: Handling JSON and XML over HTTP](11-handling-json-and-xml-over-http.md) | [Next: Chat Applications](13-chat-applications.md)

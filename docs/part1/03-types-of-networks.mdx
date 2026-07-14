@@ -11,7 +11,9 @@ title: "Types of Networks: LAN, WAN, MAN, PAN"
 
 ## What is a Network?
 
-Picture a world where every device is a person, eager to chat, share, and collaborate. A network is the grand party where these digital citizens mingle! But not all parties are the same—some are intimate gatherings, others are city-wide festivals, and a few are global extravaganzas. Let’s embark on a journey through the four main types of networks: PAN, LAN, MAN, and WAN.
+Picture a world where every device is a person, eager to chat, share, and collaborate. A network is the grand party where these digital citizens mingle. But not all parties are the same—some are intimate gatherings, others are city-wide festivals, and a few are global extravaganzas. The classification we're about to walk through—PAN, LAN, MAN, WAN—isn't just academic trivia; it exists because networks at different scales genuinely need different technology, different rules, and different tradeoffs. A protocol designed to work across a two-meter Bluetooth link would fall apart trying to cross an ocean, and a protocol designed to survive an ocean crossing would be overkill for talking to your own earbuds.
+
+<Axiom>Scale changes everything in networking: the same goal—getting data from A to B—demands entirely different tools depending on whether A and B are ten centimeters or ten thousand kilometers apart.</Axiom>
 
 ---
 
@@ -19,7 +21,7 @@ Picture a world where every device is a person, eager to chat, share, and collab
 
 **Analogy:** Your PAN is your digital bubble—like the gadgets you carry in your backpack or pockets, always close, always connected.
 
-- **Definition:** A PAN connects devices within a very short range (typically a few meters).
+- **Definition:** A PAN connects devices within a very short range (typically a few meters), almost always centered on a single person rather than a building or organization.
 - **Examples:**
   - Your smartphone paired with wireless earbuds via Bluetooth.
   - A smartwatch syncing health data to your phone.
@@ -33,18 +35,21 @@ Picture a world where every device is a person, eager to chat, share, and collab
 ```
 
 - **Use Case:** Personal convenience—no cables, just seamless connections between your own devices.
-- **Fun Fact:** The first PANs used infrared (think TV remotes!), but now Bluetooth rules the PAN world.
+- **Why it works the way it does:** Bluetooth deliberately trades range and speed for extremely low power consumption, because its typical devices (earbuds, watches, fitness trackers) run on tiny batteries that need to last days or weeks, not hours.
+
+<DeepDive title="Infrared to Bluetooth to today">The first consumer PANs used infrared (think TV remotes and 1990s laptop "IrDA" ports)—cheap, but requiring a direct line of sight, which made it clumsy for anything but point-and-shoot file transfers. Bluetooth, named after the Viking king Harald "Bluetooth" Gormsson who united Denmark and Norway, replaced it in the 2000s by using radio instead of light, so devices no longer needed to physically face each other. More recently, Bluetooth Low Energy (BLE) further optimized for tiny, battery-powered sensors that mostly stay silent and only occasionally send small bursts of data.</DeepDive>
 
 ---
 
 ## LAN: Local Area Network
 
-**Analogy:** A LAN is like your home or office—everyone’s under the same roof, sharing resources and gossip (well, data).
+**Analogy:** A LAN is like your home or office—everyone's under the same roof, sharing resources and gossip (well, data).
 
-- **Definition:** A LAN connects devices within a limited area, such as a single building or campus.
+- **Definition:** A LAN connects devices within a limited area, such as a single building or campus, usually owned and administered by one person or organization.
 - **Examples:**
   - All computers in a school lab connected to the same printer.
   - Your home Wi-Fi network linking laptops, smart TVs, and game consoles.
+  - A single floor of an office building where every desk plugs into the same set of switches.
 - **Diagram:**
 
 ```
@@ -58,18 +63,21 @@ Picture a world where every device is a person, eager to chat, share, and collab
 ```
 
 - **Use Case:** Fast, secure sharing of files, printers, and internet access.
-- **Fun Fact:** The first LANs used thick coaxial cables—now, it’s mostly Wi-Fi and Ethernet.
+- **Fun Fact:** The first LANs used thick coaxial cables tapped with "vampire clamps"—now, it's mostly Wi-Fi and twisted-pair Ethernet.
+
+<Warning title="A common misconception">A home Wi-Fi network with internet access is not itself "the internet"—it's a LAN whose router happens to also have a WAN connection to your ISP. Everything behind your router (your laptop, your smart TV, your printer) is on the LAN side; everything past the router, out on the public internet, is a separate network entirely. This distinction matters a lot once you start thinking about private vs. public IP addresses in a later chapter.</Warning>
 
 ---
 
 ## MAN: Metropolitan Area Network
 
-**Analogy:** Imagine a city’s subway system, connecting neighborhoods and districts so people (or data) can travel quickly across town.
+**Analogy:** Imagine a city's subway system, connecting neighborhoods and districts so people (or data) can travel quickly across town.
 
-- **Definition:** A MAN covers a city or large campus, linking multiple LANs together.
+- **Definition:** A MAN covers a city or large campus, linking multiple LANs together—bigger than any single building's network, but still far smaller than a WAN spanning countries.
 - **Examples:**
-  - A university with several campuses connected by high-speed fiber.
-  - City-wide Wi-Fi networks.
+  - A university with several campuses connected by high-speed fiber, so a student's laptop can reach the same file server whether they're in the library or the dorm across town.
+  - City-wide Wi-Fi or municipal fiber networks.
+  - A hospital network linking multiple clinics across a city to a shared patient-records system.
 - **Diagram:**
 
 ```
@@ -80,8 +88,8 @@ Picture a world where every device is a person, eager to chat, share, and collab
              [Data Center]
 ```
 
-- **Use Case:** Organizations or cities needing to connect multiple locations efficiently.
-- **Fun Fact:** MANs often use fiber optics and are managed by telecom companies or large institutions.
+- **Use Case:** Organizations or cities needing to connect multiple locations efficiently, without renting the same kind of long-haul, cross-continent links a true WAN would require.
+- **Fun Fact:** MANs often use fiber optics and are managed by telecom companies, universities, or municipal governments rather than a single company's IT department.
 
 ---
 
@@ -89,10 +97,11 @@ Picture a world where every device is a person, eager to chat, share, and collab
 
 **Analogy:** WANs are the global highways—think of the internet as the ultimate WAN, connecting continents and countries.
 
-- **Definition:** A WAN spans large geographic areas, even the whole planet.
+- **Definition:** A WAN spans large geographic areas—cities, countries, even the whole planet—typically built by leasing or laying long-distance links between many independently-owned smaller networks.
 - **Examples:**
-  - The internet (the biggest WAN of all!).
-  - A multinational company connecting offices in different countries.
+  - The internet itself (the biggest WAN of all, technically a WAN of WANs).
+  - A multinational company connecting offices in New York, London, and Tokyo over private leased lines or VPN tunnels.
+  - A bank's ATM network linking every branch and cash machine back to central servers.
 - **Diagram:**
 
 ```
@@ -103,8 +112,10 @@ Picture a world where every device is a person, eager to chat, share, and collab
          [Cloud Services]
 ```
 
-- **Use Case:** Sharing data, resources, and applications across vast distances.
-- **Fun Fact:** Early WANs used dial-up modems and satellites; today, it’s mostly fiber optics and undersea cables.
+- **Use Case:** Sharing data, resources, and applications across vast distances, where higher latency and lower reliability per link have to be designed around rather than assumed away.
+- **Fun Fact:** Early WANs used dial-up modems and satellite links; today the internet's backbone runs mostly over undersea fiber-optic cables.
+
+<DeepDive title="Why WAN links behave differently">The defining engineering challenge of a WAN is not bandwidth—it's **latency**, the time it takes a signal to physically travel the distance. Light in fiber travels at roughly two-thirds the speed of light in a vacuum, so a round trip between New York and Tokyo takes on the order of 150-200 milliseconds no matter how much bandwidth you buy. This is why a video call across an ocean feels slightly laggy even on a fast connection, while the same call across a LAN feels instantaneous—more bandwidth cannot buy back time lost to physical distance.</DeepDive>
 
 ---
 
@@ -112,19 +123,20 @@ Picture a world where every device is a person, eager to chat, share, and collab
 
 | Feature | PAN | LAN | MAN | WAN |
 |-----------------|--------------|---------------|---------------|---------------|
-| Range | <10 meters | 100m–1km | 1–100km | 100km+ |
-| Ownership | Individual | Organization | City/Org | Multiple Orgs |
+| Range | Under 10 meters | 100 m – 1 km | 1 – 100 km | 100 km+ |
+| Ownership | Individual | Single organization | City / large org | Multiple organizations |
 | Speed | Low–Medium | High | High | Medium–High |
-| Example | Bluetooth | Home Wi-Fi | City Wi-Fi | The Internet |
+| Typical latency | Near-zero | Very low | Low | Higher, variable |
+| Example | Bluetooth earbuds | Home or office Wi-Fi | City-wide fiber | The Internet |
 
 ---
 
 ## Real-World Scenarios
 
-1. **PAN:** You’re jogging, listening to music on wireless earbuds connected to your phone.
+1. **PAN:** You're jogging, listening to music on wireless earbuds connected to your phone.
 2. **LAN:** Your family streams movies and plays games on the same home Wi-Fi.
-3. **MAN:** A city provides free Wi-Fi in parks and public spaces.
-4. **WAN:** You video call a friend on another continent—your data travels across oceans!
+3. **MAN:** A city provides free Wi-Fi in parks and public spaces, all backed by the same municipal fiber ring.
+4. **WAN:** You video call a friend on another continent—your data travels across oceans through undersea cables.
 
 ---
 
@@ -132,21 +144,61 @@ Picture a world where every device is a person, eager to chat, share, and collab
 
 ```
 [Personal Devices] (PAN)
-      ↓
+      |
 [Home/Office] (LAN)
-      ↓
+      |
 [City/University] (MAN)
-      ↓
+      |
 [World/Internet] (WAN)
 ```
 
 ---
 
-## Fun Facts & Memes
-- The first LAN party? Gamers in the 90s lugging giant PCs to a friend’s house!
-- The internet’s undersea cables are long enough to wrap around Earth more than 30 times.
-- Bluetooth is named after a Viking king—Harald "Bluetooth" Gormsson, who united Denmark and Norway (just like Bluetooth unites devices!).
+## Fun Facts & Notes
+- The first LAN parties were gamers in the 1990s lugging giant desktop towers to a friend's house to network their machines together directly.
+- The internet's undersea cables are long enough to wrap around Earth more than 30 times.
+- Not every network fits neatly into one category—a corporate VPN can make a WAN "feel" like a LAN to the applications running on it, which is exactly the kind of blurring you should expect once you start working with real infrastructure.
 
----
+### Seeing It in Code
 
-[Previous: History and Evolution of Computer Networks](02-history-and-evolution-of-computer-networks.md) | [Next: Network Topologies and Architectures](04-network-topologies-and-architectures.md)
+Every one of these network types is quietly present on your own computer right now, whether or not you ever think about it. Let's write a small Go program that inspects your machine's own network interfaces and classifies each address as loopback (talking only to yourself), private LAN-range, or something else—turning the PAN/LAN/WAN distinction from an abstract diagram into something you can literally print to your terminal.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func classify(ip net.IP) string {
+	switch {
+	case ip.IsLoopback():
+		return "loopback (talks only to this machine)"
+	case ip.IsPrivate():
+		return "private LAN-range address"
+	case ip.IsLinkLocalUnicast():
+		return "link-local (auto-assigned, single segment)"
+	default:
+		return "public / routable address"
+	}
+}
+
+func main() {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		fmt.Printf("%-20s -> %s\n", ipNet.IP.String(), classify(ipNet.IP))
+	}
+}
+```
+
+Running `go run main.go` on a typical laptop connected to home Wi-Fi will print something like `127.0.0.1 -> loopback` (your machine's own private door to itself, used constantly by programs talking to other programs on the same computer) and `192.168.1.42 -> private LAN-range address` (the address your home router handed out, only meaningful inside that LAN). If you were to run this same program on a machine sitting directly on a public network with no NAT in front of it, you'd see a public/routable address instead—the kind that WAN traffic can reach directly. Notice how the program never had to guess the network's "type" from a diagram; the address ranges themselves encode PAN/LAN/WAN scope, and Go's `net` package already knows the rules.

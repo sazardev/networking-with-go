@@ -1,5 +1,5 @@
 ---
-id: "[3.42.0]"
+id: "[4.42.0]"
 title: "SDN (Software Defined Networking) and OpenFlow with Go"
 ---
 
@@ -15,9 +15,7 @@ OpenFlow, the protocol that popularized SDN, defines exactly that control channe
 
 The controller-switch conversation follows a defined sequence: both sides exchange `OFPT_HELLO` messages to agree on a protocol version, the controller sends a `Features Request` and gets back the switch's capabilities and port list, and from then on the controller pushes `Flow-Mod` messages to install, modify, or delete flow entries.
 
-<DeepDive title="Where the Go ecosystem actually stands here">
-Be aware of a real gap: unlike gRPC or MQTT, there is no mature, widely adopted Go library that speaks the raw OpenFlow wire protocol the way `ryu` (Python) or ONOS/OpenDaylight (Java) do. Production SDN controllers in the wild are overwhelmingly not written in Go. What Go *is* genuinely good at, and what the example below builds, is the surrounding infrastructure: a northbound REST API for operators and a lightweight southbound channel to programmable elements -- the same architectural shape as a real controller, without claiming to be a byte-exact OpenFlow implementation.
-</DeepDive>
+<DeepDive title="Where the Go ecosystem actually stands here">Be aware of a real gap: unlike gRPC or MQTT, there is no mature, widely adopted Go library that speaks the raw OpenFlow wire protocol the way `ryu` (Python) or ONOS/OpenDaylight (Java) do. Production SDN controllers in the wild are overwhelmingly not written in Go. What Go *is* genuinely good at, and what the example below builds, is the surrounding infrastructure: a northbound REST API for operators and a lightweight southbound channel to programmable elements -- the same architectural shape as a real controller, without claiming to be a byte-exact OpenFlow implementation.</DeepDive>
 
 ### Go Implementation: A Minimal Controller Skeleton
 
@@ -125,9 +123,7 @@ func main() {
 
 A switch-side agent would dial `:6653`, send its `switch_id` as a JSON hello, and then sit reading a stream of `FlowRule` JSON objects, translating each into whatever its actual forwarding mechanism supports (an eBPF program, `iptables` rules, or a real OpenFlow-speaking switch behind a translation layer). The controller never needs to know that detail -- it only deals in intent.
 
-<Warning title="This is a teaching model, not a drop-in OpenFlow replacement">
-If your target switches genuinely speak OpenFlow (Open vSwitch, most SDN-capable hardware), do not hand-roll the wire protocol in production. Either drive Open vSwitch through its OVSDB management protocol (JSON-RPC over TCP, which is straightforward to speak from Go with `encoding/json` and `net.Dial`) or use an existing controller (ONOS, OpenDaylight, Ryu) and have your Go service talk to *its* REST API instead of the switches directly.
-</Warning>
+<Warning title="This is a teaching model, not a drop-in OpenFlow replacement">If your target switches genuinely speak OpenFlow (Open vSwitch, most SDN-capable hardware), do not hand-roll the wire protocol in production. Either drive Open vSwitch through its OVSDB management protocol (JSON-RPC over TCP, which is straightforward to speak from Go with `encoding/json` and `net.Dial`) or use an existing controller (ONOS, OpenDaylight, Ryu) and have your Go service talk to *its* REST API instead of the switches directly.</Warning>
 
 ### Why This Model Still Matters
 

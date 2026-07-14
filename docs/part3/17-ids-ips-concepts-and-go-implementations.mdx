@@ -1,5 +1,5 @@
 ---
-id: "[4.17.0]"
+id: "[5.17.0]"
 title: "IDS/IPS: Concepts and Go Implementations"
 ---
 
@@ -23,17 +23,13 @@ Most production security stacks run both roles side by side, often on the same u
 
 **Heuristic and behavioral detection** sits between the two: rules that encode expert knowledge about attack behavior rather than exact byte patterns, such as "more than N connection attempts from one host in T seconds looks like a scan."
 
-<DeepDive title="Where IDS/IPS Sits in the Stack">
-Network-based IDS/IPS (NIDS/NIPS) inspects traffic at chokepoints like a gateway or span port and sees everything crossing that link, but nothing that stays local to a host. Host-based IDS/IPS (HIDS/HIPS) runs on the endpoint itself, watching system calls, file integrity, and local logs, and catches activity that never touches the wire. The two are complementary, not competing, layers of the same defense-in-depth strategy discussed earlier in the book.
-</DeepDive>
+<DeepDive title="Where IDS/IPS Sits in the Stack">Network-based IDS/IPS (NIDS/NIPS) inspects traffic at chokepoints like a gateway or span port and sees everything crossing that link, but nothing that stays local to a host. Host-based IDS/IPS (HIDS/HIPS) runs on the endpoint itself, watching system calls, file integrity, and local logs, and catches activity that never touches the wire. The two are complementary, not competing, layers of the same defense-in-depth strategy discussed earlier in the book.</DeepDive>
 
 ## Placement and Failure Modes
 
 Inline (IPS) placement means every packet must pass through the device, so it becomes both a security control and a potential single point of failure or bottleneck. Out-of-band (IDS) placement, usually fed by a mirrored switch port or network tap, adds zero latency and zero availability risk, at the cost of only being able to alert, never block, in real time.
 
-<Warning title="Tuning Before Trusting">
-A freshly deployed IPS in blocking mode, with default signatures and no tuning for your environment's actual traffic, is a common cause of self-inflicted outages. Standard practice is to run new rule sets in detection-only mode first, review the alert volume against real traffic for days or weeks, and only promote well-understood, low-noise rules to active blocking.
-</Warning>
+<Warning title="Tuning Before Trusting">A freshly deployed IPS in blocking mode, with default signatures and no tuning for your environment's actual traffic, is a common cause of self-inflicted outages. Standard practice is to run new rule sets in detection-only mode first, review the alert volume against real traffic for days or weeks, and only promote well-understood, low-noise rules to active blocking.</Warning>
 
 ## Go Implementation
 

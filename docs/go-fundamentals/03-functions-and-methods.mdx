@@ -1,0 +1,318 @@
+---
+id: "[2.3.0]"
+title: "Functions and Methods"
+---
+
+# Functions and Methods
+
+> A function in Go is a small machine with a clearly labeled input slot and
+> output slot — and Go, unusually, lets that output slot have more than one
+> compartment. A method is that same machine, permanently bolted to one
+> particular type so it always has a specific piece of data to work on.
+
+Functions are how Go breaks a program into named, reusable pieces of
+behavior. Methods extend that idea by attaching a function to a type, which
+is how Go achieves what other languages get from classes — without
+classes. This chapter covers both, along with a handful of Go-specific
+features (multiple return values, named returns, variadic parameters,
+closures) that shape how idiomatic Go code looks and reads.
+
+## Function Basics
+
+A function declaration names its parameters and their types, and its
+return type, if any:
+
+```go
+func add(a int, b int) int {
+	return a + b
+}
+```
+
+When consecutive parameters share a type, Go lets you drop the repeated
+type name:
+
+```go
+func add(a, b int) int {
+	return a + b
+}
+```
+
+Calling it looks exactly like you'd expect:
+
+```go
+sum := add(3, 4) // 7
+```
+
+## Multiple Return Values
+
+This is one of Go's most consequential design decisions, and it appears
+everywhere in idiomatic Go code: a function can return more than one
+value, most commonly a result paired with an `error`:
+
+```go
+func divide(a, b float64) (float64, error) {
+	if b == 0 {
+		return 0, fmt.Errorf("divide by zero: %g / %g", a, b)
+	}
+	return a / b, nil
+}
+```
+
+The caller receives both values and is expected to check the error before
+trusting the result:
+
+```go
+result, err := divide(10, 2)
+if err != nil {
+	fmt.Println("error:", err)
+	return
+}
+fmt.Println("result:", result)
+```
+
+<Axiom>Go's multiple return values, combined with its lack of exceptions, mean an error is not something exceptional that interrupts control flow — it's an ordinary value, checked at the exact point it can occur, right next to the code that produced it.</Axiom>
+
+Chapter 5 covers error handling in depth; for now, notice the pattern: the
+zero value of the successful return type (`0` for `float64` above) is
+paired with a non-nil error, so callers who forget to check `err` at least
+get a harmless zero rather than a value that looks plausible but isn't.
+
+## Named Return Values
+
+A function can name its return values in the signature, which
+pre-declares them as zero-valued local variables and lets a bare `return`
+send back whatever they currently hold:
+
+```go
+func split(sum int) (x, y int) {
+	x = sum * 4 / 9
+	y = sum - x
+	return
+}
+```
+
+Named returns are most useful in short functions where the names document
+intent, and in functions using `defer` to modify a return value (common in
+error-wrapping patterns you'll see in Chapter 5). Overusing them in long
+functions tends to hurt readability, since the bare `return` no longer
+shows at a glance what's being returned.
+
+<Warning title="Naked returns in long functions">A bare `return` relies on the reader remembering what `x` and `y` were set to several lines earlier. In a function longer than about ten lines, this becomes a real readability cost — prefer writing `return x, y` explicitly once the function grows past a trivial size, even though the names remain declared in the signature.</Warning>
+
+## Variadic Functions
+
+A parameter prefixed with `...` accepts zero or more arguments of that
+type, collected into a slice inside the function:
+
+```go
+func sum(nums ...int) int {
+	total := 0
+	for _, n := range nums {
+		total += n
+	}
+	return total
+}
+```
+
+```go
+sum()           // 0
+sum(1, 2, 3)     // 6
+```
+
+An existing slice can be passed to a variadic parameter by spreading it
+with `...` at the call site:
+
+```go
+values := []int{4, 5, 6}
+total := sum(values...)
+```
+
+`fmt.Println` and `fmt.Printf` are themselves variadic — that's how they
+accept any number of arguments of any type.
+
+## defer: Guaranteed Cleanup
+
+A `defer` statement schedules a function call to run right before the
+enclosing function returns, regardless of how it returns — normally, via
+an early `return`, or even via a `panic`:
+
+```go
+func readFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// ... read from f, possibly returning early on error ...
+	return nil
+}
+```
+
+`defer f.Close()` runs no matter which `return` statement in the function
+actually executes, which is exactly why "open, then immediately defer the
+matching close" is one of the most common two-line idioms in Go — it puts
+the cleanup right next to the setup that requires it, instead of leaving
+it to be duplicated at every exit point.
+
+Deferred calls stack up in last-in-first-out order when a function defers
+more than one, and — a detail worth knowing before it surprises you — the
+deferred call's arguments are evaluated immediately when `defer` runs, not
+when the deferred call itself later executes:
+
+```go
+func trace(label string) {
+	fmt.Println("start:", label)
+	defer fmt.Println("end:", label) // "label" captured now, not later
+}
+```
+
+<Warning title="A deferred method call still needs a valid receiver later">`defer conn.Close()` is safe because `conn` itself is captured by reference (it's already a pointer-like type), but deferring a call whose *arguments* depend on state that changes later in the function can be surprising, since those arguments were fixed at the moment `defer` ran, not at the moment the deferred call executes.</Warning>
+
+## Functions as Values and Closures
+
+Functions in Go are first-class values: they can be assigned to variables,
+passed as arguments, and returned from other functions. A function that
+references variables from an enclosing scope is called a **closure**, and
+it captures those variables by reference, not by copying their value at
+creation time:
+
+```go
+func counter() func() int {
+	count := 0
+	return func() int {
+		count++
+		return count
+	}
+}
+```
+
+```go
+next := counter()
+fmt.Println(next()) // 1
+fmt.Println(next()) // 2
+fmt.Println(next()) // 3
+```
+
+Each call to `counter()` creates a fresh `count` variable, and the returned
+closure keeps a live reference to that specific variable — calling `next`
+repeatedly increments the same `count`, while a second call to `counter()`
+would start an entirely independent one.
+
+<DeepDive title="Why closures matter for networking code later in this book">Goroutines launched to handle a connection are frequently closures that capture a `net.Conn`, a shared counter, or a `context.Context` from the surrounding function. Understanding that the closure holds a live reference — not a snapshot — is exactly what explains a very common concurrency bug: a closure launched inside a loop that captures the loop variable itself, and unexpectedly sees its *final* value instead of the value at the time it was launched. Go 1.22 changed loop variable semantics to make each iteration's variable distinct, which fixed the most common version of this trap, but understanding the underlying rule remains essential once you write more complex concurrent code.</DeepDive>
+
+## Methods: Functions Bound to a Type
+
+A method is a function with an extra parameter, called the **receiver**,
+written before the function name:
+
+```go
+type Rectangle struct {
+	Width, Height float64
+}
+
+func (r Rectangle) Area() float64 {
+	return r.Width * r.Height
+}
+```
+
+```go
+rect := Rectangle{Width: 3, Height: 4}
+fmt.Println(rect.Area()) // 12
+```
+
+Calling `rect.Area()` looks like calling a method in an object-oriented
+language, but underneath it is ordinary function dispatch: the compiler
+resolves `rect.Area()` to a call of `Area` with `rect` passed as the
+receiver. There is no hidden `this`-like runtime lookup — Go decides which
+function to call at compile time, based on the receiver's type.
+
+## Value Receivers vs. Pointer Receivers
+
+The receiver in the `Rectangle` example above, `(r Rectangle)`, is a
+**value receiver** — the method receives a copy of the struct. A **pointer
+receiver**, `(r *Rectangle)`, receives a pointer to the original instead,
+which lets the method modify the caller's actual data:
+
+```go
+func (r *Rectangle) Scale(factor float64) {
+	r.Width *= factor
+	r.Height *= factor
+}
+```
+
+```go
+rect := Rectangle{Width: 3, Height: 4}
+rect.Scale(2)
+fmt.Println(rect) // {6 8}
+```
+
+Note that `rect.Scale(2)` works even though `rect` is not a pointer — Go
+automatically takes its address as a convenience when calling a
+pointer-receiver method on an addressable value. The reverse also happens:
+a value-receiver method can be called on a pointer, which Go automatically
+dereferences.
+
+<Warning title="Choosing the wrong receiver kind is a classic silent bug">If `Scale` above had used a value receiver, `func (r Rectangle) Scale(...)`, it would modify only its own local copy of `r`, and the caller's `rect` would be completely unchanged after the call — with no compiler error or warning of any kind, because the code is entirely valid Go, just not doing what you probably meant.</Warning>
+
+The rule of thumb: use a pointer receiver whenever the method needs to
+modify the receiver, when the struct is large enough that copying it on
+every call would be wasteful, or when *any* method on the type already uses
+a pointer receiver (for consistency — mixing receiver kinds on the same
+type is a common source of confusion). Use a value receiver for small,
+immutable-feeling types, especially ones you want to be safely copied and
+compared with `==`.
+
+| Receiver kind | Syntax | Can modify caller's data | Best for |
+|---|---|---|---|
+| Value | `func (r Rectangle) M()` | No — operates on a copy | Small, read-only-feeling types |
+| Pointer | `func (r *Rectangle) M()` | Yes — operates on the original | Mutating methods, large structs, consistency with other methods |
+
+<DeepDive title="Method sets and interfaces">This distinction resurfaces in the next chapter: a type's **method set** (the methods callable on it) differs between the value and the pointer. `*Rectangle` includes both value-receiver and pointer-receiver methods, but plain `Rectangle` includes only the value-receiver ones. This matters when deciding whether a type satisfies an interface — a common source of "does not implement" compiler errors for beginners.</DeepDive>
+
+### Try It Yourself
+
+Add a `Perimeter` method to `Rectangle`, and a second shape to compare
+value versus pointer receiver behavior directly:
+
+```go
+type Circle struct {
+	Radius float64
+}
+
+func (c Circle) Area() float64 {
+	return math.Pi * c.Radius * c.Radius
+}
+
+func (c *Circle) Grow(amount float64) {
+	c.Radius += amount
+}
+```
+
+1. Add `Perimeter() float64` to `Rectangle` (formula: `2*(Width+Height)`)
+   using a value receiver, and print it for a `3x4` rectangle.
+2. Add the `Circle` type and both methods shown above (remember to
+   `import "math"`), and call `Area()` on a `Circle{Radius: 2}`.
+3. Call `Grow(1)` on a `Circle` value and print its `Radius` before and
+   after — confirm the change actually took effect, since `Grow` uses a
+   pointer receiver.
+4. **Bonus:** change `Grow` to a value receiver, call it again, and observe
+   that the radius no longer changes — this reproduces the silent bug
+   described above on purpose so you can recognize its symptom later.
+
+<Axiom>A method with the wrong receiver kind doesn't crash — it just quietly does nothing useful, which is exactly why this mistake survives code review more often than it should.</Axiom>
+
+## Key Takeaways
+
+- Functions can return multiple values; pairing a result with an `error`
+  is the idiomatic Go pattern this entire book relies on.
+- Named return values pre-declare zero-valued variables for a bare
+  `return` — useful in short functions, a readability risk in long ones.
+- Variadic parameters (`...T`) accept any number of arguments and can be
+  fed an existing slice with `slice...` at the call site.
+- Closures capture enclosing variables by reference, not by value at
+  creation time — each call to the outer function creates fresh captured
+  state.
+- Methods are functions with a receiver; value receivers operate on a
+  copy, pointer receivers operate on the original — pick pointer receivers
+  whenever the method mutates the receiver or the type is large.

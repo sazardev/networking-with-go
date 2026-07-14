@@ -1,5 +1,5 @@
 ---
-id: "[5.23.0]"
+id: "[6.23.0]"
 title: "APIs for Webhooks and Event-Driven Design"
 ---
 
@@ -125,9 +125,7 @@ func sendWithRetry(url, secret string, event any) error {
 
 Most production webhook senders queue this retry logic through the background job system from the previous chapter rather than blocking the original request — the event that triggers the webhook (an order shipping) shouldn't be delayed by a slow or unreachable receiver.
 
-<DeepDive title="Give receivers a way to replay history">
-However good your retry logic is, receivers will occasionally miss events — a deploy during the retry window, a misconfigured endpoint fixed a day later. A `GET /events?since=...` endpoint, or a dashboard listing recent webhook deliveries with a manual "resend" button, turns an unrecoverable gap into a two-minute fix, and every mature webhook provider (Stripe, GitHub) offers exactly this.
-</DeepDive>
+<DeepDive title="Give receivers a way to replay history">However good your retry logic is, receivers will occasionally miss events — a deploy during the retry window, a misconfigured endpoint fixed a day later. A `GET /events?since=...` endpoint, or a dashboard listing recent webhook deliveries with a manual "resend" button, turns an unrecoverable gap into a two-minute fix, and every mature webhook provider (Stripe, GitHub) offers exactly this.</DeepDive>
 
 ## Event-driven design beyond webhooks
 
@@ -146,6 +144,4 @@ type OrderShippedEvent struct {
 }
 ```
 
-<DeepDive title="Let consumers subscribe to only the events they need">
-A webhook system that sends every consumer every event type forces each receiver to filter events it doesn't care about, and increases the blast radius when one event type's payload changes. A subscription model, where each registered endpoint declares which event types it wants, keeps payloads relevant and makes it possible to evolve one event type's schema without touching consumers who never subscribed to it.
-</DeepDive>
+<DeepDive title="Let consumers subscribe to only the events they need">A webhook system that sends every consumer every event type forces each receiver to filter events it doesn't care about, and increases the blast radius when one event type's payload changes. A subscription model, where each registered endpoint declares which event types it wants, keeps payloads relevant and makes it possible to evolve one event type's schema without touching consumers who never subscribed to it.</DeepDive>

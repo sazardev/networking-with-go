@@ -1,5 +1,5 @@
 ---
-id: "[5.22.0]"
+id: "[6.22.0]"
 title: "APIs for File Uploads, Media, and Streaming"
 ---
 
@@ -50,9 +50,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 `http.MaxBytesReader` is the key line here: it wraps the request body so that reading past the limit returns an error instead of silently consuming unbounded memory or disk. `io.Copy` streams from the multipart part directly to disk in fixed-size chunks — the whole file is never held in memory at once, regardless of whether it's ten kilobytes or ten gigabytes.
 
-<Warning title="Never trust the client-supplied filename">
-`header.Filename` comes straight from the request and can contain path traversal sequences like `../../etc/passwd`. Always sanitize with `filepath.Base` (or generate your own filename, such as a UUID, and store the original only as metadata) before using it to construct a filesystem path.
-</Warning>
+<Warning title="Never trust the client-supplied filename">`header.Filename` comes straight from the request and can contain path traversal sequences like `../../etc/passwd`. Always sanitize with `filepath.Base` (or generate your own filename, such as a UUID, and store the original only as metadata) before using it to construct a filesystem path.</Warning>
 
 ## Streaming directly to object storage
 
@@ -100,9 +98,7 @@ func serveVideo(w http.ResponseWriter, r *http.Request) {
 
 `http.ServeContent` inspects the incoming `Range` header, responds with `206 Partial Content` and the correct `Content-Range` when a range is requested, and falls back to a full `200 OK` response otherwise — all without you writing a single line of range-parsing logic. This is the mechanism that lets a user drag a video's progress bar to the middle and start playback immediately, instead of waiting for the whole file to download.
 
-<DeepDive title="io.ReadSeeker is the contract that makes this work">
-`http.ServeContent` requires an `io.ReadSeeker`, not just an `io.Reader`, because serving a range means seeking to an offset before reading. An open `*os.File` satisfies this naturally. If your content lives in object storage instead of local disk, you'll typically proxy the `Range` header through to the storage backend's own ranged-GET support rather than trying to seek an HTTP response body, which generally isn't seekable.
-</DeepDive>
+<DeepDive title="io.ReadSeeker is the contract that makes this work">`http.ServeContent` requires an `io.ReadSeeker`, not just an `io.Reader`, because serving a range means seeking to an offset before reading. An open `*os.File` satisfies this naturally. If your content lives in object storage instead of local disk, you'll typically proxy the `Range` header through to the storage backend's own ranged-GET support rather than trying to seek an HTTP response body, which generally isn't seekable.</DeepDive>
 
 ## Streaming uploads the other way: chunked reads
 
@@ -149,8 +145,10 @@ func detectContentType(r io.Reader) (string, io.Reader, error) {
 		return "", nil, err
 	}
 	contentType := http.DetectContentType(buf[:n])
-	// Reconstruct a reader that includes the bytes already consumed for sniffing.
-	return contentType, io.MultiReader(bytes.NewReader(buf[:n]), r), nil
+	// Reconstruct a reader that includes the bytes already
+	// consumed for sniffing.
+	sniffed := bytes.NewReader(buf[:n])
+	return contentType, io.MultiReader(sniffed, r), nil
 }
 ```
 

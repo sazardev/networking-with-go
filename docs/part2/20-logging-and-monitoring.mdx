@@ -1,5 +1,5 @@
 ---
-id: "[2.20.0]"
+id: "[3.20.0]"
 title: "Logging and Monitoring: Concepts and Go Implementation"
 ---
 
@@ -17,6 +17,10 @@ Every server built in this book so far handles requests from clients you can't s
 - **Metrics** record aggregate numbers over time: requests per second, error rate, average latency, open connection count.
 
 Both matter. Logs tell you the story of one specific request; metrics tell you the health of the whole system at a glance.
+
+Consider a concrete scenario: a client reports intermittent `500` errors on `POST /orders` around 3 a.m. Without logs, you have only the client's word to go on. With structured logs, you can filter for `path=/orders` and `status>=500` and find the exact requests, their remote addresses, and how long each took before failing. Layer metrics on top and you can also tell whether the failure rate spiked for every client or just one — the difference between a systemic bug and a single flaky caller.
+
+<Axiom>If you can't answer "what was this server doing five minutes ago" without redeploying it, you don't have observability — you have hope.</Axiom>
 
 ---
 
@@ -46,6 +50,40 @@ func main() {
 ```
 
 Each call produces a single JSON line with the message and its attributes as separate fields — trivially parseable by log aggregation tools, unlike a formatted string you'd have to pick apart with regular expressions.
+
+### Adjusting Verbosity at Runtime
+
+The `slog.LevelInfo` above is fixed at startup, but a misbehaving server in production often needs more detail than `Info` gives you — ideally without a redeploy. `slog.LevelVar` holds a level that can be changed safely while the program runs, since it synchronizes reads and writes internally:
+
+```go
+var logLevel = new(slog.LevelVar) // defaults to LevelInfo
+
+func init() {
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: logLevel,
+	})
+	slog.SetDefault(slog.New(handler))
+}
+
+func setLogLevelHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Query().Get("level") {
+	case "debug":
+		logLevel.Set(slog.LevelDebug)
+	case "info":
+		logLevel.Set(slog.LevelInfo)
+	case "warn":
+		logLevel.Set(slog.LevelWarn)
+	default:
+		http.Error(w, "unknown level", http.StatusBadRequest)
+		return
+	}
+	fmt.Fprintf(w, "log level set to %s\n", logLevel.Level())
+}
+```
+
+Wiring `setLogLevelHandler` up on an internal-only route lets you flip a production server from `Info` to `Debug` for a few minutes to catch an intermittent bug in the act, then flip it back — without restarting the process and losing whatever state triggered the problem.
+
+<Warning title="Never log secrets">It's tempting to log the full request while debugging — headers, body, everything. Don't: `Authorization` headers, session cookies, and password fields end up in your log aggregator, often a less secure place than the system the secret was meant to protect. Log the request ID, path, and method; add specific sanitized fields deliberately, never a whole request or response object by default.</Warning>
 
 ---
 
@@ -88,6 +126,8 @@ func (r *statusRecorder) WriteHeader(status int) {
 
 Wrapping `http.ResponseWriter` this way — capturing the status code as a side effect of intercepting `WriteHeader` — is a common pattern any time you need to observe what a handler did without changing its behavior.
 
+<Warning title="A wrapped ResponseWriter can silently break upgrades">`statusRecorder` embeds the `http.ResponseWriter` *interface*, so it satisfies `Header`, `Write`, and `WriteHeader` — but nothing else. A handler further down the chain that upgrades to a WebSocket needs `w.(http.Hijacker)` to succeed; that type assertion fails outright on `*statusRecorder`, since only the embedded interface's own methods are promoted, not `Hijack` from a different interface the underlying writer might also implement. The same applies to `http.Flusher` for streaming responses. Middleware in front of upgrade-capable or streaming handlers must implement `Hijack()`/`Flush()` explicitly and delegate to the underlying writer.</Warning>
+
 ---
 
 ## Contextual Logging with Request IDs
@@ -111,6 +151,26 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 ```
 
 `slog.InfoContext` accepts a `context.Context` alongside the message, letting handlers that support context-aware logging (or custom `slog.Handler` implementations) enrich every log line with values pulled from that context automatically.
+
+### Generating Request IDs Safely
+
+`generateRequestID` needs values that won't collide across concurrent requests, which rules out an unseeded `math/rand` source or a plain in-memory counter that resets to zero on every restart. `crypto/rand` is cheap enough to call once per request and gives genuinely unpredictable bytes:
+
+```go
+func generateRequestID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand.Read only fails if the OS entropy
+		// source is broken; fall back rather than crash.
+		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+```
+
+<DeepDive title="Why context keys use an unexported custom type">`requestIDKey` is declared as `type contextKey string`, not a bare string constant. If two packages both used the literal `"requestID"` as a `context.WithValue` key, one could silently overwrite the other's value — plain string keys collide across packages with no compile-time warning. An unexported named type scoped to a single package guarantees no other package can construct a colliding key, since they have no way to reference the unexported `contextKey` type at all.</DeepDive>
+
+<Warning title="context.Value is not a general-purpose parameter bag">It's tempting to stuff more and more values into the request context once `context.WithValue` is available — user ID, request ID, feature flags, a database handle. Reserve it for values that genuinely belong to the request's lifetime and cross API boundaries you don't control, like a request ID threaded through middleware and handlers you didn't write. Anything a function actually depends on to do its job should be an explicit parameter; hiding it in the context makes the function's real dependencies invisible to its own signature.</Warning>
 
 ---
 
@@ -143,6 +203,10 @@ func metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 This plain-text `key value` format is intentionally close to what tools like Prometheus scrape from a `/metrics` endpoint — the concept (expose numbers over HTTP, let an external system poll and aggregate them) is the same whether you write the exposition format by hand or use a metrics library that formats it for you.
 
+<Warning title="Plain counters race under concurrent handlers">`totalRequests` and `failedRequests` are `atomic.Int64`, not plain `int64`, on purpose: many requests call `Add` concurrently from different goroutines. Change either field to a plain `int64` incremented with `totalRequests++` and `go test -race` flags a data race immediately — without the race detector running, you'd instead just see a silent undercount in production, which is far harder to notice than a test failure.</Warning>
+
+<DeepDive title="From hand-rolled counters to a real metrics library">The exposition format above is fine for two counters, but a real service tracks dozens — request duration buckets, in-flight counts, per-route breakdowns. `prometheus/client_golang` provides counters, gauges, and histograms plus an `http.Handler` that serves `/metrics` in the exact text format Prometheus expects. The underlying idea — atomic counters exposed over HTTP for an external scraper — is identical to the code above; the library just does the bookkeeping at scale.</DeepDive>
+
 A **health check** endpoint follows the same idea in miniature — a cheap handler an orchestrator (load balancer, container scheduler) can poll to decide whether this instance is still healthy:
 
 ```go
@@ -152,9 +216,31 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-<DeepDive title="pprof is part of monitoring too">
-`net/http/pprof` — covered in depth in the performance chapter — exposes live CPU and memory profiles over HTTP. It's less about steady-state metrics and more about answering "why is this instance slow right now," but it belongs in the same observability toolbox as logs and metrics.
-</DeepDive>
+This works well as a **liveness** check: is the process alive at all? Real orchestrators (Kubernetes among them) also want a separate **readiness** check: is this instance currently able to serve traffic? The distinction matters because the two failures call for different responses — a deadlocked process should be restarted, but an instance that's merely waiting on a database to come back up should just stop receiving new traffic, not be killed and immediately replaced with another instance in the same broken state:
+
+```go
+func readinessHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := db.PingContext(ctx); err != nil {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ready"))
+	}
+}
+```
+
+Bounding `PingContext` with a short timeout matters: a readiness probe that blocks indefinitely on a hung dependency defeats the entire point of the check. The orchestrator's own probe timeout would eventually fire anyway — better to fail fast with a clear `503` than to time out with no information at all.
+
+<DeepDive title="pprof is part of monitoring too">`net/http/pprof` — covered in depth in the performance chapter — exposes live CPU and memory profiles over HTTP. It's less about steady-state metrics and more about answering "why is this instance slow right now," but it belongs in the same observability toolbox as logs and metrics.</DeepDive>
+
+### Try It Yourself
+
+Add `setLogLevelHandler` from earlier in this chapter to a small HTTP server, alongside `healthHandler` and a `readinessHandler` backed by a fake dependency that fails for the first five seconds after startup. Use `curl` to confirm: `/health` returns `200` immediately, `/ready` returns `503` until the dependency "warms up," and `?level=debug` makes subsequent request logs noticeably more verbose. Watching all three move independently makes clear why "alive," "ready," and "verbose enough to debug" are separate questions.
 
 ---
 
@@ -165,7 +251,5 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 - Wrapping `http.Handler` is the same pattern used for authentication middleware — apply it for logging, metrics, and request IDs alike.
 - Attaching a request ID to `context.Context` ties every log line from one request together, even under heavy concurrency.
 - A `/metrics` endpoint and a `/health` endpoint are cheap to build and are what load balancers and monitoring systems expect to poll.
-
----
-
-[Previous: Security in Go Networking](19-security-in-go-networking.md) | [Next: Testing and Debugging](21-testing-and-debugging.md)
+- `slog.LevelVar` lets you raise or lower verbosity in a running server without a restart; use it, and never log secrets, regardless of level.
+- Separate liveness from readiness: a deadlocked process should be restarted, but a process merely waiting on a dependency should just stop receiving traffic.

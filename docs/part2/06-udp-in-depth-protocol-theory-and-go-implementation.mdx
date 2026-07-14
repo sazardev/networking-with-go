@@ -1,17 +1,17 @@
 ---
-id: "[2.6.0]"
+id: "[3.6.0]"
 title: "UDP in Depth: Protocol Theory and Go Implementation"
 ---
 
 # UDP in Depth: Protocol Theory and Go Implementation
 
-> "Imagine sending postcards—fast, simple, and direct. Sometimes they get lost, sometimes they arrive out of order, but they’re perfect for quick messages! UDP is the postcard protocol, and Go lets you send and receive them with ease."
+> "Imagine sending postcards—fast, simple, and direct. Sometimes they get lost, sometimes they arrive out of order, but they're perfect for quick messages! UDP is the postcard protocol, and Go lets you send and receive them with ease."
 
 ---
 
 ## What is UDP?
 
-**UDP (User Datagram Protocol)** is the speedster of the networking world. It’s like tossing paper airplanes—no guarantee they’ll arrive, but they’re fast and don’t wait for a reply.
+**UDP (User Datagram Protocol)** is the speedster of the networking world. It's like tossing paper airplanes—no guarantee they'll arrive, but they're fast and don't wait for a reply.
 
 - **Connectionless:** No handshake, just send and hope for the best.
 - **Unreliable:** No delivery confirmation—packets may be lost or duplicated.
@@ -19,7 +19,9 @@ title: "UDP in Depth: Protocol Theory and Go Implementation"
 - **Lightweight:** Minimal overhead, perfect for real-time apps.
 
 **Analogy:**
-- UDP is like shouting across a crowded room—some people hear you, some don’t, but it’s quick!
+- UDP is like shouting across a crowded room—some people hear you, some don't, but it's quick!
+
+<Axiom>UDP delivers datagrams, never a stream — each successful read returns exactly one packet, or none.</Axiom>
 
 ---
 
@@ -40,96 +42,186 @@ title: "UDP in Depth: Protocol Theory and Go Implementation"
 (No ACKs, no order, just speed)
 ```
 
+<DeepDive title="Datagrams vs. streams, at the socket level">A TCP socket hands you an undifferentiated stream of bytes: the kernel is free to deliver whatever it has buffered on any given `Read`, regardless of how many `Write` calls produced it. A UDP socket works differently — the kernel keeps datagram boundaries intact from the sender's single `Write`/`WriteTo` call all the way to the receiver's single `Read`/`ReadFrom` call. This is why Go's UDP APIs use `ReadFrom`/`WriteTo` instead of the plain stream-oriented `Read`/`Write`: each call maps to exactly one packet on the wire, and if that packet doesn't fit your buffer, the excess is silently discarded rather than held over for the next call.</DeepDive>
+
+<Warning title="A short buffer truncates, it does not queue the rest">If a datagram is larger than the buffer you pass to `ReadFrom`, the extra bytes are dropped — there is no "read the rest next time" like there is with a TCP stream. Always size your receive buffer for the largest datagram your protocol can produce, and treat `n == len(buf)` as a signal that truncation may have happened.</Warning>
+
+### MTU, Fragmentation, and Packet Loss
+
+Ethernet's typical MTU (maximum transmission unit) is 1500 bytes,
+which after IP and UDP headers leaves roughly 1472 bytes of usable
+payload before the network layer has to step in. A UDP datagram can
+legally be larger than that — up to about 65507 bytes of payload over
+IPv4 — but anything above the path's MTU forces IP to fragment it
+into several IP packets that get reassembled at the destination.
+
+<DeepDive title="Why fragmentation quietly increases loss">Fragmentation is transparent to your Go code — `net.ListenUDP` and `net.DialUDP` never expose the individual IP fragments, only the reassembled datagram (or nothing, if reassembly fails). That transparency hides a real cost: UDP has no retransmission, so if even one fragment out of, say, five is dropped anywhere along the path, the entire datagram is lost, not just one-fifth of it. Protocols that care about reliability over UDP — DNS, QUIC, custom game protocols — typically keep each datagram under roughly 1200-1400 bytes precisely to avoid fragmentation and the amplified loss it causes.</DeepDive>
+
 ---
 
-## Go in Action: Simple UDP Client (Paso a Paso)
+## Go in Action: Simple UDP Client (Step by Step)
 
-Este ejemplo muestra cómo enviar un mensaje UDP a un servidor y recibir una respuesta.
+This example shows how to send a UDP message to a server and read
+the response, without blocking forever if nothing comes back.
 
 ```go
 package main
+
 import (
-    "fmt"      // Para imprimir en consola
-    "net"      // Provee funciones de red
+    "fmt"      // Print to the console
+    "net"      // Networking primitives
     "os"
+    "time"
 )
 
 func main() {
-    // 1. net.Dial crea una conexión UDP (no hay handshake)
+    // 1. net.Dial creates a UDP "connection": no handshake happens,
+    //    it just remembers the remote address for Read/Write.
     conn, err := net.Dial("udp", "localhost:9001")
     if err != nil {
-        fmt.Println("Error al conectar:", err)
+        fmt.Println("Error connecting:", err)
         os.Exit(1)
     }
-    // 2. Enviamos un mensaje
-    fmt.Fprintf(conn, "¡Hola UDP server!\n")
-    // 3. Leemos la respuesta
+    defer conn.Close()
+
+    // 2. Send a message
+    if _, err := fmt.Fprintf(conn, "Hello UDP server!\n"); err != nil {
+        fmt.Println("Error sending:", err)
+        os.Exit(1)
+    }
+
+    // 3. UDP gives no delivery guarantee: a lost request, or a lost
+    //    reply, would block Read forever without a deadline.
+    conn.SetReadDeadline(time.Now().Add(3 * time.Second))
     buf := make([]byte, 1024)
-    n, _ := conn.Read(buf)
-    fmt.Println("Respuesta:", string(buf[:n]))
-    conn.Close()
+    n, err := conn.Read(buf)
+    if err != nil {
+        if ne, ok := err.(net.Error); ok && ne.Timeout() {
+            fmt.Println("No reply within 3s: request or reply was lost")
+            return
+        }
+        fmt.Println("Error reading:", err)
+        return
+    }
+    fmt.Println("Response:", string(buf[:n]))
 }
 ```
 
-- **¿Qué hace cada parte?**
-  - `net.Dial`: Prepara el canal UDP (no hay handshake).
-  - `fmt.Fprintf`: Envía un mensaje al servidor.
-  - `conn.Read`: Espera la respuesta (si llega).
-  - `conn.Close`: Cierra el canal.
+- **What does each part do?**
+  - `net.Dial`: prepares the UDP channel (no handshake).
+  - `fmt.Fprintf`: sends a message to the server.
+  - `SetReadDeadline`: bounds how long we wait for a reply that may
+    never come.
+  - `conn.Read`: waits for the response (if it arrives).
+  - `conn.Close` (deferred): closes the channel.
 
-[Ejercicio: Simple UDP Client](../../exercises/part2/06-udp-client/main.go)
+[Exercise: Simple UDP Client](../../exercises/part2/06-udp-client/main.go)
+
+<Warning title="net.Dial on UDP does not prove the server exists">Calling `net.Dial("udp", ...)` almost never fails, even if nothing is listening on the other end — UDP has no handshake to fail. All `Dial` does here is record the local route and remote address for a connectionless socket. The first real signal that something is wrong is either a timeout waiting for a reply (as handled above) or, on the same host, an ICMP "port unreachable" message that can surface as an error on a *later* `Write` or `Read` call, not on `Dial` itself.</Warning>
 
 ---
 
-## Go in Action: Simple UDP Server (Explicado)
+## Go in Action: Simple UDP Server (Explained)
 
-Este servidor UDP escucha en el puerto 9001 y responde a cada mensaje recibido.
+This UDP server listens on port 9001 and replies to every message it
+receives.
 
 ```go
 package main
+
 import (
     "fmt"
     "net"
 )
 
 func main() {
-    // 1. net.ListenPacket crea un listener UDP
+    // 1. net.ListenPacket creates a UDP listener
     conn, err := net.ListenPacket("udp", ":9001")
     if err != nil {
         fmt.Println("Error:", err)
         return
     }
-    fmt.Println("Servidor UDP escuchando en :9001")
+    defer conn.Close() // Release the socket when main returns
+    fmt.Println("UDP server listening on :9001")
+
     buf := make([]byte, 1024)
     for {
-        n, addr, err := conn.ReadFrom(buf) // Lee mensaje y dirección del cliente
+        // 2. Read one datagram and the client's address
+        n, addr, err := conn.ReadFrom(buf)
         if err != nil {
-            fmt.Println("Error al leer:", err)
+            fmt.Println("Error reading:", err)
             continue
         }
-        fmt.Printf("Recibido de %s: %s", addr, string(buf[:n]))
-        // Responde al cliente
-        conn.WriteTo([]byte("¡Hola desde el servidor UDP!\n"), addr)
+        // If n equals len(buf), the datagram may have been larger
+        // than our buffer and silently truncated.
+        if n == len(buf) {
+            fmt.Println("Warning: datagram may be truncated")
+        }
+        fmt.Printf("Received from %s: %s", addr, string(buf[:n]))
+        // 3. Reply to the client
+        conn.WriteTo([]byte("Hello from the Go UDP server!\n"), addr)
     }
 }
 ```
 
-- **¿Qué hace cada parte?**
-  - `net.ListenPacket`: Abre el puerto UDP.
-  - `conn.ReadFrom`: Lee datos y la dirección del cliente.
-  - `conn.WriteTo`: Envía respuesta al cliente.
-  - El ciclo permite atender múltiples clientes.
+- **What does each part do?**
+  - `net.ListenPacket`: opens the UDP port.
+  - `conn.ReadFrom`: reads data and the client's address.
+  - `conn.WriteTo`: sends the reply to the client.
+  - The loop lets one goroutine serve every client, one datagram at
+    a time.
 
-[Ejercicio: Simple UDP Server](../../exercises/part2/06-udp-server/main.go)
+[Exercise: Simple UDP Server](../../exercises/part2/06-udp-server/main.go)
+
+<DeepDive title="Why one read loop, instead of one goroutine per packet">A TCP server spawns a goroutine per *connection* because a connection is long-lived and stateful — there's a stream to keep reading from. A UDP server has no connections to hand off, only a shared socket and a stream of independent datagrams, so the natural default is a single goroutine that loops on `ReadFrom` and handles each datagram inline, in order, before reading the next one. This keeps things simple and avoids reordering replies unnecessarily. Only reach for a goroutine per datagram when handling one packet is genuinely slow (a database lookup, a heavy computation) and you are willing to process datagrams out of order — and even then, the shared read buffer needs care, as the next section shows.</DeepDive>
+
+### Scaling Up: One Goroutine per Datagram
+
+If handling a datagram involves real work — a database call, a
+lookup, encryption — doing it inline blocks the read loop, and the
+kernel's receive buffer fills up while you wait, causing new
+datagrams to be dropped. Handing each datagram to its own goroutine
+fixes that, but the shared `buf` slice makes this easy to get wrong:
+
+```go
+buf := make([]byte, 1024)
+for {
+    n, addr, err := conn.ReadFrom(buf)
+    if err != nil {
+        fmt.Println("Error reading:", err)
+        continue
+    }
+
+    // Copy before handing off: the next call to ReadFrom will
+    // overwrite buf before this goroutine is scheduled to run.
+    payload := make([]byte, n)
+    copy(payload, buf[:n])
+
+    go func(data []byte, from net.Addr) {
+        fmt.Printf("Received from %s: %s", from, string(data))
+        if _, err := conn.WriteTo(
+            []byte("Hello from the Go UDP server!\n"), from,
+        ); err != nil {
+            fmt.Println("Error replying:", err)
+        }
+    }(payload, addr)
+}
+```
+
+<Warning title="Reusing a buffer across goroutines is a data race">Passing `buf[:n]` directly into a new goroutine without copying it first is a classic bug: the main loop calls `ReadFrom` again almost immediately, overwriting the same backing array while the goroutine you just spawned might still be reading it. The result is not a crash you can reliably reproduce — it's corrupted or half-mixed data that only shows up under load. `go run -race` will catch this if you test it, but the fix is simpler: always copy the payload into its own slice before it crosses a goroutine boundary.</Warning>
+
+<DeepDive title="Unbounded goroutines are a denial-of-service surface">A goroutine per datagram scales beautifully until an attacker (or a misbehaving client) sends packets faster than you can process them. Because UDP has no connection to rate-limit or refuse, nothing stops the read loop from spawning millions of goroutines under a flood, exhausting memory long before any single "connection" could be blamed. Production UDP servers that go this route pair it with a worker pool of fixed size (a buffered channel of jobs consumed by a fixed number of workers) so throughput has a hard ceiling, and with per-source rate limiting so one noisy sender cannot starve everyone else.</DeepDive>
 
 ---
 
-## Real-World Example: UDP Broadcast (Comentado)
+## Real-World Example: UDP Broadcast (Explained)
 
-UDP permite enviar mensajes a todos los dispositivos de una red local usando broadcast.
+UDP lets you send a message to every device on a local network using
+a broadcast address.
 
 ```go
 package main
+
 import (
     "fmt"
     "net"
@@ -137,47 +229,84 @@ import (
 
 func main() {
     conn, _ := net.Dial("udp", "255.255.255.255:9002")
-    fmt.Fprintf(conn, "¡Mensaje broadcast UDP!\n")
+    fmt.Fprintf(conn, "UDP broadcast message!\n")
     conn.Close()
 }
 ```
 
-- **¿Qué hace cada parte?**
-  - `net.Dial` con dirección broadcast envía a todos los dispositivos de la red.
-  - `fmt.Fprintf` envía el mensaje.
+- **What does each part do?**
+  - `net.Dial` with a broadcast address targets every device on the
+    local network.
+  - `fmt.Fprintf` sends the message.
 
-[Ejercicio: UDP Broadcast](../../exercises/part2/06-udp-broadcast/main.go)
+[Exercise: UDP Broadcast](../../exercises/part2/06-udp-broadcast/main.go)
+
+<Warning title="Broadcast needs SO_BROADCAST">This snippet compiles and runs, but on most systems the write fails with something like `sendto: permission denied`. The kernel refuses broadcast traffic on a socket unless the `SO_BROADCAST` option has been explicitly enabled, and Go's plain `net.Dial` does not set it for you. To actually send broadcast packets you need to reach into the raw socket — for example with `net.ListenConfig.Control` or the `golang.org/x/net/ipv4` helpers — and set `SO_BROADCAST` before the first write.</Warning>
 
 ---
 
-## ¿Qué hace Go detrás de cámaras?
+## What Go Does Behind the Scenes
 
-- UDP no requiere handshake ni mantiene estado: Go simplemente envía y recibe datagramas.
-- `net.ListenPacket` y `net.Dial` usan llamadas al sistema operativo para abrir sockets UDP.
-- Go gestiona los buffers y la concurrencia, pero no garantiza entrega ni orden.
-- El paquete `net` es multiplataforma: ¡tu código UDP funciona igual en cualquier sistema!
+- UDP requires no handshake and keeps no connection state: Go simply
+  sends and receives datagrams.
+- `net.ListenPacket` and `net.Dial` make operating system calls to
+  open UDP sockets, just like their TCP counterparts.
+- Go manages buffers and concurrency, but guarantees neither delivery
+  nor ordering — that responsibility stays with your application.
+- The `net` package is cross-platform: your UDP code behaves the same
+  on any operating system.
+
+<DeepDive title="Kernel receive buffers drop, they don't queue forever">Every UDP socket has a fixed-size kernel receive buffer (tunable via `SO_RCVBUF`). Incoming datagrams sit there until your program calls `ReadFrom`; if the buffer fills up because your program falls behind, new datagrams are simply dropped by the kernel with no notification to either side — there's no flow control signal to the sender like TCP's advertised window. This is the real reason a busy UDP server with a slow read loop starts silently losing packets under load, even on a perfectly healthy network.</DeepDive>
+
+<DeepDive title="When UDP beats TCP">Real-time applications — voice and video calls, live game state, DNS lookups — often prefer a dropped or late packet over a delayed one. TCP's retransmission and in-order delivery are exactly the wrong trade for a video frame that is already stale by the time a lost segment gets resent; better to skip it and show the next frame. This is also why protocols like QUIC build their own reliability, ordering, and congestion control *on top of* UDP in user space, rather than using TCP: they get to choose which guarantees to keep and which to drop, instead of accepting TCP's all-or-nothing stream semantics.</DeepDive>
 
 ---
 
 ## Visual Summary
 
 ```
-[Cliente] --UDP--> [Servidor]
+[Client] --UDP--> [Server]
    |                |
 [Send]           [Receive]
    |                |
-(No ACK, no orden, solo velocidad)
+(No ACK, no order, just speed)
 ```
 
 ---
 
-## Fun Facts & Go Memes
-- UDP es el favorito para juegos en línea, streaming y VoIP por su velocidad.
-- Si pierdes un paquete UDP, ¡nadie llora! (pero tu video puede saltar un frame).
-- Puedes construir tu propio protocolo confiable sobre UDP (¡pero es trabajo extra!).
-- UDP es como un repartidor ninja: rápido, pero a veces se le caen los paquetes.
-- Go hace que trabajar con UDP sea tan fácil como con TCP, pero mucho más rápido.
+## Try It Yourself: Build a Tiny Reliability Layer
+
+UDP gives you speed but no guarantees. Build the smallest possible
+reliability layer on top of it, using the client and server above as
+your starting point:
+
+1. Add a 4-byte big-endian sequence number to the front of every
+   message the client sends (`encoding/binary.BigEndian.PutUint32`).
+2. On the server, echo the same sequence number back inside the
+   reply so the client can match responses to requests.
+3. On the client, resend the same message (same sequence number) if
+   no matching reply arrives within, say, 500ms, up to a small retry
+   limit — this is the same idea behind TCP's retransmission timer,
+   just implemented by hand in user space.
+4. To see it matter, add a line to the server that randomly drops
+   1-in-5 incoming datagrams before replying (`if rand.Intn(5) == 0
+   { continue }`), and confirm your client's retry logic recovers.
+
+This is a small-scale version of what QUIC, TFTP, and custom game
+networking stacks do for real: use UDP for its low overhead, then add
+back only the reliability guarantees the application actually needs.
+
+<Axiom>What UDP gives up in reliability, it gives back in latency.</Axiom>
 
 ---
 
-[Previous: TCP in Depth: Protocol Theory and Go Implementation](05-tcp-in-depth-protocol-theory-and-go-implementation.md) | [Next: Error Handling and Debugging](07-error-handling-and-debugging.md)
+## Fun Facts & Go Memes
+- UDP is the favorite for online games, streaming, and VoIP because
+  of its speed.
+- If you lose a UDP packet, nobody cries (but your video might skip
+  a frame).
+- You can build your own reliable protocol on top of UDP (but it's
+  extra work!).
+- UDP is like a ninja courier: fast, but it sometimes drops a
+  package.
+- Go makes working with UDP just as easy as TCP, but much faster.

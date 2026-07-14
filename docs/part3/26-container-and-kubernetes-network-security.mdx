@@ -1,5 +1,5 @@
 ---
-id: "[4.26.0]"
+id: "[5.26.0]"
 title: "Container and Kubernetes Network Security"
 ---
 
@@ -49,9 +49,7 @@ spec:
 
 This policy allows only pods labeled `app: frontend` to reach the `api` pods on port 8080, and implicitly denies every other inbound connection to those pods once any NetworkPolicy selects them - a default-deny model that mirrors the "explicit-allow" posture recommended for cloud resources in the previous chapter.
 
-<Warning title="No NetworkPolicy Means No Restriction">
-A cluster with zero NetworkPolicy resources defined has no pod-to-pod network segmentation at all, regardless of namespace boundaries. Namespaces organize resources logically; they do not restrict network traffic by themselves. Treating namespace separation as network isolation is one of the more common and dangerous Kubernetes security misconceptions.
-</Warning>
+<Warning title="No NetworkPolicy Means No Restriction">A cluster with zero NetworkPolicy resources defined has no pod-to-pod network segmentation at all, regardless of namespace boundaries. Namespaces organize resources logically; they do not restrict network traffic by themselves. Treating namespace separation as network isolation is one of the more common and dangerous Kubernetes security misconceptions.</Warning>
 
 ## Service Mesh and mTLS
 

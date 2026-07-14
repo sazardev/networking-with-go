@@ -1,5 +1,5 @@
 ---
-id: "[3.41.0]"
+id: "[4.41.0]"
 title: "MQTT, AMQP, and IoT Messaging Protocols"
 ---
 
@@ -119,13 +119,9 @@ func main() {
 
 `amqp.Persistent` tells the broker to write the message to disk so it survives a restart -- the kind of durability guarantee MQTT's QoS levels do not attempt to offer, because MQTT assumes the broker itself might be as resource-constrained as the devices talking to it.
 
-<DeepDive title="Choosing between them">
-Ask what is talking to what. Thousands of cheap, often-offline, battery-powered devices publishing small telemetry payloads: MQTT. A handful of backend services that need guaranteed delivery, complex routing, and transactional semantics: AMQP. Many real IoT architectures use both -- MQTT at the edge, with a bridge translating into AMQP (or Kafka) once messages reach the data center.
-</DeepDive>
+<DeepDive title="Choosing between them">Ask what is talking to what. Thousands of cheap, often-offline, battery-powered devices publishing small telemetry payloads: MQTT. A handful of backend services that need guaranteed delivery, complex routing, and transactional semantics: AMQP. Many real IoT architectures use both -- MQTT at the edge, with a bridge translating into AMQP (or Kafka) once messages reach the data center.</DeepDive>
 
-<Warning title="QoS is not a magic reliability switch">
-MQTT QoS 2 guarantees exactly-once delivery of the message between client and broker, not exactly-once processing by your application. If your subscriber handler is not idempotent, a redelivered message after a reconnect can still cause a duplicate side effect.
-</Warning>
+<Warning title="QoS is not a magic reliability switch">MQTT QoS 2 guarantees exactly-once delivery of the message between client and broker, not exactly-once processing by your application. If your subscriber handler is not idempotent, a redelivered message after a reconnect can still cause a duplicate side effect.</Warning>
 
 ### Brokers You Will Actually Run
 

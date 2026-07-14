@@ -1,5 +1,5 @@
 ---
-id: "[5.18.0]"
+id: "[6.18.0]"
 title: "Advanced API Rate Limiting and Anti-Abuse"
 ---
 
@@ -57,9 +57,7 @@ if !allowed {
 
 `INCR` is atomic in Redis even under heavy concurrent access from multiple API instances, and setting the key's expiry only on the very first increment (`count == 1`) turns this into a simple fixed-window counter that resets every `window`. For a smoother, more precise limit that doesn't allow a burst of `2 * limit` right at a window boundary, a sliding-window log (storing timestamps in a sorted set and trimming those older than the window) or a Lua script implementing token bucket atomically on the Redis side are the usual upgrades — libraries like `github.com/go-redis/redis_rate` package this token-bucket logic for you.
 
-<Warning title="Decide explicitly: fail open or fail closed">
-If Redis is unreachable, what should happen to the request? Failing open (let it through) prioritizes availability but temporarily disables your rate limiting exactly when something's already going wrong. Failing closed (reject it) prioritizes protection but turns a Redis outage into a full API outage. Most public APIs fail open for a brief Redis blip and alert loudly, since an unprotected minute is usually a smaller risk than an unnecessary full outage — but this is a judgment call specific to your threat model, not a universal default.
-</Warning>
+<Warning title="Decide explicitly: fail open or fail closed">If Redis is unreachable, what should happen to the request? Failing open (let it through) prioritizes availability but temporarily disables your rate limiting exactly when something's already going wrong. Failing closed (reject it) prioritizes protection but turns a Redis outage into a full API outage. Most public APIs fail open for a brief Redis blip and alert loudly, since an unprotected minute is usually a smaller risk than an unnecessary full outage — but this is a judgment call specific to your threat model, not a universal default.</Warning>
 
 ---
 

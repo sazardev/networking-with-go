@@ -1,5 +1,5 @@
 ---
-id: "[4.13.0]"
+id: "[5.13.0]"
 title: "Certificate Management and PKI"
 ---
 
@@ -27,9 +27,7 @@ A certificate rarely stands alone — it's part of a **chain**:
 
 Verifying a certificate means walking this chain upward: is the leaf signed by an intermediate the client recognizes, and is that intermediate signed by a root already in the trust store? If every link holds and none of the certificates have expired or been revoked, the chain is trusted.
 
-<DeepDive title="Why intermediates exist at all">
-If every server certificate were signed directly by a root, the root's private key would need to be online and used constantly — a huge attack surface for the single most sensitive key in the whole system. Intermediates let the root stay offline almost all the time, only used rarely to sign new intermediates, while day-to-day issuance happens through keys that are easier to rotate or revoke if something goes wrong.
-</DeepDive>
+<DeepDive title="Why intermediates exist at all">If every server certificate were signed directly by a root, the root's private key would need to be online and used constantly — a huge attack surface for the single most sensitive key in the whole system. Intermediates let the root stay offline almost all the time, only used rarely to sign new intermediates, while day-to-day issuance happens through keys that are easier to rotate or revoke if something goes wrong.</DeepDive>
 
 ---
 
@@ -152,10 +150,4 @@ This produces exactly the `cert.pem`/`key.pem` pair the TLS server in Chapter 4.
 
 Certificates expire on purpose — `NotAfter` bounds how long a mis-issued or compromised certificate can cause damage, which is why automated renewal (widely available via the ACME protocol used by many CAs) has become the norm rather than manual, easily-forgotten yearly renewal. For certificates that need to be invalidated *before* their expiry — a compromised private key, for example — CAs publish **CRLs (Certificate Revocation Lists)** or support **OCSP (Online Certificate Status Protocol)** queries so clients can check current validity beyond just the expiry date.
 
-<Warning title="An expired certificate is a self-inflicted outage">
-Unlike most security failures, a certificate silently expiring is entirely predictable and entirely preventable — track expiry dates for every certificate you operate, alert well before expiry, and prefer automated renewal over a calendar reminder.
-</Warning>
-
----
-
-[Previous: Implementing TLS/SSL in Go](12-implementing-tls-ssl-in-go.md) | [Next: Secure Coding Practices in Go](14-secure-coding-practices-in-go.md)
+<Warning title="An expired certificate is a self-inflicted outage">Unlike most security failures, a certificate silently expiring is entirely predictable and entirely preventable — track expiry dates for every certificate you operate, alert well before expiry, and prefer automated renewal over a calendar reminder.</Warning>

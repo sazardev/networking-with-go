@@ -1,5 +1,5 @@
 ---
-id: "[5.15.0]"
+id: "[6.15.0]"
 title: "Prebuilt Solutions and API Boilerplates"
 ---
 
@@ -28,9 +28,7 @@ myapi/
 
 The `internal/` directory is enforced by the Go compiler itself: packages under `internal/` can only be imported by code rooted at the parent of that `internal/` directory, which is a simple, built-in way to keep implementation details from leaking into a public API surface if you ever publish this as a library too.
 
-<DeepDive title="cmd/ for multiple binaries">
-The `cmd/<name>/main.go` pattern exists specifically for projects that produce more than one binary from the same module — an API server and a separate worker process, for instance, both importing shared code from `internal/`. For a single-binary service, `cmd/myapi/main.go` might feel like unnecessary nesting, but it costs nothing and keeps the door open if a second binary shows up later.
-</DeepDive>
+<DeepDive title="cmd/ for multiple binaries">The `cmd/<name>/main.go` pattern exists specifically for projects that produce more than one binary from the same module — an API server and a separate worker process, for instance, both importing shared code from `internal/`. For a single-binary service, `cmd/myapi/main.go` might feel like unnecessary nesting, but it costs nothing and keeps the door open if a second binary shows up later.</DeepDive>
 
 ---
 
