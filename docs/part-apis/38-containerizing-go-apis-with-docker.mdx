@@ -1,0 +1,300 @@
+---
+id: "[6.38.0]"
+title: "Containerizing Go APIs with Docker"
+---
+
+# Containerizing Go APIs with Docker
+
+Every API built so far in this book runs however you happen to launch it:
+`go run main.go` on your laptop, or a binary copied onto a server by hand.
+That works until you need the exact same artifact to run identically on a
+teammate's machine, in CI, and in production. Docker solves that by
+packaging your API and everything it needs into a single, portable image.
+This chapter is deliberately hands-on: every command shown is meant to be
+copy-pasted and run exactly as written.
+
+### Why Multi-Stage Builds
+
+A naive Dockerfile starts `FROM golang:1.23`, copies your source in, and
+runs the API from inside that same image. It works, but that image
+contains the entire Go toolchain, a full Linux userland, and your source
+tree -- often hundreds of megabytes, most of it useless at runtime. Go
+already compiles to a single static binary; the container around it should
+be just as minimal.
+
+A **multi-stage build** solves this by using one image to compile the
+binary and a completely different, much smaller image to run it. Docker
+discards everything from the build stage except the files you explicitly
+copy forward, so the final image never sees the Go compiler, your module
+cache, or your source code at all -- only the binary.
+
+### The Dockerfile
+
+Create a file named `Dockerfile` at the root of your project:
+
+```dockerfile
+# ---- build stage ----
+FROM golang:1.23 AS build
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-s -w" -o /out/api ./cmd/api
+
+# ---- final stage ----
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/api /api
+
+EXPOSE 8080
+USER nonroot:nonroot
+ENTRYPOINT ["/api"]
+```
+
+A few details here earn an explanation:
+
+- Copying `go.mod`/`go.sum` and running `go mod download` **before**
+  copying the rest of the source lets Docker cache that layer. As long as
+  your dependencies don't change, rebuilding after an ordinary source edit
+  reuses the downloaded modules instead of fetching them again.
+- `CGO_ENABLED=0` produces a fully static binary with no dynamic C library
+  dependencies -- required if the final stage has no C runtime at all, as
+  `scratch` and distroless images don't.
+- `-ldflags="-s -w"` strips debug symbols, shrinking the binary
+  noticeably; skip it if you need to attach a debugger to a container.
+- `gcr.io/distroless/static-debian12:nonroot` ships nothing but a minimal
+  root filesystem, CA certificates (needed for any outbound HTTPS or TLS
+  connection your API makes, including to a TLS-enabled Postgres), and a
+  non-root user already configured -- a safer default than `scratch` for
+  most real APIs.
+
+If you genuinely want the smallest possible image and your API makes no
+outbound TLS calls, `FROM scratch` works too, but you must copy CA
+certificates in yourself if you ever add one:
+
+```dockerfile
+FROM scratch
+COPY --from=build /out/api /api
+COPY --from=build /etc/ssl/certs/ca-certificates.crt \
+    /etc/ssl/certs/ca-certificates.crt
+EXPOSE 8080
+ENTRYPOINT ["/api"]
+```
+
+Either final stage takes an image that would otherwise weigh hundreds of
+megabytes down to single-digit megabytes -- often just the size of your
+compiled binary plus a few kilobytes of certificates.
+
+<DeepDive title="Why scratch and distroless have no shell">Neither `scratch` nor a distroless image includes `/bin/sh`, `ls`, or any other userland tool -- there is nothing to exploit even if an attacker achieves code execution inside the container, and nothing for a misconfigured `ENTRYPOINT` to accidentally invoke. The tradeoff is that you cannot `docker exec` into a running container and poke around with a shell the way you can with a full `ubuntu`-based image; debugging leans instead on structured logs shipped out of the process, and on attaching an ephemeral debug container alongside it when you truly need a shell.</DeepDive>
+
+### Choosing a Base Image
+
+`scratch` and distroless aren't the only options, and it's worth knowing
+what you're trading away as images get smaller:
+
+| Base image | Size (approx.) | Shell/tools | Typical use |
+|---|---|---|---|
+| `golang:1.23` | 800MB+ | Full toolchain | Build stage only, never ship it |
+| `alpine:3.20` | ~7MB | Minimal shell, `apk` | Debuggable final stage |
+| `distroless/static` | ~2MB | None | Static Go binaries, no cgo |
+| `scratch` | 0MB | None | Smallest possible, manual CA certs |
+
+`alpine` is a common middle ground: it has a real shell, so `docker exec
+-it myapi sh` works for debugging, at the cost of a few extra megabytes
+and, historically, some subtle DNS resolution differences under its `musl`
+libc that a fully static, cgo-free Go binary avoids entirely. For a
+`CGO_ENABLED=0` binary with no shell-based debugging needs, distroless or
+`scratch` is the better default; reach for `alpine` when your team
+genuinely wants an interactive shell inside the container during
+development.
+
+### Signals and Graceful Shutdown
+
+Write `ENTRYPOINT` using the JSON array ("exec") form, `["/api"]`, not the
+shell form, `ENTRYPOINT /api`. The shell form runs your binary as a child
+of `/bin/sh`, which becomes process ID 1 inside the container; Docker
+sends `SIGTERM` to PID 1 on `docker stop`, and a shell doesn't forward
+signals to its child by default, so your API never sees the shutdown
+signal and Docker eventually kills it with `SIGKILL` after a grace period,
+skipping any in-flight request draining your code might do. The exec form
+makes your Go binary PID 1 directly, so the `signal.NotifyContext`-style
+graceful shutdown you would already write for a bare `net/http` server
+receives `SIGTERM` exactly as it would running outside a container.
+
+### A Dockerfile-Level Health Check
+
+Beyond the Compose-level `healthcheck` shown for Postgres, you can add one
+directly to your API's own Dockerfile so `docker ps` reports the
+container's health without any orchestrator-specific configuration:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD ["/api", "-healthcheck"]
+```
+
+This assumes your binary supports a `-healthcheck` flag that pings its own
+`/healthz` endpoint and exits `0` or `1` accordingly -- a small addition to
+`main()`'s flag parsing that turns `docker ps` into an at-a-glance signal
+for whether the API inside is actually serving traffic, not just running.
+
+### .dockerignore
+
+Without a `.dockerignore` file, `COPY . .` sends your entire working
+directory -- including `.git`, local binaries, and editor state -- into
+the build context, slowing every build and occasionally leaking files you
+didn't mean to include. Create `.dockerignore` next to the Dockerfile:
+
+```
+.git
+.gitignore
+*.md
+docs/
+exercises/
+bin/
+tmp/
+.env
+Dockerfile
+.dockerignore
+```
+
+`.env` belongs here specifically: it typically holds local secrets, and
+it should never be sent into a build context, let alone baked into an
+image layer.
+
+### Building and Running the Image
+
+Build the image, tagging it with a name and version:
+
+```sh
+docker build -t myapi:1.0 .
+```
+
+Run a container from it, mapping the container's port 8080 to the host and
+passing configuration in as environment variables:
+
+```sh
+docker run -d --name myapi -p 8080:8080 \
+  -e DATABASE_URL="postgres://app:secret@db:5432/appdb" \
+  -e LOG_LEVEL="info" \
+  myapi:1.0
+```
+
+The `-d` flag runs the container detached, in the background, so your
+terminal is free immediately instead of attaching to the process's
+stdout. `-p 8080:8080` maps container port 8080 onto the same host port --
+change the left-hand side (`-p 9000:8080`) if you need the host to listen
+on a different port while the API inside keeps using 8080. Every `-e`
+flag sets one environment variable inside the container, which is exactly
+how your Go code should read configuration, via `os.Getenv`, rather than
+a hardcoded value compiled into the binary.
+
+Check that it's running and look at its logs:
+
+```sh
+docker ps
+docker logs -f myapi
+```
+
+Stop and remove it when you're done:
+
+```sh
+docker stop myapi
+docker rm myapi
+```
+
+### Running Alongside PostgreSQL with Compose
+
+A real API rarely runs alone -- Chapter 6.36 covered talking to Postgres
+from Go, and `docker-compose` is the simplest way to run both containers
+together for local development. Create `docker-compose.yml`:
+
+```yaml
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgres://app:${DB_PASSWORD}@db:5432/appdb"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+      POSTGRES_DB: appdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+```
+
+The named volume `pgdata` is what makes Postgres's data survive a
+container restart -- without it, `docker compose down` would delete the
+container's writable layer and every row in it along with it. The
+`healthcheck` block, combined with `depends_on: condition:
+service_healthy`, makes Compose wait until Postgres is actually accepting
+connections (not merely "started") before it launches the API container,
+which avoids a race where the API tries to connect before Postgres has
+finished initializing.
+
+Store `DB_PASSWORD` in a `.env` file next to `docker-compose.yml` --
+Compose reads it automatically -- and make sure that file is in
+`.gitignore`, not committed alongside the compose file itself:
+
+```sh
+echo "DB_PASSWORD=change-me-in-prod" > .env
+docker compose up -d --build
+docker compose logs -f api
+docker compose down
+```
+
+### Key Terminal Commands, All in One Place
+
+```sh
+docker build -t myapi:1.0 .
+docker run -d --name myapi -p 8080:8080 \
+  -e DATABASE_URL="postgres://app:secret@db:5432/appdb" \
+  myapi:1.0
+docker ps
+docker logs -f myapi
+docker stop myapi && docker rm myapi
+
+docker compose up -d --build
+docker compose ps
+docker compose logs -f api
+docker compose down
+```
+
+<Warning title="Never bake a secret into an image layer">An instruction like `ENV DATABASE_PASSWORD=supersecret` or `RUN echo supersecret > /app/password` inside a Dockerfile writes that value into the image's layer history permanently -- anyone who can pull the image, or run `docker history`, can read it back out, even if a later layer deletes the file, because earlier layers are still stored and retrievable. Secrets belong outside the image entirely: passed at runtime with `docker run -e`, through a compose `environment:`/`env_file:` pointing at a gitignored `.env`, or, for production, through a real secrets manager (Vault, AWS Secrets Manager, or your orchestrator's native secrets object) that the running container reads at startup instead of the image carrying it from the moment it's built.</Warning>
+
+<Axiom>An image should describe how your API runs, never what your API knows -- configuration and secrets belong at runtime, not baked into a layer.</Axiom>
+
+### Key Takeaways
+
+- Use a multi-stage Dockerfile: compile with the full `golang` image, then
+  copy only the static binary (`CGO_ENABLED=0`) into a minimal final
+  image like `distroless/static` or `scratch`, dropping image size from
+  hundreds of megabytes to single digits.
+- A `.dockerignore` file keeps `.git`, local secrets, and unrelated files
+  out of the build context and out of the final image.
+- `docker build -t <name>:<tag> .` builds the image; `docker run -d -p
+  <host>:<container> -e KEY=value <name>:<tag>` runs it with ports and
+  configuration supplied at runtime, not baked in.
+- `docker-compose.yml` can run your API alongside Postgres for local
+  development, with a named volume for data persistence and a
+  `healthcheck` so the API waits for the database to actually be ready.
+- Never bake a secret into a Dockerfile instruction -- every layer that
+  ever contained it stays retrievable from the image. Pass secrets at
+  runtime, via environment variables or a real secrets manager.

@@ -1,0 +1,341 @@
+---
+id: "[6.35.0]"
+title: "RPC and gRPC for APIs"
+---
+
+# RPC and gRPC for APIs
+
+So far, almost every API in this part of the book has spoken the same
+dialect: resources, HTTP verbs, and JSON. That dialect is REST, and it earns
+its popularity because a browser, a curl command, and a stranger's Postman
+collection can all speak it without prior coordination. But REST is not the
+only way to build an API, and it is not always the best one. This chapter
+looks at RPC (Remote Procedure Call) as a different API style, and at gRPC,
+its most successful modern implementation, from the angle of building APIs
+rather than the general networking angle already covered in the gRPC and
+Protocol Buffers chapter earlier in this book.
+
+### RPC as an API Style
+
+REST models an API as a set of **resources** you manipulate with a small,
+fixed vocabulary of verbs: `GET /orders/42`, `POST /orders`, `DELETE
+/orders/42`. RPC models an API the opposite way: as a set of **functions**
+you call remotely, as if they were local. Instead of "fetch the resource at
+this URL," an RPC call reads as "run this named operation, with these
+arguments, and give me back a result." A REST client thinks in nouns and
+HTTP methods; an RPC client thinks in verbs and function signatures.
+
+Concretely, where a REST API exposes `POST /orders/42/cancel`, an RPC API
+exposes a callable method named `CancelOrder(orderID)`. Neither is more
+"correct" -- they are different mental models for the same job, and the gap
+between them matters most when you generate client code. A REST client
+still has to know, out of band, that cancelling means `POST` to a specific
+path with a specific body shape. An RPC client calls a generated function
+whose name, arguments, and return type are all part of a schema the compiler
+checks. That difference is the entire reason teams choose one style over
+the other.
+
+### When Each Style Is the Better Fit
+
+Neither REST nor RPC-style APIs are strictly better; they optimize for
+different constraints.
+
+- **Reach for REST** when the API is public, or when you don't control the
+  client. Every language has an HTTP client, every browser speaks HTTP
+  natively, JSON payloads are readable in a debugger without extra tooling,
+  and caching proxies understand `GET` semantics for free. Public APIs,
+  third-party integrations, and anything a human might inspect in
+  DevTools all favor REST.
+- **Reach for gRPC** when you control both ends of the call, typically
+  internal service-to-service traffic. You get a compiler-checked contract
+  instead of a hand-maintained convention, binary payloads that are smaller
+  and faster to parse than JSON, native streaming instead of a bolted-on
+  workaround, and connection multiplexing over HTTP/2 so many concurrent
+  calls share one TCP connection.
+
+A useful rule of thumb: if the client is a browser or an unknown third
+party, write REST. If the client is another service you also maintain,
+and performance or streaming matters, gRPC usually wins.
+
+<Axiom>REST optimizes for who can call you; RPC optimizes for how fast and how strictly.</Axiom>
+
+### A Minimal Service Definition
+
+gRPC uses Protocol Buffers (protobuf) as its schema language -- the
+mechanics of protobuf encoding, field numbers, and the four RPC shapes
+(unary, server streaming, client streaming, bidirectional streaming) are
+covered in depth in the gRPC and Protocol Buffers chapter. Here we focus on
+using that same machinery to build an API, with a small inventory service
+as the running example:
+
+```proto
+syntax = "proto3";
+
+package inventory;
+option go_package = "example.com/inventory/pb";
+
+service Inventory {
+  rpc GetItem (ItemRequest) returns (ItemReply);
+  rpc WatchStock (ItemRequest) returns (stream StockUpdate);
+}
+
+message ItemRequest {
+  string sku = 1;
+}
+
+message ItemReply {
+  string sku = 1;
+  int32 quantity = 2;
+}
+
+message StockUpdate {
+  string sku = 1;
+  int32 quantity = 2;
+  string source = 3;
+}
+```
+
+`GetItem` is a plain unary call: one request, one response, functionally
+equivalent to `GET /items/{sku}` in REST terms. `WatchStock` is server
+streaming: one request opens a channel over which the server can push
+multiple `StockUpdate` messages as inventory changes, without the client
+polling or opening a WebSocket by hand.
+
+Generating the Go bindings uses the same two `protoc` plugins as before:
+
+```sh
+protoc --go_out=. --go-grpc_out=. inventory.proto
+```
+
+### Implementing the Unary RPC
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"net"
+
+	"google.golang.org/grpc"
+	pb "example.com/inventory/pb"
+)
+
+type inventoryServer struct {
+	pb.UnimplementedInventoryServer
+	stock map[string]int32
+}
+
+func (s *inventoryServer) GetItem(
+	ctx context.Context, req *pb.ItemRequest,
+) (*pb.ItemReply, error) {
+	qty, ok := s.stock[req.GetSku()]
+	if !ok {
+		qty = 0
+	}
+	return &pb.ItemReply{Sku: req.GetSku(), Quantity: qty}, nil
+}
+
+func main() {
+	lis, err := net.Listen("tcp", ":50052")
+	if err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+
+	srv := grpc.NewServer()
+	pb.RegisterInventoryServer(srv, &inventoryServer{
+		stock: map[string]int32{"sku-1": 42, "sku-2": 7},
+	})
+
+	log.Println("inventory service listening on :50052")
+	if err := srv.Serve(lis); err != nil {
+		log.Fatalf("serve: %v", err)
+	}
+}
+```
+
+This should feel familiar: it is a normal Go function, taking a context and
+a request struct, returning a response struct and an error. The generated
+code hides the wire format entirely -- you never touch a byte buffer.
+
+### Errors and Status Codes
+
+REST leans on HTTP status codes to describe what went wrong: `404` for a
+missing resource, `409` for a conflict, `500` for a server fault. gRPC has
+its own, smaller vocabulary of status codes, defined in the
+`google.golang.org/grpc/codes` package, and every RPC returns one of them
+alongside an optional error message via `google.golang.org/grpc/status`.
+Returning a plain Go `error` from a handler is enough to make the call fail,
+but it maps to the generic `codes.Unknown` on the wire -- for anything an
+API client should branch on, attach a real status:
+
+```go
+import (
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+func (s *inventoryServer) GetItem(
+	ctx context.Context, req *pb.ItemRequest,
+) (*pb.ItemReply, error) {
+	qty, ok := s.stock[req.GetSku()]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound,
+			"sku %q not found", req.GetSku())
+	}
+	return &pb.ItemReply{Sku: req.GetSku(), Quantity: qty}, nil
+}
+```
+
+On the client, `status.FromError(err)` recovers the code and message, so
+callers can branch on `codes.NotFound` the same way a REST client would
+branch on a `404`. The two systems solve the same problem with a smaller,
+strongly typed enum instead of an open-ended set of numbers borrowed from
+HTTP.
+
+### Implementing the Streaming RPC
+
+Server streaming trades a single return value for a stream object with a
+`Send` method. Add this method to the same `inventoryServer`:
+
+```go
+func (s *inventoryServer) WatchStock(
+	req *pb.ItemRequest, stream pb.Inventory_WatchStockServer,
+) error {
+	sku := req.GetSku()
+	updates := []int32{s.stock[sku], s.stock[sku] - 3, s.stock[sku] - 5}
+
+	for _, qty := range updates {
+		update := &pb.StockUpdate{
+			Sku: sku, Quantity: qty, Source: "warehouse",
+		}
+		if err := stream.Send(update); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+```
+
+Each `stream.Send` writes one message onto the same HTTP/2 stream; the RPC
+ends when the method returns. The client side reads the stream with `Recv`
+in a loop until it sees `io.EOF`:
+
+```go
+package main
+
+import (
+	"context"
+	"io"
+	"log"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	pb "example.com/inventory/pb"
+)
+
+func main() {
+	conn, err := grpc.NewClient("localhost:50052",
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewInventoryClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream, err := client.WatchStock(ctx, &pb.ItemRequest{Sku: "sku-1"})
+	if err != nil {
+		log.Fatalf("open stream: %v", err)
+	}
+
+	for {
+		update, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("recv: %v", err)
+		}
+		log.Printf("sku=%s qty=%d source=%s",
+			update.GetSku(), update.GetQuantity(), update.GetSource())
+	}
+}
+```
+
+Notice how little of this is gRPC-specific ceremony: the request/response
+shapes are generated types, and the streaming loop is just a `for` loop
+around `Recv`. This is the appeal of RPC-style APIs -- the network
+disappears behind function calls your editor can autocomplete.
+
+<DeepDive title="Deadlines propagate through the whole call chain">Because every generated method takes a `context.Context` first, a deadline set once at the edge of a request survives every downstream gRPC call it triggers. If service A calls service B which calls service C, and A's context has a 2-second timeout, C receives that same shrinking deadline automatically -- there is no equivalent built into plain REST clients unless you wire it up yourself with request headers and manual timers.</DeepDive>
+
+### Bridging REST and gRPC
+
+Some teams want gRPC's strict contracts internally, but still need to expose
+a plain JSON/REST surface to browsers or external partners. The common
+solution is **grpc-gateway** (`github.com/grpc-ecosystem/grpc-gateway`), a
+protoc plugin that reads extra annotations in your `.proto` file and
+generates a reverse-proxy HTTP server that translates incoming REST/JSON
+requests into gRPC calls against your existing service:
+
+```proto
+import "google/api/annotations.proto";
+
+service Inventory {
+  rpc GetItem (ItemRequest) returns (ItemReply) {
+    option (google.api.http) = {
+      get: "/v1/items/{sku}"
+    };
+  }
+}
+```
+
+The generated gateway runs as a normal `net/http` server, translates
+`GET /v1/items/sku-1` into a `GetItem` gRPC call, and marshals the
+`ItemReply` back to JSON -- your handler code never changes. This lets a
+service keep one schema and one implementation while serving two audiences:
+internal gRPC clients that want speed and type safety, and external HTTP
+clients that just want JSON.
+
+### Comparing the Three Styles
+
+| Dimension | REST (JSON/HTTP) | gRPC (protobuf/HTTP2) | JSON-RPC |
+|---|---|---|---|
+| Payload format | Human-readable JSON text | Compact binary protobuf | JSON text |
+| Browser support | Native (`fetch`, `XHR`) | Needs grpc-web + a proxy | Native (`fetch`, `XHR`) |
+| Streaming | Bolted on (SSE, WebSockets) | Native, all four RPC shapes | Not part of the spec |
+| Tooling | OpenAPI/Swagger, curl, Postman | `protoc`, generated stubs | Minimal, mostly hand-rolled |
+| Typical use case | Public APIs, browser clients | Internal microservices | Simple internal RPC, some blockchain nodes |
+
+JSON-RPC is worth knowing by name even though it rarely appears in this
+book: it is a thin convention (a JSON envelope with `method`, `params`, and
+`id` fields) for RPC-style calls over any transport, with none of gRPC's
+code generation, streaming, or binary efficiency. It shows up in places
+that want RPC semantics without adopting a full toolchain -- some
+blockchain node APIs and simple internal tools still use it -- but for new
+Go services, the real choice in practice is between REST and gRPC.
+
+<Warning title="Don't gRPC-ify a public API just because it's newer">gRPC's strict contracts are a strength for services you and your team both control, but a liability for anyone consuming your API from a browser, a shell script, or a language ecosystem with weak protobuf support. Forcing gRPC on external consumers trades their convenience for your internal purity -- grpc-gateway exists precisely so you don't have to make that trade.</Warning>
+
+### Key Takeaways
+
+- RPC-style APIs model a remote call as invoking a named function with
+  typed arguments; REST models it as manipulating a resource with a fixed
+  HTTP verb vocabulary. Both are legitimate API styles, not a
+  right-versus-wrong choice.
+- gRPC is the practical default for internal, service-to-service RPC: it
+  gives you a compiler-checked schema, binary encoding, and native
+  streaming over HTTP/2.
+- REST remains the practical default for anything a browser or an
+  unfamiliar third party needs to call, because tooling and client support
+  are universal.
+- grpc-gateway lets a single gRPC service also expose a REST/JSON facade,
+  so you don't have to choose only one audience.
+- JSON-RPC is a lightweight alternative worth recognizing by name, but it
+  lacks the code generation and streaming that make gRPC compelling for
+  modern Go services.

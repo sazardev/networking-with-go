@@ -1,0 +1,207 @@
+---
+id: "[6.45.0]"
+title: "Thinking Like an Attacker: API Security"
+---
+
+# Thinking Like an Attacker: API Security
+
+Chapter 6.10 built authentication and Chapter 6.11 added rate limiting at the traffic level — both defensive, both essential, and both easy to trust a little too much on their own. A valid token or a request under the rate limit only proves a caller got past the front door; it says nothing about whether the specific thing they're now asking for is something they're allowed to touch. This chapter turns the lens around, in the same spirit as Part 3 of this book: walking through the API attack patterns that actually show up in the wild, using the OWASP API Security Top 10 as an organizing reference, and pairing each one with the concrete Go code that closes it.
+
+<Warning title="Scope and authorization">Every technique in this chapter — probing for IDOR, attempting mass assignment, testing rate limits, forging a malformed token — is presented for testing APIs you own or are explicitly authorized to test, matching the framing used throughout Part 3 of this book. Running any of this against an API you don't control or lack permission to test is unauthorized computer access in most jurisdictions, regardless of intent.</Warning>
+
+---
+
+## The OWASP API Security Top 10
+
+The OWASP API Security Top 10 is a community-maintained list of the most common and impactful API vulnerability categories, distinct from OWASP's general web Top 10 because APIs fail in ways a traditional server-rendered site doesn't — no browser sitting in front of every request to apply the usual same-origin protections, and often a much larger, machine-readable surface of endpoints to get wrong. This chapter maps its examples onto a handful of that list's categories (in the current, 2023 edition) without covering all ten exhaustively:
+
+| Category | Attack pattern | Go-side defense |
+|---|---|---|
+| API1:2023 Broken Object Level Authorization | IDOR — `/orders/1234` returns someone else's order | Check `order.OwnerID == currentUser.ID` on every access |
+| API3:2023 Broken Object Property Level Authorization | Mass assignment — client sets `is_admin` in a request body | Bind to an explicit input DTO, never the domain model |
+| API4:2023 Unrestricted Resource Consumption | Huge `page_size`, deeply nested or oversized JSON bodies | Cap page size, `http.MaxBytesReader`, reject unknown fields |
+| API2:2023 Broken Authentication | `alg: none` or algorithm-confusion attacks against a JWT | Pin the expected signing algorithm in code, never trust the header |
+
+---
+
+## Broken Object-Level Authorization (IDOR)
+
+An Insecure Direct Object Reference happens when a handler correctly checks that a caller is *authenticated*, but never checks whether the specific object they asked for is one they're *authorized* to see. An attacker who has a valid session of their own simply increments an ID and reads someone else's data:
+
+```go
+// Vulnerable: proves who you are, not what you're allowed to see.
+func getOrder(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	order, err := db.FindOrder(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(order)
+}
+```
+
+Any authenticated user can request `/orders/1`, `/orders/2`, `/orders/3` in sequence and read every customer's order history. The fix checks ownership as a separate step, after the existence check:
+
+```go
+// Fixed: authentication proves identity; this checks ownership.
+func getOrder(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	claims := r.Context().Value(userContextKey).(*Claims)
+
+	order, err := db.FindOrder(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if order.OwnerID != claims.UserID {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(order)
+}
+```
+
+Returning the same `404 Not Found` for both "doesn't exist" and "exists but isn't yours" is deliberate: a `403 Forbidden` would confirm to an attacker that the ID is valid and simply belongs to someone else, leaking information about which IDs are in use even while correctly blocking access to them.
+
+---
+
+## Mass Assignment
+
+Binding an entire request body directly onto a domain struct is convenient right up until a client sends a field the handler never expected them to control:
+
+```go
+// Vulnerable: every JSON field the client sends reaches the model.
+type User struct {
+	ID      string `json:"id"`
+	Email   string `json:"email"`
+	IsAdmin bool   `json:"is_admin"`
+}
+
+func updateUser(w http.ResponseWriter, r *http.Request) {
+	var u User
+	json.NewDecoder(r.Body).Decode(&u)
+	db.SaveUser(r.Context(), &u) // attacker-controlled IsAdmin
+}
+```
+
+A client updating their own email can add `"is_admin": true` to the same request body, and if nothing stops that field from reaching the save call, they've just granted themselves administrator access. The fix is an explicit input type that only contains fields a client is actually meant to set:
+
+```go
+// Fixed: only client-settable fields exist on this type at all.
+type UpdateUserInput struct {
+	Email string `json:"email"`
+}
+
+func updateUser(w http.ResponseWriter, r *http.Request) {
+	var in UpdateUserInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	claims := r.Context().Value(userContextKey).(*Claims)
+	user, err := db.FindUser(r.Context(), claims.UserID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	user.Email = in.Email // IsAdmin is never touched here
+	db.SaveUser(r.Context(), user)
+}
+```
+
+`IsAdmin` simply has no field to bind into on `UpdateUserInput`, so `encoding/json` has nowhere to put it even if the attacker sends it — the type system enforces the boundary instead of a runtime check that's easy to forget to add.
+
+---
+
+## Broken Function-Level Authorization
+
+API1 checks *which object* a request touches; API5:2023 Broken Function Level Authorization checks *which action* it's allowed to perform at all — a regular authenticated user calling an admin-only endpoint that never actually verifies the caller's role:
+
+```go
+// Vulnerable: any authenticated user reaches this handler.
+mux.Handle("/admin/users", requireAuth(adminListUsers))
+```
+
+`requireAuth` proves the caller is *someone*; it says nothing about whether they're an administrator. An attacker who registers an ordinary account and simply requests `/admin/users` directly — never linked from any UI they were shown, but still routable — gets a full user list. The fix adds a second middleware layer checking role, not just presence of a token:
+
+```go
+// Fixed: authentication and role authorization are separate.
+func requireRole(role string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims := r.Context().Value(userContextKey).(*Claims)
+		if claims.Role != role {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+mux.Handle("/admin/users",
+	requireAuth(requireRole("admin", adminListUsers)))
+```
+
+Attackers routinely find these endpoints by reading a frontend's compiled JavaScript bundle for API paths that were never meant to be reachable by a regular user, or simply guessing at conventional admin-panel routes — an endpoint that isn't linked anywhere is not the same thing as an endpoint that's protected.
+
+---
+
+## Injection
+
+SQL injection remains one of the most damaging classes of vulnerability an API can have, and Chapter 6.36 covers parameterized queries and the Go database drivers that make them the default, easy path — the short version is that user input must never be concatenated directly into a query string, full stop. The same principle extends past SQL: a NoSQL query built from a raw, un-validated JSON filter can let an attacker inject operators the application never intended a client to control, and shelling out to an external command with user-controlled arguments (`exec.Command("sh", "-c", userInput)`) is command injection, exploitable the moment any part of that string comes from a request. `os/exec` invoked with a fixed binary name and separate argument slice, never a shell, is the safe default whenever a Go API must call an external program at all.
+
+---
+
+## Resource Exhaustion Through Normal-Looking Requests
+
+An API doesn't need a flood of requests to be attacked at the resource layer — a single, syntactically valid request asking for something absurd can do real damage. An unbounded `page_size` query parameter is a common example:
+
+```go
+const maxPageSize = 100
+
+func listOrders(w http.ResponseWriter, r *http.Request) {
+	pageSize := 20
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > maxPageSize {
+			http.Error(w, "invalid page_size", http.StatusBadRequest)
+			return
+		}
+		pageSize = n
+	}
+	// ... query with LIMIT pageSize
+}
+```
+
+Without that upper bound, `?page_size=999999` asks the database to materialize a result set sized for an attack, not a page of a UI — the kind of request that can single-handedly exhaust memory or connection-pool capacity long before any rate limiter even notices a pattern. Request bodies deserve the same treatment: an unbounded body lets a client send gigabytes of JSON to a single handler, and a deeply nested body can cost far more CPU to decode than its byte size suggests. Capping body size directly addresses both:
+
+```go
+r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB cap
+dec := json.NewDecoder(r.Body)
+dec.DisallowUnknownFields()
+```
+
+`DisallowUnknownFields` isn't primarily a security control, but it's a useful companion here: decoding into a specific, bounded struct (rather than an open-ended `map[string]any`) means the decoder's recursion is limited by the shape of your own types, not by however deeply an attacker chooses to nest their input.
+
+<DeepDive title="This maps to API4:2023 Unrestricted Resource Consumption">The 2019 edition of the OWASP API Security Top 10 called this category "Lack of Resources & Rate Limiting"; the 2023 revision broadened and renamed it to cover any request that consumes disproportionate CPU, memory, database load, or even paid third-party API calls relative to its apparent size — the `page_size` and body-size examples above are two of its most common concrete forms in a typical Go API.</DeepDive>
+
+---
+
+## JWT Algorithm Attacks
+
+Chapter 6.10's `parseToken` function asserts `t.Method.(*jwt.SigningMethodHMAC)` inside the key-function callback before returning the signing key — that check exists specifically to defeat two related, well-documented JWT attacks. The first is the `alg: none` attack: some JWT libraries, historically, would honor an `alg` header claiming no signature was used at all and skip verification entirely, so an attacker who can edit a token's header and payload (both are only base64-encoded, not encrypted) can forge any claims they want with no valid signature required. The second is algorithm confusion: if a server expects tokens signed with an asymmetric algorithm like RS256 and its key function returns the RSA *public* key without checking which algorithm the token actually claims, an attacker who knows that public key (public keys are, by definition, not secret) can sign their own forged token with HS256, using the public key bytes as an HMAC secret — and a naive verifier that trusts the token's own `alg` header will use HMAC verification against exactly that key, and accept it.
+
+Both attacks share the same root cause: trusting the algorithm the token claims to use, instead of enforcing the algorithm the server expects. The fix in Chapter 6.10 is the general one — assert the concrete signing method type inside the key function before returning a key of any kind, so the token's own header can never redirect verification down a different, weaker path.
+
+<Axiom>A token's header is attacker-controlled input, exactly like a request body or a query parameter — never let it choose how it gets verified.</Axiom>
+
+---
+
+## Key Takeaways
+
+- The OWASP API Security Top 10 is a useful organizing reference for API-specific vulnerability classes that don't map cleanly onto general web security advice.
+- Broken object-level authorization (IDOR) means checking ownership explicitly on every access, not just checking that a token is valid.
+- Mass assignment is closed by binding requests to explicit input DTOs, never directly onto a domain model with fields a client shouldn't control.
+- Injection defenses (parameterized queries, avoiding shelled-out commands built from user input) are covered in depth in Chapter 6.36 and remain foundational.
+- Resource-exhaustion attacks often look like a single, valid-looking request — cap page sizes, request body size, and avoid unbounded JSON structures.
+- Never let a JWT's own header dictate its verification algorithm; pin the expected algorithm in code, as shown in Chapter 6.10.

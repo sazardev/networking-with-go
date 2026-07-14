@@ -1,0 +1,390 @@
+---
+id: "[6.42.0]"
+title: "Building a Complete Project End-to-End"
+---
+
+# Building a Complete Project End-to-End
+
+The last three chapters built the order-management example in pieces: the
+package layout and dependency direction (Chapter 6.39), the ports-and-adapters
+vocabulary and a fast in-memory test double (Chapter 6.40), and the DDD-modeled
+`Order` aggregate with its invariants and domain events (Chapter 6.41). This
+chapter's job is narrower than any of those, and in some ways harder: wiring
+every piece into one program that actually runs, and tracing one real request
+through all of it, top to bottom.
+
+Nothing here reteaches material from earlier chapters. Chapter 6.36 already
+covers `pgx` connection pooling and query patterns in depth; Chapter 6.4
+already covers `net/http` routing and handler patterns; Chapter 6.38 already
+covers Docker; a later chapter, 6.43, covers deploying to Google Cloud. This
+chapter's only new content is the integration between all of them — the part
+that's easy to skip when each pattern is taught in isolation, and the part
+that determines whether a project built from all of them actually holds
+together under a real deadline.
+
+---
+
+## The Directory Tree
+
+```
+ordermgmt/
+  cmd/
+    api/
+      main.go
+  internal/
+    domain/
+      order.go
+      money.go
+      events.go
+      repository.go
+      refund_service.go
+    usecase/
+      place_order.go
+      mark_paid.go
+      ship_order.go
+      cancel_order.go
+    adapter/
+      http/
+        handler.go
+        router.go
+      postgres/
+        order_repository.go
+        refunder.go
+      webhook/
+        publisher.go
+    platform/
+      config.go
+  migrations/
+    0001_create_orders.sql
+  Dockerfile
+  go.mod
+  go.sum
+```
+
+`domain` holds everything from Chapter 6.41 with no imports beyond the
+standard library. `usecase` depends only on `domain`. `adapter/*` depends on
+`domain` and `usecase`, never the reverse. `cmd/api/main.go` is the only file
+in the tree allowed to import all of them at once.
+
+---
+
+## Wiring: main.go
+
+```go
+// cmd/api/main.go
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	adapterhttp "ordermgmt/internal/adapter/http"
+	"ordermgmt/internal/adapter/postgres"
+	"ordermgmt/internal/adapter/webhook"
+	"ordermgmt/internal/domain"
+	"ordermgmt/internal/usecase"
+)
+
+func main() {
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("connect to postgres: %v", err)
+	}
+	defer pool.Close()
+
+	orders := postgres.NewOrderRepository(pool)
+	refunder := postgres.NewRefunder(pool)
+	publisher := webhook.NewPublisher(os.Getenv("WEBHOOK_ENDPOINT"))
+
+	cancelSvc := &domain.CancellationService{Refunder: refunder}
+
+	placeOrder := &usecase.PlaceOrder{Orders: orders}
+	markPaid := &usecase.MarkPaid{Orders: orders}
+	shipOrder := &usecase.ShipOrder{Orders: orders, Publisher: publisher}
+	cancelOrder := &usecase.CancelOrder{
+		Orders: orders, Cancellation: cancelSvc, Publisher: publisher,
+	}
+
+	handler := &adapterhttp.OrderHandler{
+		PlaceOrder:  placeOrder,
+		MarkPaid:    markPaid,
+		ShipOrder:   shipOrder,
+		CancelOrder: cancelOrder,
+	}
+
+	mux := adapterhttp.NewRouter(handler)
+
+	log.Println("listening on :8080")
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+```
+
+Every dependency arrow here points the way the last three chapters described:
+`main.go` builds concrete adapters (`postgres.OrderRepository`,
+`webhook.Publisher`) and hands them to use cases as interface values. Nothing
+downstream of this function ever constructs its own dependencies — they all
+arrive through a constructor or a struct literal, which is the whole of Go's
+answer to dependency injection.
+
+<DeepDive title="Why no DI container here">A codebase this size has five use cases and three adapters — small enough that `main.go` wiring them by hand is a single, readable function, not a maintenance burden. Reach for `google/wire` (mentioned in Chapter 6.15) once wiring grows past what fits comfortably on one screen, or once the same adapters need to be assembled multiple ways (a test binary, a worker binary, the API binary) and copy-pasting the wiring code between them starts to hurt.</DeepDive>
+
+---
+
+## Tracing One Request: Shipping an Order
+
+Follow `PUT /orders/{id}/ship` from the wire to Postgres and back. This is
+the same `Ship` rule from Chapters 6.39–6.41, now running for real.
+
+**1. HTTP adapter receives the request and calls the use case.**
+
+```go
+// internal/adapter/http/handler.go
+func (h *OrderHandler) Ship(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	if err := h.ShipOrder.Execute(r.Context(), id); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+```
+
+**2. The use case loads the aggregate, delegates to it, saves, and
+publishes.**
+
+```go
+// internal/usecase/ship_order.go
+func (uc *ShipOrder) Execute(ctx context.Context, orderID string) error {
+	order, err := uc.Orders.FindByID(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if err := order.Ship(); err != nil {
+		return err
+	}
+	if err := uc.Orders.Save(ctx, order); err != nil {
+		return err
+	}
+	for _, event := range order.PullEvents() {
+		if err := uc.Publisher.Publish(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+```
+
+**3. The domain aggregate enforces the invariant.** This is the exact `Ship`
+method from Chapter 6.41 — it either flips `pending`/`paid` state to
+`shipped` and records an `OrderShipped` event, or refuses with
+`ErrOrderNotPaid` if the order was never paid. No layer above this one
+contains that rule; every layer above it just reacts to whether it
+succeeded.
+
+**4. The repository adapter persists the new state.**
+
+```go
+// internal/adapter/postgres/order_repository.go
+func (r *OrderRepository) Save(ctx context.Context, o *domain.Order) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE orders SET status = $2 WHERE id = $1`,
+		o.ID(), string(o.Status()))
+	return err
+}
+```
+
+Chapter 6.36 covers connection pooling, prepared statements, and transaction
+patterns for `pgx` — this adapter is a direct application of that material,
+with no new query technique introduced here.
+
+**5. The webhook adapter turns the domain event into an outbound call**,
+using the retry and delivery patterns from Chapter 6.23:
+
+```go
+// internal/adapter/webhook/publisher.go
+func (p *Publisher) Publish(ctx context.Context, e domain.DomainEvent) error {
+	body, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, p.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+```
+
+**6. The response returns to the client** as a `200 OK`, or a mapped error
+status if `order.Ship()` refused. The full round trip: HTTP handler to use
+case to domain aggregate to repository to Postgres, and back out through a
+webhook publish — six hops, and the business rule itself lives in exactly
+one of them.
+
+From the outside, that entire round trip looks like one plain HTTP call:
+
+```http
+PUT /orders/order-42/ship HTTP/1.1
+Host: api.ordermgmt.example.com
+```
+
+```http
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+
+{"error": "order: not in paid status"}
+```
+
+Everything this chapter traced through six hops is invisible from here — the
+client only ever sees a status code and a JSON body, exactly as it should.
+
+### The Other Common Path: Placing an Order
+
+`POST /orders` follows the same shape with one difference worth calling out:
+`PlaceOrder` calls `domain.NewOrder` followed by one `order.AddLine` per item
+in the request body, so the same invariant from Chapter 6.41 — no line items
+once an order leaves `pending` — is enforced during creation too, not only
+during later transitions. The repository's `NextID` (declared on
+`domain.OrderRepository` in Chapter 6.41) generates the identifier before the
+first `Save`, keeping ID generation a persistence concern rather than
+something the aggregate invents for itself.
+
+### Migrations
+
+`migrations/0001_create_orders.sql` defines the table the Postgres adapter
+reads and writes — schema management tooling is a deployment concern, so a
+plain, numbered SQL file (applied with a migration tool of your choice) is
+enough:
+
+```sql
+CREATE TABLE orders (
+    id          TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending'
+);
+
+CREATE TABLE order_lines (
+    order_id    TEXT NOT NULL REFERENCES orders(id),
+    product_id  TEXT NOT NULL,
+    quantity    INT NOT NULL,
+    unit_price  BIGINT NOT NULL,
+    currency    TEXT NOT NULL
+);
+```
+
+Note the shape mirrors the domain model from Chapter 6.41 (`Order` and its
+`OrderLine`s) but is not identical to it — `unit_price` is a plain `BIGINT`
+of cents here, reassembled into a `domain.Money` value object only inside
+the Postgres adapter. The database schema is allowed to look like a
+database; only the adapter needs to know how to translate it.
+
+<Axiom>Integration is not "does it compile" — it's "does the one rule that matters still enforce itself no matter which of the six layers a request happens to be passing through."</Axiom>
+
+---
+
+## Containers and Deployment, Briefly
+
+Chapter 6.38 covers writing a production-quality `Dockerfile` for a Go
+service — multi-stage builds, minimal base images, non-root users — in full;
+this project uses exactly that pattern with no changes. For day-to-day
+development, a `docker-compose.yml` running only Postgres (not the Go
+service itself) alongside `go run ./cmd/api` on the host gives the fastest
+edit-run loop, since rebuilding a container image on every change is rarely
+worth it before a deploy; reserve the full multi-stage build for CI and the
+deployed artifact:
+
+```dockerfile
+# Dockerfile
+FROM golang:1.23 AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /out/api /api
+ENTRYPOINT ["/api"]
+```
+
+Chapter 6.43 covers deploying a container like this one to Google Cloud (Cloud
+Run, GKE, or Compute Engine, with their tradeoffs) in full; nothing about
+this particular service changes that guidance — it's a stateless container
+reading `DATABASE_URL` and `WEBHOOK_ENDPOINT` from the environment, which is
+exactly the shape those deployment targets expect.
+
+<Warning title="Don't let deployment concerns leak back into internal/">It's tempting to read a Cloud Run-specific environment variable, or branch on `os.Getenv("K_SERVICE")`, somewhere inside `internal/adapter` or worse `internal/domain`. Keep platform detection and configuration parsing entirely inside `cmd/api/main.go` and `internal/platform` — the moment a deployment target's name appears inside `internal/domain`, Chapter 6.39's inward-pointing dependency rule has been violated by the newest, least obvious ring of all: the deployment platform itself.</Warning>
+
+---
+
+## What to Build Next
+
+This project is a skeleton meant to be extended, not a finished toy. A few
+concrete next steps, each pointing at a chapter already in this book:
+
+- **Real webhook delivery.** The `webhook.Publisher` above fires once with no
+  retry logic. Chapter 6.23 covers signing payloads, retrying with backoff,
+  and giving subscribers a replay endpoint — apply all three to
+  `OrderShipped` and `OrderCancelled` before this goes anywhere near
+  production traffic.
+- **Authentication on every endpoint.** Nothing in this chapter's HTTP
+  adapter checks who is calling. Chapter 6.10 covers token-based auth
+  end-to-end; wrap `adapterhttp.NewRouter`'s mux in that middleware before
+  exposing any of this publicly.
+- **Rate limiting per customer.** A `POST /orders` endpoint with no limiting
+  is an easy target for abuse. Chapter 6.11's token-bucket middleware slots
+  in around the same router with no changes to the handler or use-case
+  layers — a direct demonstration of why keeping HTTP concerns in the
+  adapter, not the domain, pays off the moment you need to add one.
+- **More use cases on the same aggregate.** `Order` in Chapter 6.41 already
+  has room for partial shipments, discounts, or a `PlaceOrder` use case that
+  validates product availability against an inventory service — each is a
+  new use case and possibly a new domain service, never a change to how
+  `Order` protects its own invariants.
+- **A read model for reporting.** The current design optimizes for
+  protecting writes. A dashboard showing orders-per-day doesn't need to go
+  through the aggregate at all — a separate, denormalized read path (a
+  simple SQL view, or a materialized projection built from the domain
+  events already being published) keeps reporting queries from pressuring
+  the write-side schema.
+
+Every one of these extensions plugs into a seam this chapter already built:
+a new middleware around the router, a new adapter implementing an existing
+port, or a new use case calling the same aggregate. That's the actual test of
+whether Chapters 6.39 through 6.42 did their job — not that the initial
+version works, but that the next six months of feature requests have an
+obvious place to go.
+
+---
+
+## Key Takeaways
+
+- `main.go` is the one file allowed to import every layer — its entire job
+  is constructing concrete adapters and handing them to use cases as
+  interfaces, with no business logic of its own.
+- Tracing a single request (HTTP handler, use case, domain aggregate,
+  repository, Postgres, and back) shows the architecture paying for itself:
+  the business rule lives in exactly one place no matter which hop you
+  inspect.
+- Adapters for Postgres, Docker, and cloud deployment are direct
+  applications of Chapters 6.36, 6.38, and 6.43 — this chapter's only new
+  material is the wiring between them, not the technologies themselves.
+- Keep deployment-platform awareness confined to `main.go` and a thin
+  platform/config package — letting it leak into `internal/domain` repeats
+  the exact mistake Chapter 6.39 warned against, just with a newer
+  technology.
+- This project is intentionally incomplete — auth, rate limiting, real
+  webhook delivery, and a read model are the natural next additions, and
+  each one has a seam already built for it.

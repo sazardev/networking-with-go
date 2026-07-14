@@ -117,6 +117,73 @@ func main() {
 
 ---
 
+## Go in Action: A Bounded Worker Pool for Connections
+
+The accept loop above spawns one goroutine per connection with no upper
+limit — fine under normal load, risky under a connection flood (a burst
+of new clients, or a misbehaving load balancer retrying too
+aggressively). A **worker pool** bounds concurrency instead: a fixed
+number of worker goroutines pull connections off a channel, so the
+number of connections handled *at once* never exceeds the pool size, no
+matter how many more are waiting to be accepted.
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "net"
+)
+
+const numWorkers = 20
+
+func handle(conn net.Conn) {
+    defer conn.Close()
+    fmt.Fprintln(conn, "handled by the pool")
+}
+
+func worker(id int, jobs <-chan net.Conn) {
+    for conn := range jobs { // exits once jobs is closed and drained
+        handle(conn)
+    }
+    fmt.Println("worker", id, "shutting down")
+}
+
+func main() {
+    ln, err := net.Listen("tcp", ":9001")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer ln.Close()
+
+    jobs := make(chan net.Conn, numWorkers)
+    for i := 1; i <= numWorkers; i++ {
+        go worker(i, jobs)
+    }
+
+    for {
+        conn, err := ln.Accept()
+        if err != nil {
+            log.Println("accept error:", err)
+            continue
+        }
+        jobs <- conn // blocks once every worker is busy and the buffer is full
+    }
+}
+```
+
+With `numWorkers` fixed at 20 and a buffered channel of the same size,
+at most 20 connections are handled concurrently, and at most 20 more sit
+in the buffer waiting for a free worker. Past that, `jobs <- conn`
+simply blocks, which in turn makes `Accept()` wait before pulling the
+next connection off the OS's own backlog queue — backpressure instead of
+an unbounded pile of live goroutines.
+
+<Warning title="A shared results map without a mutex will crash your server">It's common for worker handlers to record something per connection — a hit count, a session, a last-seen timestamp — in a `map[string]int` or similar declared outside the workers and closed over by all of them. Reading and writing that map concurrently from multiple worker goroutines with no `sync.Mutex` isn't a subtle bug: Go's runtime actively detects it and crashes the whole process with `fatal error: concurrent map read and map write`, often under nothing more than moderate load. Guard any map shared across goroutines with a `sync.Mutex` (or `sync.RWMutex` if reads dominate), or use `sync.Map` if the access pattern fits.</Warning>
+
+---
+
 ## Go in Action: Channel-Based Message Broadcast
 
 A simple example where one goroutine sends messages to many receivers using channels.
@@ -493,6 +560,81 @@ func main() {
 - Goroutines allow you to handle many clients at once, without manual thread management.
 - The Go scheduler and runtime handle all the complexity—your code stays clean and simple.
 - You can build high-performance, concurrent network servers with just a few lines of Go!
+
+---
+
+## Goroutine Lifecycle Management in Long-Running Servers
+
+Every example so far answers "how do I start a goroutine per
+connection?" A long-running server also needs answers to two much less
+glamorous questions: when do I *stop* starting new ones, and how do I
+shut down the ones already running?
+
+### Knowing When to Stop Spawning
+
+The worker pool above already answers the first question by
+construction — once its `numWorkers` goroutines are busy, new
+connections wait in the channel instead of spawning more work. A plain
+`go handleConn(conn)` per connection has no such ceiling: it keeps
+spawning for as long as `Accept()` keeps returning connections. That's
+exactly why the goroutine-per-connection pattern and a worker pool
+matter together — one teaches the tool, the other teaches where to put
+a limit on it.
+
+### Shutting Down Cleanly
+
+A goroutine still running when `main` returns never gets a chance to
+clean up — its stack, and whatever it was doing, just vanish when the
+process exits. For a long-running server that needs to close database
+connections, flush logs, or finish in-flight requests before a deploy,
+that matters a great deal. Two pieces make a clean shutdown possible: a
+signal that "it's time to stop," and a way to wait until every goroutine
+has actually reacted to it.
+
+```go
+func run(ctx context.Context, ln net.Listener) {
+    var wg sync.WaitGroup
+    go func() {
+        <-ctx.Done()
+        ln.Close() // unblocks the Accept() below with an error
+    }()
+    for {
+        conn, err := ln.Accept()
+        if err != nil {
+            select {
+            case <-ctx.Done():
+                wg.Wait() // let in-flight handlers finish first
+                return
+            default:
+                log.Println("accept error:", err)
+                continue
+            }
+        }
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            handle(conn)
+        }()
+    }
+}
+```
+
+The signal is a `context.Context`, cancelled by whoever owns `run` —
+covered in full in Chapter 9 (Context and Cancellation); here it's
+enough to know a context can be threaded through every handler, and a
+`select` inside a long-running goroutine can watch `ctx.Done()`
+alongside its regular work. Wire it up in `main` with `ctx, stop :=
+signal.NotifyContext(context.Background(), os.Interrupt)` so Ctrl+C
+triggers the path above, and `defer stop()` right after. The wait is a
+`sync.WaitGroup`: incremented before each `go`, marked done when the
+handler returns, with `wg.Wait()` blocking until the count reaches zero.
+Note that cancelling a context never interrupts a blocking call by
+itself — it only flips a flag your code has to check, which is why the
+extra goroutine above closes the listener to actually unblock `Accept`.
+
+<Warning title="A handler blocked on Read with no deadline never returns">`conn.Read(buf)` blocks until data arrives, the peer closes the connection, or an error occurs — with no deadline set, a client that connects and then goes silent (a dead network, a hung client, a deliberately slow attacker) leaves that goroutine parked on `Read` forever. Multiply that by every such client and a long-running server slowly accumulates goroutines that will never exit on their own, no matter how carefully you built the shutdown logic above. Call `conn.SetReadDeadline` (or `SetDeadline`) so a stalled peer eventually produces a timeout error instead of a permanently blocked goroutine.</Warning>
+
+<Warning title="range over a channel that's never closed leaks every reader">`for job := range jobs` — the shape the worker pool earlier uses — only exits once `jobs` is both empty and closed; if nothing ever calls `close(jobs)`, every worker goroutine ranging over it stays parked at the receive forever, even after the server has logically stopped accepting new work. The leak is silent: no panic, no crash, just goroutines (and whatever memory they hold) that never get reclaimed until the process exits. Whoever owns the sending side of a channel should be the one responsible for closing it once no more values are coming.</Warning>
 
 ---
 

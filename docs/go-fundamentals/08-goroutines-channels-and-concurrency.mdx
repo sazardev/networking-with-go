@@ -1,0 +1,613 @@
+---
+id: "[2.8.0]"
+title: "Goroutines, Channels, and Concurrency"
+---
+
+# Goroutines, Channels, and Concurrency
+
+<Axiom>Concurrency is about dealing with lots of things at once; parallelism is about doing lots of things at once — Go gives you the first as a language feature and lets the runtime decide, moment to moment, how much of the second you actually get.</Axiom>
+
+That distinction, popularized by Rob Pike, is the single most important
+mental model in this chapter. **Concurrency** is a way of structuring a
+program: breaking it into independently executing pieces that communicate,
+regardless of whether the machine running it has one CPU core or sixty-four.
+**Parallelism** is a runtime property: whether those pieces actually execute
+at the same physical instant. A program can be concurrent without ever being
+parallel — imagine a single-core machine juggling many goroutines, none of
+which literally run simultaneously, yet all making steady progress. Go's
+design bets that if you express your program's structure correctly (as
+independent, communicating units), the runtime can exploit whatever
+parallelism the hardware offers without you having to rewrite anything.
+
+The runtime controls this through `GOMAXPROCS`, which sets how many OS
+threads may execute Go code simultaneously (it defaults to the number of
+logical CPU cores). Raise or lower it and you change how much parallelism is
+available; the concurrent structure of your program — how many goroutines
+exist, how they communicate — doesn't need to change at all. This chapter
+covers the two building blocks that make that structure possible: goroutines,
+which are the "things," and channels, which are how those things talk to
+each other safely.
+
+## Goroutines: Lightweight Concurrent Functions
+
+A goroutine is a function executing independently of the function that
+started it, managed entirely by the Go runtime rather than the operating
+system. Starting one is a single keyword away:
+
+```go
+go sayHello("Alice")
+```
+
+`go sayHello("Alice")` schedules `sayHello` to run concurrently and returns
+immediately — the calling goroutine does not wait for it. Under the hood,
+the Go runtime multiplexes potentially thousands of goroutines onto a much
+smaller number of OS threads (an "M:N" scheduler), parking a goroutine the
+moment it blocks on I/O or a channel and running something else on that
+freed thread. This is precisely why goroutines are cheap: a goroutine
+starts with a stack of only about 2 KB, which the runtime grows and shrinks
+on demand, compared to the typically megabyte-sized, fixed stack an OS
+thread commits up front. Launching 100,000 goroutines is routine; launching
+100,000 OS threads would exhaust most machines.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			fmt.Println("worker", n, "running")
+		}(i)
+	}
+	wg.Wait()
+	fmt.Println("all 20 workers finished")
+}
+```
+
+Run this and you will see the twenty "worker N running" lines print in a
+different order almost every time — the scheduler makes no promise about
+which goroutine runs first, or whether one finishes before another starts.
+That non-determinism is the entire point: the twenty workers are genuinely
+independent, and your program must not depend on any particular ordering
+unless it explicitly enforces one.
+
+<Warning title="main returning early abandons every unfinished goroutine">`main()` returning ends the whole program immediately, including every goroutine still in flight — Go does not wait for them, and there is no cleanup, no final log line, nothing. `go fmt.Println("hi")` followed directly by the end of `main` may print nothing at all, because the program can exit before the goroutine's first instruction even runs. Every goroutine you launch needs an explicit synchronization point — a `sync.WaitGroup`, a channel receive, or equivalent — if you need to know it actually completed before moving on.</Warning>
+
+The smallest possible fix for that gotcha uses a channel instead of a
+`WaitGroup`, which works fine for a single goroutine:
+
+```go
+done := make(chan struct{})
+go func() {
+	fmt.Println("working...")
+	close(done)
+}()
+<-done // blocks until the goroutine closes done
+fmt.Println("done")
+```
+
+`chan struct{}` is an idiomatic choice here because `struct{}` (the empty
+struct) occupies zero bytes — this channel is being used purely as a
+signal, not to carry any actual value.
+
+## Channels: Typed Pipes Between Goroutines
+
+A channel is a typed conduit for sending and receiving values between
+goroutines, created with `make`:
+
+```go
+ch := make(chan int)        // unbuffered channel of int
+buffered := make(chan int, 5) // buffered channel, capacity 5
+```
+
+The send and receive operators are both spelled `<-`, with the arrow
+pointing in the direction data flows:
+
+```go
+ch <- 42       // send 42 into ch
+value := <-ch  // receive a value from ch, assign it to value
+```
+
+**Unbuffered** channels (no capacity argument) are the default, and their
+defining property is that a send blocks until another goroutine performs
+the matching receive, and vice versa — the two goroutines briefly rendezvous
+at the moment of transfer. This gives you a strong guarantee: once a send on
+an unbuffered channel returns, you know the value was actually received by
+someone, not merely queued.
+
+**Buffered** channels (`make(chan T, n)`) hold up to `n` values without a
+receiver present. A send only blocks once the buffer is full; a receive
+only blocks when the buffer is empty. This decouples the sender and
+receiver's timing, which is useful for absorbing bursts of work, but it
+gives up the "received" guarantee — a completed send only tells you the
+value is sitting in the buffer, not that anyone has looked at it yet.
+
+| Behavior | Unbuffered (`make(chan T)`) | Buffered (`make(chan T, n)`) |
+|---|---|---|
+| Send blocks until | A receiver is ready | Buffer has free space (or a receiver is ready) |
+| Receive blocks until | A sender is ready | Buffer has a value (or a sender is ready) |
+| Guarantee on send return | Value was received | Value is queued, not necessarily received |
+| Good for | Synchronization, handoff | Absorbing bursts, rate-limited producers |
+
+<DeepDive title="Buffered channel capacity is not a queue size guarantee for correctness">A buffered channel of capacity 5 lets five sends complete before the sixth blocks, but that number is a performance tuning knob, not a correctness mechanism. Code that relies on "the buffer is big enough that this will never actually block" is one burst of extra load away from a surprise stall — size buffers based on measured throughput, and never as a substitute for proper synchronization.</DeepDive>
+
+### Directional Channel Types
+
+A function signature can restrict a channel parameter to send-only or
+receive-only, which the compiler then enforces:
+
+```go
+func producer(out chan<- int) { // out: send-only from this function's view
+	for i := 0; i < 3; i++ {
+		out <- i
+	}
+	close(out)
+}
+
+func consumer(in <-chan int) { // in: receive-only from this function's view
+	for v := range in {
+		fmt.Println("got", v)
+	}
+}
+```
+
+`chan<- int` reads as "a channel you may only send into"; `<-chan int`
+reads as "a channel you may only receive from." A bidirectional
+`chan int` passed to either function is automatically narrowed to the
+declared direction — this is purely a compile-time restriction that
+documents intent and prevents a consumer from accidentally sending, or a
+producer from accidentally receiving, on the channel it was handed.
+
+### Closing Channels and Ranging Over Them
+
+`close(ch)` signals that no more values will ever be sent on `ch`. A
+`for ... range` loop over a channel receives values until the channel is
+closed, then exits automatically:
+
+```go
+ch := make(chan int)
+go func() {
+	for i := 0; i < 5; i++ {
+		ch <- i * i
+	}
+	close(ch)
+}()
+for square := range ch {
+	fmt.Println(square)
+}
+```
+
+A receive expression can also ask, with its second return value, whether
+the channel is still open:
+
+```go
+v, ok := <-ch
+if !ok {
+	fmt.Println("channel is closed and drained")
+}
+```
+
+Receiving from a closed channel never blocks: it immediately returns the
+element type's zero value along with `ok == false`, forever. This is a
+deliberate asymmetry with sending.
+
+<Warning title="Sending on a closed channel panics; closing twice panics too">`ch <- v` on an already-closed channel panics immediately with `send on closed channel` — there is no graceful degradation. Calling `close(ch)` a second time on the same channel also panics, with `close of closed channel`. The rule that avoids both: only the sender should ever close a channel, and only once, typically right after its final send — never let a receiver, or more than one goroutine, call `close` on the same channel.</Warning>
+
+The zero value of a channel type is `nil` — a `var ch chan int` that is
+never assigned via `make` is `nil`, not an empty-but-usable channel.
+
+<Warning title="A nil channel blocks forever, silently, on both send and receive">Sending to or receiving from a nil channel does not panic and does not return immediately — it blocks forever. This is easy to trigger by accident (a struct field or map value holding a channel that was never initialized) and the resulting goroutine simply hangs with no error message. The one place this becomes genuinely useful, rather than a bug, is inside `select`: a nil channel's `case` is never selected, which lets you "disable" a branch at runtime by nil-ing out the channel it reads from.</Warning>
+
+## select: Waiting on Multiple Channels
+
+`select` lets a goroutine wait on several channel operations at once,
+proceeding with whichever one is ready first — if more than one is ready
+simultaneously, Go picks among them at random, so no case is ever starved
+in a symmetric race:
+
+```go
+select {
+case msg1 := <-ch1:
+	fmt.Println("from ch1:", msg1)
+case msg2 := <-ch2:
+	fmt.Println("from ch2:", msg2)
+case ch3 <- "ping":
+	fmt.Println("sent ping on ch3")
+}
+```
+
+Adding a `default` case makes the whole `select` non-blocking: if no other
+case is ready right away, `default` runs instead of waiting.
+
+```go
+select {
+case v := <-ch:
+	fmt.Println("received", v)
+default:
+	fmt.Println("nothing available right now")
+}
+```
+
+Combined with `time.After`, `select` is also the idiomatic way to add a
+timeout to a blocking operation:
+
+```go
+select {
+case result := <-resultCh:
+	fmt.Println("got result:", result)
+case <-time.After(2 * time.Second):
+	fmt.Println("timed out waiting for result")
+}
+```
+
+`time.After(d)` returns a channel that receives a single value after
+duration `d` elapses, so racing it against `resultCh` inside `select` gives
+you "whichever happens first." This pattern appears constantly in
+networking code; Part 2 replaces it with `context.Context`, which composes
+better across many layers of a call stack, but the underlying mechanism —
+racing a real channel against a timer channel — is exactly this `select`.
+
+## The sync Package
+
+Channels are Go's preferred way to coordinate goroutines, but the `sync`
+package covers cases where sharing memory directly, guarded by a lock, is
+simpler or more efficient.
+
+**`sync.WaitGroup`** waits for a collection of goroutines to finish. Call
+`Add(n)` to register `n` goroutines before starting them, have each
+goroutine call `Done()` when it finishes (almost always via `defer`), and
+call `Wait()` to block until the count returns to zero:
+
+```go
+var wg sync.WaitGroup
+for i := 0; i < 3; i++ {
+	wg.Add(1)
+	go func(n int) {
+		defer wg.Done()
+		fmt.Println("task", n)
+	}(i)
+}
+wg.Wait()
+```
+
+<Warning title="Calling Add inside the goroutine is a race with Wait itself">`wg.Add(1)` must happen in the goroutine that launches the worker, before the `go` statement — not inside the worker goroutine. If `Add` runs concurrently with `Wait`, there is a real chance `Wait` observes a counter of zero and returns before the goroutine has even called `Add`, defeating the entire point of waiting. Likewise, forgetting `defer` before `wg.Done()` means an early return or a `panic` inside the goroutine skips `Done()` entirely, and `Wait()` blocks forever — always write `defer wg.Done()` as the very first line of the goroutine.</Warning>
+
+**`sync.Mutex`** protects shared state accessed by multiple goroutines by
+letting only one goroutine hold the lock at a time:
+
+```go
+var mu sync.Mutex
+var balance int
+
+func deposit(amount int) {
+	mu.Lock()
+	defer mu.Unlock()
+	balance += amount
+}
+```
+
+**`sync.RWMutex`** is a variant that distinguishes readers from writers:
+any number of goroutines can hold a read lock (`RLock`/`RUnlock`)
+simultaneously, but a write lock (`Lock`/`Unlock`) is fully exclusive. Reach
+for `RWMutex` over a plain `Mutex` when reads vastly outnumber writes and
+the protected data is nontrivial to compute, since it lets concurrent
+readers proceed without waiting on each other.
+
+**`sync.Once`** guarantees a function runs exactly once, no matter how many
+goroutines call it concurrently — the classic use is one-time
+initialization:
+
+```go
+var once sync.Once
+var config *Config
+
+func getConfig() *Config {
+	once.Do(func() {
+		config = loadConfig() // runs exactly once, ever
+	})
+	return config
+}
+```
+
+Finally, for the narrow case of a single counter or flag updated by many
+goroutines, **`sync/atomic`** offers lock-free primitives that are cheaper
+than a mutex for that one job:
+
+```go
+var counter atomic.Int64
+counter.Add(1)
+fmt.Println(counter.Load())
+```
+
+| Tool | Coordinates | Reach for it when |
+|---|---|---|
+| `sync.WaitGroup` | Completion of N goroutines | You need to know when a batch of work is done |
+| `sync.Mutex` / `RWMutex` | Access to shared mutable state | Multiple goroutines read/write the same data |
+| Channel | Data handoff and signaling | Goroutines should communicate, not just lock |
+| `sync/atomic` | A single counter or flag | Simple numeric state, high contention |
+
+<Axiom>Don't communicate by sharing memory; share memory by communicating — but that Go proverb is a strong default, not a religious rule, and a well-placed `Mutex` around a small piece of shared state is often the simpler, faster, and equally correct choice.</Axiom>
+
+## Race Conditions
+
+A data race happens when two or more goroutines access the same memory
+location concurrently, at least one of them writes, and there is no
+synchronization between the accesses. Here is a deliberately broken counter:
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	var wg sync.WaitGroup
+	counter := 0
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			counter++ // read, increment, write - not atomic
+		}()
+	}
+
+	wg.Wait()
+	fmt.Println("Counter:", counter)
+}
+```
+
+`counter++` looks like one operation but is really three: read `counter`,
+add one, write it back. Two goroutines can both read the same value before
+either writes its update back, and one increment is silently lost. Running
+this with plain `go run main.go` will often print something below 1000,
+and the exact number changes between runs — a hallmark of a race, since
+correct concurrent code should behave identically every time regardless of
+scheduling.
+
+Compiling and running it with the race detector — `go run -race main.go`
+— makes the bug undeniable instead of merely suspicious. The detector
+instruments every memory access at compile time and, at runtime, reports a
+`DATA RACE` block naming the exact memory address, the goroutine and line
+number of the conflicting write, and the goroutine and line number of the
+conflicting read, whether or not the race happened to corrupt the final
+answer on that particular run. This matters: a race can exist and stay
+invisible in ordinary runs for years, then surface in production the day
+the scheduler happens to interleave two goroutines unluckily. `-race`
+finds it deterministically, every time, by watching the accesses rather
+than the output.
+
+The fix guards the shared variable with a mutex, turning the three-step
+read-modify-write into one atomic-from-the-outside operation:
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	counter := 0
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mu.Lock()
+			counter++
+			mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+	fmt.Println("Counter:", counter) // always 1000
+}
+```
+
+With the lock in place, `counter` prints exactly `1000` on every run, and
+`go run -race` reports nothing. `sync/atomic`'s `atomic.Int64` would fix
+this equally well and is a common lighter-weight alternative for a lone
+counter like this one.
+
+<DeepDive title="The race detector only reports races it actually observes">`-race` instruments real execution, so it can only catch a race that occurs during that particular run — it is not a static analyzer that proves the absence of races across every possible interleaving. A rarely-triggered race can pass `-race` on a quiet run and still exist; running the suspicious code path many times, under load, and in CI with `-race` enabled by default meaningfully raises the odds of catching it before a user does.</DeepDive>
+
+### Try It Yourself: Catch and Fix a Race
+
+1. Type the broken counter example above into a file and run it with
+   plain `go run main.go` five times, noting the printed count each time.
+2. Run the same file with `go run -race main.go` and read the reported
+   goroutine stack traces — identify the two line numbers it names.
+3. Apply the mutex fix, confirm the count is exactly 1000 on every run,
+   and confirm `-race` now reports nothing.
+4. **Bonus:** replace the mutex with `atomic.Int64`'s `Add` and `Load`
+   methods instead, and confirm the result is identical.
+
+## Common Concurrency Patterns
+
+### Worker Pool
+
+A worker pool runs a fixed number of goroutines that pull jobs from a
+shared channel and write their results to another channel — a natural fit
+whenever you have more units of work than you want simultaneous goroutines
+for (bounding concurrency, not just achieving it):
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func worker(id int, jobs <-chan int, results chan<- int) {
+	for j := range jobs {
+		results <- j * j
+	}
+}
+
+func main() {
+	const numWorkers = 3
+	jobs := make(chan int, 10)
+	results := make(chan int, 10)
+	var wg sync.WaitGroup
+
+	for w := 1; w <= numWorkers; w++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			worker(id, jobs, results)
+		}(w)
+	}
+
+	for j := 1; j <= 10; j++ {
+		jobs <- j
+	}
+	close(jobs) // signals workers no more jobs are coming
+
+	go func() {
+		wg.Wait()
+		close(results) // safe to close once every worker has stopped
+	}()
+
+	for r := range results {
+		fmt.Println("result:", r)
+	}
+}
+```
+
+Three workers share one `jobs` channel; each job is delivered to exactly
+one worker, never duplicated. Closing `jobs` after sending all ten values
+lets each worker's `range jobs` loop end naturally once the channel drains.
+The separate goroutine that waits on `wg` before closing `results` is the
+key detail: `results` must not close until every worker has stopped
+sending to it, or a worker would panic trying to send on a closed channel.
+
+### Fan-In
+
+Fan-in merges several input channels into a single output channel, so a
+consumer can range over one channel instead of juggling many:
+
+```go
+func fanIn(inputs ...<-chan string) <-chan string {
+	out := make(chan string)
+	var wg sync.WaitGroup
+
+	for _, in := range inputs {
+		wg.Add(1)
+		go func(c <-chan string) {
+			defer wg.Done()
+			for v := range c {
+				out <- v
+			}
+		}(in)
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+```
+
+Each input channel gets its own forwarding goroutine; a `WaitGroup`
+tracks all of them, and once every forwarder has drained its input and
+exited, the final goroutine closes `out`. Callers simply do
+`for v := range fanIn(ch1, ch2, ch3) { ... }` and see values from all three
+sources interleaved as they arrive.
+
+<DeepDive title="context.Context handles cancellation these examples don't">Neither the worker pool nor the fan-in example above has a way to stop early — if the consumer loses interest halfway through, the workers keep running to completion regardless. Real Go networking code almost always threads a `context.Context` through every goroutine instead, so that closing one `context` (on a timeout, a client disconnect, or a shutdown signal) cleanly unwinds every goroutine that was working on that request. Part 2 covers `context.Context` in depth; for now, just recognize the gap it fills, since writing worker pools without it is how goroutine leaks are born.</DeepDive>
+
+<Warning title="A goroutine blocked forever on a channel is a leak, not a crash">If a producer goroutine keeps sending values that nothing ever receives — because the consumer returned early, panicked, or was never going to read everything — that producer goroutine stays parked on the blocked send forever. It never crashes, never logs an error, and simply sits there holding its stack and any captured resources until the process exits. This is a goroutine leak, and because it produces no visible symptom besides slowly rising memory and goroutine counts, it is one of the easiest concurrency bugs to ship unnoticed; `runtime.NumGoroutine()` and profiling tools like `pprof`'s goroutine profile are how you catch it after the fact.</Warning>
+
+## Deadlocks
+
+A deadlock is what happens when every goroutine in the program is blocked
+waiting on something that will never happen. Go's runtime actively detects
+the specific case where *all* goroutines are simultaneously asleep and
+none can ever be woken, and terminates the program with a diagnostic
+rather than hanging silently forever:
+
+```go
+package main
+
+func main() {
+	ch := make(chan int)
+	ch <- 1 // no other goroutine exists to receive - blocks forever
+}
+```
+
+Running this prints `fatal error: all goroutines are asleep - deadlock!`
+along with a stack trace, because the single goroutine (`main`) blocks on
+an unbuffered send with no one else in the program to receive it — there
+is no possible future in which this program makes progress again.
+
+The general rule for avoiding deadlocks: every blocking send needs a
+goroutine somewhere that will eventually perform the matching receive, and
+every blocking receive needs a goroutine that will eventually send (or
+close the channel). When locks are involved, the classic trap is a
+goroutine that holds a mutex while waiting on a channel or another lock
+that can only be released by a goroutine blocked trying to acquire the
+first mutex — a circular wait. Two practical habits prevent most
+deadlocks: keep the region between `Lock()` and `Unlock()` as short as
+possible and never call a function that might itself try to reacquire the
+same lock, and always be sure a channel operation has a plan (a buffer, a
+`select` with `default`, a timeout, or a known-present receiver) for the
+case where the other side never shows up.
+
+<Warning title="The deadlock detector only catches total deadlock, not a partial one">Go's runtime reports `all goroutines are asleep - deadlock!` only when literally every goroutine in the process is blocked with no possibility of progress. If even one goroutine is still doing something — spinning, sleeping on a timer, blocked on I/O that will eventually complete — the program does not trigger this diagnostic, even though two *other* goroutines might be permanently deadlocked with each other. A partial deadlock like that just silently stalls the affected goroutines forever while the rest of the program keeps running, which makes it considerably harder to notice than the total case.</Warning>
+
+### Try It Yourself: Worker Pool Variation
+
+1. Take the worker pool example above and change `numWorkers` to `1`,
+   then to `10`, printing how long each configuration takes for 10 jobs
+   that each `time.Sleep(100 * time.Millisecond)` before computing their
+   result — observe how throughput scales with worker count up to the
+   point where jobs run out.
+2. Introduce a deliberate bug: close `results` immediately after closing
+   `jobs`, without waiting for `wg.Wait()` first. Run the program
+   repeatedly and explain, in your own words, why it sometimes panics
+   with `send on closed channel` and sometimes doesn't — this is exactly
+   the kind of race that benefits from being run many times, and from
+   `-race`.
+
+## Key Takeaways
+
+- Concurrency is a way of structuring independently executing, communicating
+  pieces of a program; parallelism is whether they run at the same physical
+  instant — `GOMAXPROCS` governs the latter without changing the former.
+- Goroutines are cheap, runtime-managed units of concurrency with growable
+  KB-scale stacks; `main()` returning does not wait for them, so every
+  goroutine you care about needs an explicit synchronization point.
+- Unbuffered channels synchronize sender and receiver at the moment of
+  transfer; buffered channels decouple their timing up to a fixed capacity.
+- Only the sender should close a channel, and only once; sending on a
+  closed channel panics, receiving from one yields the zero value forever,
+  and both operations on a nil channel block forever instead of erroring.
+- `select` multiplexes across channels, `default` makes it non-blocking,
+  and racing a channel against `time.After` implements a timeout.
+- `sync.WaitGroup` waits for a batch of goroutines, `Mutex`/`RWMutex`
+  guard shared state, `sync.Once` runs initialization exactly once, and
+  `sync/atomic` handles simple lock-free counters.
+- Data races are silent and nondeterministic; `go run -race` finds them
+  deterministically by instrumenting memory accesses, not by chance.
+- Worker pools bound concurrency to a fixed number of consumers; fan-in
+  merges multiple channels into one; real code adds `context.Context`
+  (Part 2) for clean cancellation that these minimal examples omit.
+- A deadlock is every goroutine blocked with no possible progress; Go's
+  runtime detects and reports the total case, but a partial deadlock
+  between just two goroutines stalls silently while the rest keep running.

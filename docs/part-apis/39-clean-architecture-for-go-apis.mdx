@@ -1,0 +1,347 @@
+---
+id: "[6.39.0]"
+title: "Clean Architecture for Go APIs"
+---
+
+# Clean Architecture for Go APIs
+
+Every chapter so far has built one slice of an API — routing, auth, rate
+limiting, observability. This chapter and the three that follow it step back
+and ask a different question: once you have all those slices, how do you
+arrange them so the codebase stays understandable at year two, not just week
+one? The answer this chapter covers is Robert C. Martin's Clean Architecture,
+adapted to idiomatic Go rather than the Java/C# world it was originally
+described in.
+
+To keep the next four chapters grounded, they all build the same example: a
+small order-management API. A customer places an order for one or more
+products; an order moves through a status lifecycle — `pending`, `paid`,
+`shipped`, `cancelled` — and that lifecycle has real rules worth protecting in
+code: you cannot ship an order that hasn't been paid, and cancelling a
+shipped order requires a refund, not a silent status flip. By the end of
+Chapter 6.42 this example is a complete, running service.
+
+---
+
+## The Concentric Circles, Without the Ceremony
+
+Clean Architecture pictures a system as rings. At the center sit **entities**
+— the core business objects and rules that would still make sense if you
+deleted the database, the web framework, and the cloud provider. The next
+ring out is **use cases** — the application-specific orchestration of those
+entities ("place an order," "ship an order"). Outside that are **interface
+adapters** — code that translates between the use cases and the outside
+world (HTTP handlers, database repositories). The outermost ring is
+**frameworks and drivers** — `net/http`, `pgx`, Docker, the specific cloud
+SDK.
+
+The rule that makes all of this worth drawing is not the ring names — it's
+the arrow direction: **dependencies point inward, never outward**. Code in
+the entities ring must never import a database driver or an HTTP router.
+Code in the use-case ring may depend on entities, but not on a specific
+database or web framework. Adapters depend on use cases and entities, never
+the reverse.
+
+Martin's original writing leans on abstract classes and dependency inversion
+via interfaces in languages with heavier type systems. Go doesn't need any of
+that machinery. Go already has exactly the tool this pattern requires:
+**interfaces satisfied implicitly**. A package doesn't declare "I implement
+this interface" — it just has the right methods, and that's enough. This
+makes the inward-pointing-dependency rule almost free to follow, because the
+inner rings can define an interface, and an outer-ring package can satisfy it
+without ever importing the inner ring's package to do so.
+
+<Axiom>In Go, Clean Architecture isn't a framework you install — it's a discipline about which package is allowed to import which, enforced by nothing but code review and the compiler's refusal to let you import `internal/` packages from outside their tree.</Axiom>
+
+---
+
+## A Realistic Package Layout
+
+For the order-management example, the layout looks like this:
+
+```
+ordermgmt/
+  internal/
+    domain/            # entities: Order, Money, domain errors
+    usecase/            # use cases: PlaceOrder, ShipOrder, ...
+    adapter/
+      http/             # interface adapter: HTTP handlers
+      postgres/         # interface adapter: Postgres repository
+  cmd/
+    api/
+      main.go           # frameworks/drivers: wiring, config, startup
+```
+
+`domain` is the entities ring. `usecase` is the use-case ring. Everything
+under `adapter/` is the interface-adapters ring. `main.go` is the
+frameworks-and-drivers ring — the only place allowed to know about every
+other package at once, because wiring them together is its entire job.
+
+### The domain entity
+
+```go
+// internal/domain/order.go
+package domain
+
+import "errors"
+
+type OrderStatus string
+
+const (
+	StatusPending   OrderStatus = "pending"
+	StatusPaid      OrderStatus = "paid"
+	StatusShipped   OrderStatus = "shipped"
+	StatusCancelled OrderStatus = "cancelled"
+)
+
+var (
+	ErrOrderNotPaid          = errors.New("order: not in paid status")
+	ErrOrderAlreadyCancelled = errors.New("order: already cancelled")
+)
+
+type Order struct {
+	ID         string
+	CustomerID string
+	Status     OrderStatus
+}
+
+func NewOrder(id, customerID string) *Order {
+	return &Order{ID: id, CustomerID: customerID, Status: StatusPending}
+}
+
+func (o *Order) MarkPaid() {
+	o.Status = StatusPaid
+}
+
+func (o *Order) Ship() error {
+	if o.Status != StatusPaid {
+		return ErrOrderNotPaid
+	}
+	o.Status = StatusShipped
+	return nil
+}
+```
+
+This is intentionally the simplest possible version — Chapter 6.41 rebuilds
+this same type as a proper DDD aggregate with unexported fields, order
+lines, and domain events. For now, the point is narrower: notice this file
+imports nothing but `errors`. No `database/sql`, no `net/http`, no `pgx`. The
+`Ship` method encodes a real business rule (`ErrOrderNotPaid`)
+directly in the entity, where it can't be bypassed by a caller that forgets
+to check.
+
+### The use case
+
+```go
+// internal/usecase/ship_order.go
+package usecase
+
+import (
+	"context"
+
+	"ordermgmt/internal/domain"
+)
+
+type OrderRepository interface {
+	FindByID(ctx context.Context, id string) (*domain.Order, error)
+	Save(ctx context.Context, o *domain.Order) error
+}
+
+type ShipOrder struct {
+	Orders OrderRepository
+}
+
+func NewShipOrder(repo OrderRepository) *ShipOrder {
+	return &ShipOrder{Orders: repo}
+}
+
+func (uc *ShipOrder) Execute(ctx context.Context, orderID string) error {
+	order, err := uc.Orders.FindByID(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if err := order.Ship(); err != nil {
+		return err
+	}
+	return uc.Orders.Save(ctx, order)
+}
+```
+
+This is the single most important file in the whole example, and it's worth
+reading twice. `usecase` imports `domain` — that's an inward-pointing
+dependency, allowed. It defines `OrderRepository` as an interface **it**
+needs, not one implemented anywhere nearby yet. It has no idea whether
+orders end up in Postgres, MongoDB, or a plain map. That's the adapter's
+problem, not the use case's.
+
+<Warning title="Define repository interfaces where they're consumed, not where they're implemented">The single most common Clean Architecture mistake in Go codebases is putting `OrderRepository` inside `internal/adapter/postgres`, next to the struct that implements it, because that feels like "where it belongs." Do the opposite: define the interface in the package that *calls* it — here, `usecase` — and let the Postgres package satisfy it implicitly with no import of `usecase` required. This single placement decision is what makes the dependency arrow point inward. If the interface lived in `adapter/postgres`, then `usecase` would have to import `adapter/postgres` to reference the interface type, and the arrow would point outward — exactly backwards from what Clean Architecture requires. Go doesn't need `import` to type-check an implementation, so nothing forces this discipline on you; you have to choose it.</Warning>
+
+### The adapter
+
+```go
+// internal/adapter/postgres/order_repository.go
+package postgres
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"ordermgmt/internal/domain"
+)
+
+type OrderRepository struct {
+	pool *pgxpool.Pool
+}
+
+func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
+	return &OrderRepository{pool: pool}
+}
+
+func (r *OrderRepository) FindByID(
+	ctx context.Context, id string,
+) (*domain.Order, error) {
+	var o domain.Order
+	row := r.pool.QueryRow(ctx,
+		`SELECT id, customer_id, status FROM orders WHERE id = $1`, id)
+	if err := row.Scan(&o.ID, &o.CustomerID, &o.Status); err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+func (r *OrderRepository) Save(ctx context.Context, o *domain.Order) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE orders SET status = $2 WHERE id = $1`, o.ID, o.Status)
+	return err
+}
+```
+
+This struct never imports `usecase`. It doesn't need to — Go's structural
+typing means that as long as its method set matches `usecase.OrderRepository`,
+it satisfies that interface the moment something tries to use it as one.
+Chapter 6.36 covers the `pgx` details (pooling, query patterns, transactions)
+in depth; here the point is only the shape: an adapter that speaks SQL on one
+side and domain types on the other, with the domain never leaking a `sql.Row`
+back out.
+
+### Wiring it together
+
+```go
+// cmd/api/main.go
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"ordermgmt/internal/adapter/postgres"
+	"ordermgmt/internal/usecase"
+)
+
+func main() {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, "postgres://localhost/ordermgmt")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
+
+	repo := postgres.NewOrderRepository(pool)
+	shipOrder := usecase.NewShipOrder(repo)
+
+	_ = shipOrder // wired into an HTTP handler in Chapter 6.42
+}
+```
+
+No DI framework, no reflection-based container, no annotations. Just
+constructor functions passed concrete values, assigned to interface-typed
+fields. This is idiomatic Go dependency injection in its entirety.
+
+---
+
+## Keeping Domain Types Off the Wire
+
+One more boundary is easy to miss: the JSON your HTTP adapter sends back
+should not be the domain entity itself, serialized as-is. It's tempting to
+slap `json:"..."` struct tags directly onto `domain.Order` and hand it to
+`json.NewEncoder`, but that quietly makes the wire format an outer-ring
+concern that reaches all the way into the entities ring — a renamed JSON
+field, or a client that needs a computed field the domain has no reason to
+carry, now forces a change to the entity itself.
+
+```go
+// internal/adapter/http/dto.go
+package http
+
+import "ordermgmt/internal/domain"
+
+type OrderResponse struct {
+	ID         string `json:"id"`
+	CustomerID string `json:"customer_id"`
+	Status     string `json:"status"`
+}
+
+func ToOrderResponse(o *domain.Order) OrderResponse {
+	return OrderResponse{
+		ID:         o.ID,
+		CustomerID: o.CustomerID,
+		Status:     string(o.Status),
+	}
+}
+```
+
+`OrderResponse` lives in the adapter package, next to the handler that uses
+it, and `ToOrderResponse` is the only place that knows how a domain `Order`
+maps to whatever shape a client expects today. If tomorrow's API version
+needs an extra computed field, or a renamed key, that change happens here —
+`domain.Order` and every use case built around it stay untouched.
+
+<DeepDive title="Isn't a mapping function just boilerplate?">For a handful of fields, yes, `ToOrderResponse` looks like it's just copying data around for no reason — until the day the API needs to expose a field the domain doesn't have (an internal note, say), or hide a field the domain does have (an internal risk score). At that point the mapping function is the one place that decision lives, instead of a `json:"-"` tag scattered across a type that a use case and a repository also depend on for unrelated reasons. Paying a small, constant cost up front avoids a much larger one later.</DeepDive>
+
+---
+
+## Comparing Architectures
+
+Clean Architecture is one answer to "how do I organize a service," not the
+only one. It's worth being honest about what it costs relative to plainer
+approaches, since the next chapter introduces one more variant.
+
+| Aspect | Traditional layered (MVC-ish) | Clean Architecture | Hexagonal (Ch. 6.40) |
+|---|---|---|---|
+| Primary boundary | Controller / Service / DB layers | Concentric rings, dependency rule | Core vs. ports/adapters |
+| What's protected | Nothing structurally — layers often call up and down freely | Domain and use cases, from frameworks | Application core, from any I/O |
+| Testing story | Often needs a real or mocked DB layer | Swap the repository interface's implementation | Swap driven adapters for fakes |
+| Onboarding cost | Low — familiar to most developers immediately | Medium — package boundaries need explaining | Medium — vocabulary needs explaining |
+| Best fit | Small CRUD services, prototypes | Services with real, evolving business logic | Services with many integration points |
+
+Traditional layered designs (a `handlers` package calling a `services`
+package calling a `models` package) are not wrong for a small CRUD service —
+they're just optimized for getting started fast, not for protecting business
+rules as the codebase grows. Clean Architecture and Hexagonal Architecture
+both trade a little upfront structure for that protection; they differ more
+in vocabulary and emphasis than in substance, as the next chapter explains.
+
+<DeepDive title="Why bother with this for a small API?">If the order-status rule above lived only inside an HTTP handler, every new endpoint that touches an order's status would need to remember to re-check it, and eventually one wouldn't. Pushing `Ship()`'s rule down into `domain.Order` means every call path — HTTP, a future gRPC endpoint, a background job — goes through the same method and gets the same guarantee. The architecture isn't about the diagram; it's about having exactly one place a rule can live.</DeepDive>
+
+---
+
+## Key Takeaways
+
+- Clean Architecture's core rule is a dependency direction, not a specific
+  folder name: domain and use-case code must never import frameworks,
+  drivers, or specific databases.
+- Go's implicit interface satisfaction makes this nearly free — inner rings
+  declare interfaces, outer rings implement them without ever importing the
+  inner package back.
+- The most common way to break the rule in Go is putting a repository
+  interface in the adapter package instead of the use-case package that
+  calls it — always define interfaces where they're consumed.
+- Constructor functions passed interface-typed dependencies are all the
+  dependency injection idiomatic Go needs; no container or framework
+  required.
+- This is one point on a spectrum, not a universal mandate — a small CRUD
+  service may not need it, but a service with real business rules worth
+  protecting (like the order lifecycle here) benefits from it quickly.

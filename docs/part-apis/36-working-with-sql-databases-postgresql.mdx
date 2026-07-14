@@ -1,0 +1,291 @@
+---
+id: "[6.36.0]"
+title: "Working with SQL Databases: PostgreSQL"
+---
+
+# Working with SQL Databases: PostgreSQL
+
+Every API in this book so far has kept its data in memory or behind an
+external service. Real APIs need real, durable storage, and for most
+backend services that means a relational database. PostgreSQL is the
+default choice for a huge share of Go services: it is free, extremely
+reliable, has first-class Go drivers, and scales comfortably from a
+weekend project to a system handling millions of rows without a rewrite. This chapter builds a complete,
+correct path from an empty database to a Go API that queries it safely,
+migrates its schema, and manages its connections responsibly.
+
+### database/sql: Go's Standard Abstraction
+
+Go ships a database-agnostic interface in the standard library,
+`database/sql`. You never import a specific driver's types directly in your
+query code; instead you import the driver for its side effect of
+registering itself, and talk to `*sql.DB` everywhere else. This means the
+same query code can, in principle, run against Postgres, MySQL, or SQLite
+just by swapping the driver -- the driver translates `database/sql`'s
+generic calls into the wire protocol a specific database speaks.
+
+`*sql.DB` is not a single connection. It is a **pool** of connections that
+Go opens, reuses, and closes on your behalf, which is exactly why the pool
+sizing settings later in this chapter matter so much.
+
+### Connecting to Postgres with pgx
+
+The historically popular Postgres driver, `lib/pq`, is no longer actively
+developed. The modern, recommended driver is
+`github.com/jackc/pgx/v5`, which is faster, more actively maintained, and
+supports modern Postgres features that `lib/pq` never gained. pgx offers
+two ways to use it:
+
+- **`pgx/v5/stdlib`**: registers pgx as a normal `database/sql` driver, so
+  you keep using `sql.DB`, `sql.Open`, and the standard `Set*` pool methods
+  you may already know.
+- **`pgxpool`**: pgx's own native connection pool, `*pgxpool.Pool`, which
+  bypasses `database/sql` entirely in exchange for a richer, Postgres-aware
+  API and typically better performance.
+
+For a new service, `pgxpool` is the better default -- it is what the pgx
+maintainers recommend for anything beyond a quick script. Here is a
+complete, correct way to build a pool at startup:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func newPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	cfg.MaxConns = 20
+	cfg.MinConns = 2
+	cfg.MaxConnLifetime = time.Hour
+	cfg.MaxConnIdleTime = 30 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create pool: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("ping: %w", err)
+	}
+	return pool, nil
+}
+```
+
+A typical DSN looks like
+`postgres://app:password@localhost:5432/appdb?sslmode=disable` (drop
+`sslmode=disable` in production, where you want a real TLS connection to
+the database). `pool.Ping` fails fast at startup instead of letting your
+API accept traffic against a database it can never reach.
+
+If your codebase already leans on `database/sql` -- for example because it
+shares repository code across drivers, or uses a library that expects
+`*sql.DB` -- register pgx as a standard driver instead:
+
+```go
+import (
+	"database/sql"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+)
+
+db, err := sql.Open("pgx", dsn)
+if err != nil {
+	// handle error
+}
+
+db.SetMaxOpenConns(20)
+db.SetMaxIdleConns(20)
+db.SetConnMaxLifetime(time.Hour)
+```
+
+`SetMaxOpenConns`, `SetMaxIdleConns`, and `SetConnMaxLifetime` are exactly
+the `database/sql` equivalents of `pgxpool.Config`'s `MaxConns`,
+`MinConns`-adjacent idle behavior, and `MaxConnLifetime` -- two different
+APIs expressing the same underlying idea: how many connections you keep
+open, and how long you let them live.
+
+### Parameterized Queries
+
+Every query you send to Postgres from Go should use placeholders for any
+value that comes from outside your program, never string concatenation.
+pgx uses Postgres's native `$1`, `$2`, ... positional placeholders:
+
+```go
+var name, email string
+row := pool.QueryRow(ctx,
+	"SELECT name, email FROM users WHERE id = $1", userID)
+if err := row.Scan(&name, &email); err != nil {
+	// handle error, including pgx.ErrNoRows
+}
+```
+
+<Warning title="String concatenation in SQL is a security incident waiting to happen">Building a query by concatenating a value into the SQL text lets an attacker supply input that changes the query's structure, not just its data -- this is SQL injection, one of the oldest and still most damaging web vulnerabilities. Compare the two approaches directly: `pool.QueryRow(ctx, "SELECT * FROM users WHERE email = '"+email+"'")` lets a value like `x' OR '1'='1` return every row in the table, while `pool.QueryRow(ctx, "SELECT * FROM users WHERE email = $1", email)` sends `email` as a separate, strictly-typed parameter that the Postgres wire protocol can never reinterpret as SQL syntax. Always use placeholders; never build a query string with `fmt.Sprintf` or `+` around a value that came from a request.</Warning>
+
+### Scanning Rows into Structs
+
+`database/sql` and pgx both give you rows one at a time; mapping columns
+onto a struct is a manual, explicit step -- there is no silent reflection
+happening on your behalf, which is exactly why the field order below must
+match the column order in the query:
+
+```go
+type User struct {
+	ID    int64
+	Name  string
+	Email string
+}
+
+func listUsers(ctx context.Context, pool *pgxpool.Pool) ([]User, error) {
+	rows, err := pool.Query(ctx,
+		"SELECT id, name, email FROM users ORDER BY id")
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return users, nil
+}
+```
+
+Checking `rows.Err()` after the loop is easy to forget and important not
+to: `rows.Next()` returning `false` means either "no more rows" or "an
+error interrupted iteration," and only `rows.Err()` tells you which.
+
+### Migrations
+
+Hand-running `CREATE TABLE` statements against production is how schemas
+drift out of sync with code. A migration tool tracks schema changes as
+ordered, version-controlled SQL files applied in sequence, with every
+change reversible. Two popular Go tools do this well:
+`github.com/golang-migrate/migrate` and `github.com/pressly/goose`. Both
+follow the same shape -- a pair of files per change, one to apply it and
+one to undo it. A `golang-migrate`-style pair for creating a users table:
+
+```sql
+-- 000001_create_users_table.up.sql
+CREATE TABLE users (
+	id         BIGSERIAL PRIMARY KEY,
+	name       TEXT NOT NULL,
+	email      TEXT NOT NULL UNIQUE,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+```sql
+-- 000001_create_users_table.down.sql
+DROP TABLE users;
+```
+
+You run these with the tool's CLI, `migrate -database $DSN -path
+./migrations up`, and the tool records which migrations have already run in
+a bookkeeping table so re-running it is safe. The value isn't the SQL --
+you could write that by hand -- it's that every environment, from a
+laptop to production, ends up with the exact same schema history, applied
+in the exact same order.
+
+### Transactions
+
+Anything that must succeed or fail as a unit -- moving money between two
+rows, for example -- belongs in a transaction. pgx's transaction handle
+follows the same `Commit`/`Rollback` shape you'll recognize from
+`database/sql`:
+
+```go
+func transferFunds(
+	ctx context.Context, pool *pgxpool.Pool, from, to int64, amount int,
+) error {
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx,
+		"UPDATE accounts SET balance = balance - $1 WHERE id = $2",
+		amount, from)
+	if err != nil {
+		return fmt.Errorf("debit: %w", err)
+	}
+
+	_, err = tx.Exec(ctx,
+		"UPDATE accounts SET balance = balance + $1 WHERE id = $2",
+		amount, to)
+	if err != nil {
+		return fmt.Errorf("credit: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+```
+
+The `defer tx.Rollback(ctx)` is the idiom to internalize: if the function
+returns early because of an error, the deferred rollback undoes whatever
+partial work happened. If `tx.Commit(ctx)` already succeeded, the deferred
+rollback runs against an already-closed transaction and simply returns a
+harmless error that you ignore -- it can never undo a commit that already
+landed.
+
+<DeepDive title="Why Rollback after Commit is safe">Once `tx.Commit` returns without error, the transaction is closed on both the client and server. Calling `Rollback` afterward finds nothing left to roll back and returns `pgx.ErrTxClosed`, which every idiomatic transaction wrapper discards. This is what makes `defer tx.Rollback(ctx)` safe to write unconditionally right after `BeginTx`, instead of threading a `committed bool` flag through every return path.</DeepDive>
+
+### Connection Pool Sizing
+
+Every Postgres server has a hard ceiling on simultaneous connections, set
+by `max_connections` in `postgresql.conf` (commonly 100 by default). That
+ceiling is shared across every client talking to that database instance --
+not per application. If your API runs behind a load balancer with ten
+replicas, and each replica's pool allows `MaxConns = 50`, you have offered
+Postgres up to 500 simultaneous connections against a server that might
+only accept 100. The database starts rejecting new connections, and every
+replica sees that as a random, intermittent failure that looks nothing
+like a capacity problem at first glance.
+
+The fix is arithmetic, not magic: size each pool as a fraction of
+`max_connections` divided by the number of replicas you expect to run,
+leaving headroom for other clients (migrations, admin tools, replicas
+doing their own housekeeping). `MaxConnLifetime` (or
+`SetConnMaxLifetime`) matters too -- connections that live forever can
+outlast a Postgres failover or a load balancer's view of a healthy
+backend, so recycling them periodically (an hour is a common default)
+keeps the pool honest about which connections are actually still good.
+
+<Warning title="Exhausting max_connections is a production incident, not a theoretical risk">A pool sized without checking the database's own connection ceiling doesn't fail gracefully -- it fails as a spike of `sorry, too many clients already` errors across every replica at once, usually under exactly the traffic conditions you can least afford it. Always size `MaxConns` against Postgres's real `max_connections`, multiplied by your replica count, not against how many connections a single instance would like to have in isolation.</Warning>
+
+<Axiom>A connection pool is a promise to the database about how much of it you'll ask for at once -- break that promise and every client pays for it.</Axiom>
+
+### Key Takeaways
+
+- `database/sql` is Go's driver-agnostic interface; `pgx/v5` is the modern
+  recommended Postgres driver, usable either through its native `pgxpool`
+  or through the `database/sql`-compatible `pgx/v5/stdlib` adapter.
+- Always send external values as query parameters (`$1`, `$2`, ...), never
+  by concatenating them into the SQL string -- that gap is SQL injection.
+- Scanning rows into structs is explicit and manual; always check
+  `rows.Err()` after a `for rows.Next()` loop, not just each `Scan` error.
+- Track schema changes with a migration tool (`golang-migrate` or `goose`)
+  instead of hand-applied SQL, so every environment shares one history.
+- Wrap multi-statement writes in a transaction, and make `defer
+  tx.Rollback(ctx)` immediately after `BeginTx` a reflex.
+- Size your connection pool against Postgres's actual `max_connections`,
+  multiplied by how many replicas of your service run at once -- getting
+  this wrong is one of the most common causes of real production outages.

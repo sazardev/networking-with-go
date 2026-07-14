@@ -1,0 +1,235 @@
+---
+id: "[6.43.0]"
+title: "Deploying to Google Cloud"
+---
+
+# Deploying to Google Cloud
+
+Chapter 6.38 covered building a Go API into a small, distroless container image with a multi-stage Dockerfile, and Chapter 6.17 covered the general shape of running that image reliably at scale. This chapter takes that same image and deploys it to Google Cloud specifically: Cloud Run as the default target for most Go APIs, and Google Kubernetes Engine (GKE) as the option to reach for once a team's requirements genuinely outgrow it.
+
+---
+
+## Why Cloud Run Fits a Containerized Go API
+
+Cloud Run is a fully managed platform for running stateless containers that respond to HTTP requests. It sits deliberately between "upload a zip and hope" function platforms and operating a full Kubernetes cluster:
+
+- **Serverless containers** — you supply an image; Google schedules it, patches the underlying host, and handles the kernel. There is no node to manage and no cluster to upgrade.
+- **Scale to zero** — with no incoming traffic, Cloud Run can reduce a service to zero running instances, and billing drops with it.
+- **Pay per request** — you're billed for CPU and memory only while a container instance is actually handling a request, not for idle capacity sitting around waiting for traffic.
+
+A Go binary is a particularly good fit here: it starts in milliseconds and needs no language runtime baked into the image. The distroless image from Chapter 6.38 is already small, which matters directly for cold starts — how quickly a fresh instance can begin serving a request when Cloud Run has to spin one up from zero.
+
+---
+
+## Building the Image
+
+Cloud Run deploys a container image, not source code, so the first step is getting that Dockerfile from Chapter 6.38 into a registry. Artifact Registry is Google's current recommended registry (it replaced the older Container Registry):
+
+```sh
+gcloud artifacts repositories create myapi-repo \
+    --repository-format=docker \
+    --location=us-central1
+```
+
+From there, either build with Cloud Build (no local Docker daemon required) and push in one step:
+
+```sh
+gcloud builds submit --tag \
+    us-central1-docker.pkg.dev/PROJECT_ID/myapi-repo/myapi:1.0.0
+```
+
+or build locally with `docker build` and push explicitly:
+
+```sh
+docker build -t \
+    us-central1-docker.pkg.dev/PROJECT_ID/myapi-repo/myapi:1.0.0 .
+
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+docker push \
+    us-central1-docker.pkg.dev/PROJECT_ID/myapi-repo/myapi:1.0.0
+```
+
+Both approaches produce the same artifact: a tagged image sitting in Artifact Registry, ready for `gcloud run deploy` to reference.
+
+<DeepDive title="Skipping the explicit build step">`gcloud run deploy myapi --source .` builds and deploys in a single command — Cloud Build detects the Dockerfile (or, if there isn't one, uses Buildpacks to build a Go binary automatically) and pushes the result before deploying it. It's convenient for early iteration, but an explicit, tagged build step as shown above is worth keeping once you care about reproducible deploys, since it gives you an immutable image reference you can redeploy, roll back to, or promote between environments.</DeepDive>
+
+---
+
+## Deploying to Cloud Run
+
+```sh
+gcloud run deploy myapi \
+    --image=us-central1-docker.pkg.dev/PROJECT_ID/myapi-repo/myapi:1.0.0 \
+    --region=us-central1 \
+    --platform=managed \
+    --allow-unauthenticated \
+    --port=8080 \
+    --memory=256Mi \
+    --cpu=1 \
+    --concurrency=80 \
+    --min-instances=0 \
+    --max-instances=10 \
+    --set-env-vars=LOG_LEVEL=info
+```
+
+Most of these map directly onto the `Config` struct from Chapter 6.17: `--port` matches whatever the binary listens on internally, `--set-env-vars` populates the same environment variables `LoadConfig` already reads, and `--concurrency` sets how many concurrent requests a single instance is allowed to receive before Cloud Run routes the next one to a different (or new) instance. `--allow-unauthenticated` makes the URL public; omit it for a service that should only be reachable from other Google Cloud services or through IAM-authenticated callers.
+
+Cloud Run prints an HTTPS URL on success, and every subsequent `gcloud run deploy` against the same service name creates a new revision — Cloud Run shifts traffic to it (100% by default, or gradually if you configure traffic splitting) and keeps the previous revision around so a rollback is a single command away.
+
+---
+
+## Environment Variables and Secrets
+
+Plain configuration (log level, feature flags, region) fits comfortably in `--set-env-vars`. Anything sensitive — a database password, a JWT signing key — belongs in Secret Manager instead, never in a plain environment variable visible in the service's configuration:
+
+```sh
+printf '%s' 'a-real-generated-secret-value' | \
+    gcloud secrets create db-password --data-file=-
+
+gcloud secrets add-iam-policy-binding db-password \
+    --member='serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com' \
+    --role='roles/secretmanager.secretAccessor'
+```
+
+Then reference the secret by name when deploying, and Cloud Run mounts its current value as an environment variable inside the running container:
+
+```sh
+gcloud run deploy myapi \
+    --image=us-central1-docker.pkg.dev/PROJECT_ID/myapi-repo/myapi:1.0.0 \
+    --set-secrets=DB_PASSWORD=db-password:latest
+```
+
+`:latest` always resolves to the newest secret version at deploy time; pinning a specific version number instead gives you an immutable reference, at the cost of having to redeploy explicitly whenever the secret rotates.
+
+---
+
+## Connecting to Cloud SQL
+
+A Postgres-backed Go API typically talks to a managed Cloud SQL instance rather than a database it operates itself. Create the instance and database:
+
+```sh
+gcloud sql instances create myapi-db \
+    --database-version=POSTGRES_15 \
+    --tier=db-f1-micro \
+    --region=us-central1
+
+gcloud sql databases create myapi --instance=myapi-db
+```
+
+Cloud Run has a built-in Cloud SQL integration: passing `--add-cloudsql-instances` attaches a managed Cloud SQL Auth Proxy sidecar that Cloud Run runs alongside your container, and that sidecar exposes the database over a Unix domain socket at a fixed path — your Go code never needs to run the proxy itself or manage a TLS connection to the database directly:
+
+```sh
+gcloud run deploy myapi \
+    --image=us-central1-docker.pkg.dev/PROJECT_ID/myapi-repo/myapi:1.0.0 \
+    --add-cloudsql-instances=PROJECT_ID:us-central1:myapi-db \
+    --set-env-vars=DB_SOCKET=/cloudsql/PROJECT_ID:us-central1:myapi-db \
+    --set-secrets=DB_PASSWORD=db-password:latest
+```
+
+The Cloud Run service's runtime service account also needs the `roles/cloudsql.client` IAM role granted before the socket connection is authorized. On the Go side, the DSN points at that socket path instead of a host and port:
+
+```go
+dsn := fmt.Sprintf(
+    "host=%s user=%s password=%s dbname=%s sslmode=disable",
+    os.Getenv("DB_SOCKET"), os.Getenv("DB_USER"),
+    os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"),
+)
+db, err := sql.Open("pgx", dsn)
+```
+
+Outside of Cloud Run — running the same binary locally, or on a VM without the built-in integration — the Cloud SQL Auth Proxy binary provides the equivalent socket (or a local TCP port) yourself:
+
+```sh
+./cloud-sql-proxy PROJECT_ID:us-central1:myapi-db --port=5432
+```
+
+pointing your local `DATABASE_URL` at `localhost:5432` exactly as if Postgres were running on your machine, while the proxy handles authenticated, encrypted transport to the real instance in the background.
+
+<Warning title="Minimum instances quietly cancel scale-to-zero">Setting `--min-instances` above zero keeps that many instances running around the clock specifically so the next request has no cold start to pay for — which also means you're billed for them around the clock, whether or not any traffic arrives. For a low-traffic internal API, `--min-instances=1` can turn what should be a near-zero monthly bill into the cost of a small VM running permanently, defeating the entire reason to choose Cloud Run over a fixed-size server. Reach for a nonzero minimum deliberately, for a specific latency requirement, not as a default.</Warning>
+
+---
+
+## Service Accounts and Least Privilege
+
+Every Cloud Run service runs as an identity — by default, the project's shared compute service account, which typically holds broad project-level permissions it doesn't need. A dedicated service account scoped to only what this specific API touches (Cloud SQL, one Secret Manager secret, nothing else) limits the blast radius if the container is ever compromised:
+
+```sh
+gcloud iam service-accounts create myapi-runtime \
+    --display-name='myapi Cloud Run runtime identity'
+
+gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member='serviceAccount:myapi-runtime@PROJECT_ID.iam.gserviceaccount.com' \
+    --role='roles/cloudsql.client'
+
+gcloud run deploy myapi \
+    --image=us-central1-docker.pkg.dev/PROJECT_ID/myapi-repo/myapi:1.0.0 \
+    --service-account=myapi-runtime@PROJECT_ID.iam.gserviceaccount.com
+```
+
+This is the same principle of least privilege from Chapter 6.10's security checklist, applied to infrastructure identity rather than application-level roles: grant exactly the roles this one service needs (`roles/cloudsql.client`, `roles/secretmanager.secretAccessor` on the specific secret), and nothing broader.
+
+---
+
+## Revisions, Rollouts, and Rollbacks
+
+Every `gcloud run deploy` creates a new, immutable revision without deleting the one before it. That gives you traffic splitting and instant rollback essentially for free:
+
+```sh
+gcloud run services update-traffic myapi \
+    --region=us-central1 \
+    --to-revisions=myapi-00042-abc=10,myapi-00041-xyz=90
+```
+
+sends 10% of traffic to a new revision while the previous one keeps serving the rest — a canary rollout without any extra infrastructure. If the new revision misbehaves, a rollback is just another traffic update pointing 100% back at the known-good one:
+
+```sh
+gcloud run services update-traffic myapi \
+    --region=us-central1 \
+    --to-revisions=myapi-00041-xyz=100
+```
+
+Cloud Run's request logs and container logs flow into Cloud Logging automatically, which is worth pairing with the structured logging and metrics patterns from Chapter 6.16 — the same `slog` output your API already emits shows up searchable in Cloud Logging with no extra shipping agent to configure.
+
+---
+
+## When to Move to GKE
+
+Cloud Run's simplicity comes from giving up some control, and a few situations push teams toward GKE instead:
+
+- **Networking control**: Cloud Run's networking model is deliberately constrained (a VPC connector for private networking, but no custom CNI, no fine-grained pod-to-pod network policy, no service mesh sidecar of your choosing). GKE gives you a real Kubernetes networking stack.
+- **Existing Kubernetes investment**: a team already running GKE for other services often prefers one more `Deployment` in an existing cluster over a second platform to operate, monitor, and secure.
+- **Specific autoscaling needs**: Cloud Run scales on concurrent requests per instance; GKE's `HorizontalPodAutoscaler` can scale on CPU, memory, or a custom metric (queue depth, requests-per-second from Prometheus), and a `VerticalPodAutoscaler` or custom scheduling can address needs Cloud Run's simpler model doesn't expose.
+
+GKE also comes in two operating modes worth knowing apart: Standard mode, where you choose machine types and manage node pools directly, and Autopilot mode, where Google manages the nodes entirely and you're billed per pod resource request instead — a middle ground that keeps the full Kubernetes API surface (custom resources, service mesh, fine-grained networking) while removing node-level operations, closer to Cloud Run's operational simplicity without its architectural constraints.
+
+A minimal GKE cluster to run the same image looks like:
+
+```sh
+gcloud container clusters create myapi-cluster \
+    --region=us-central1 \
+    --num-nodes=3
+```
+
+(add `--autopilot` in place of `--num-nodes` to create an Autopilot cluster instead) with the `Deployment` and `Service` from Chapter 6.17 — and the deeper replica, probe, and disruption-budget patterns from Chapter 6.44 — applied against it with `kubectl apply`.
+
+<Axiom>Cloud Run trades control for simplicity; GKE trades simplicity for control. Neither is the "better" platform in the abstract — the right choice is whichever trade a specific team's constraints, and a specific API's traffic pattern, actually call for.</Axiom>
+
+---
+
+## Real-World Example: A Team's First Six Months
+
+A small team ships their Go API to Cloud Run with `--min-instances=0`: near-zero cost during the early, low-traffic weeks, since scale-to-zero means idle time is genuinely free. As usage grows, they set `--min-instances=1` in the region with the most latency-sensitive traffic, accepting a small fixed cost specifically to remove cold starts from their busiest hours — a deliberate trade, made after measuring cold-start latency, not a default flipped out of habit. Secrets move into Secret Manager the same week they add a real database, and Cloud SQL connects over the built-in Unix-socket integration rather than the team hand-rolling proxy management.
+
+A year later, the same team adds a second internal service that needs to call the first one over gRPC with mutual TLS, plus a background worker that needs to share a network namespace with the API for a sidecar-based log shipper — both requirements Cloud Run's networking model doesn't accommodate cleanly. That's the point at which migrating the same container image onto a GKE Standard cluster, reusing the Kubernetes manifests from Chapter 6.44, is the right call — not because Cloud Run failed them, but because their requirements genuinely grew past what a serverless container platform is designed to expose.
+
+---
+
+## Key Takeaways
+
+- Cloud Run runs a container image directly, scales to zero on idle traffic, and bills per request — a strong default for most Go APIs.
+- Build with `gcloud builds submit` or a local `docker build` + push to Artifact Registry, then `gcloud run deploy --image=...`.
+- Keep plain config in `--set-env-vars` and sensitive values in Secret Manager, referenced with `--set-secrets`.
+- `--add-cloudsql-instances` gives Cloud Run a managed Unix-socket connection to Cloud SQL without running a proxy yourself.
+- Move to GKE when networking control, an existing Kubernetes footprint, or custom autoscaling logic outgrow what Cloud Run exposes.
+- A nonzero `--min-instances` is a deliberate cost-versus-latency trade, not a safe-looking default.

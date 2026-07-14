@@ -1,0 +1,246 @@
+---
+id: "[6.37.0]"
+title: "Working with SQLite in Go"
+---
+
+# Working with SQLite in Go
+
+The previous chapter treated PostgreSQL as the default choice for a Go API's
+storage. It is a good default, but it is not the only reasonable one.
+SQLite -- an entire relational database engine compiled into a single
+library, with no separate server process -- fits a real, common class of
+Go services better than a client-server database ever could. This chapter
+covers when that's true, the practical tradeoffs between Go's two main
+SQLite drivers, and a complete, correct working example.
+
+### When SQLite Is the Right Choice
+
+SQLite stores an entire database as one file on disk, and the "database
+server" is just your own process linking against the SQLite library.
+That shape is a strength in several situations an API author runs into
+constantly:
+
+- **Embedded, single-binary deployments.** If you want to ship one binary
+  and a data file, with no separate database process to install, configure,
+  and keep running, SQLite removes an entire category of operational work.
+- **CLI tools.** A command-line tool that needs local, structured state
+  (a cache, a history log, a queue) rarely justifies running Postgres
+  alongside it.
+- **Tests.** An in-memory SQLite database gives you a real SQL engine in
+  your test suite with none of the setup cost of a Postgres container --
+  more on this below.
+- **Low-traffic services and edge deployments.** A service running on a
+  single small VM, a Raspberry Pi, or at the edge close to users often has
+  no meaningful multi-writer load to justify a client-server database at
+  all.
+
+### When SQLite Is the Wrong Choice
+
+SQLite's core constraint is that only **one writer** can hold the database
+lock at a time, across the entire file, regardless of how many separate
+connections or processes are trying to write concurrently. Postgres
+solves concurrent writes with row-level locking and MVCC across many
+backend processes; SQLite solves it by serializing all writes into a
+single queue. Reads can generally proceed concurrently with a writer
+(especially in WAL mode, covered below), but two writers never truly run
+at once -- the second one blocks, or fails with `SQLITE_BUSY`, until the
+first releases the lock.
+
+That single-writer model is fine for a service with light write volume
+from one process. It becomes the wrong choice the moment you need multiple
+independent processes writing heavily and concurrently -- a fleet of API
+replicas all writing to the same SQLite file will spend their time
+contending for the write lock instead of doing useful work, something a
+proper client-server database is built to avoid.
+
+<Axiom>SQLite scales down brilliantly and scales out badly -- know which direction your service is going to move before you pick it.</Axiom>
+
+### Two Drivers, One Real Tradeoff
+
+Go has two mainstream SQLite drivers, and the choice between them is a
+real engineering tradeoff, not a matter of taste:
+
+- **`github.com/mattn/go-sqlite3`** wraps the actual C SQLite library via
+  cgo. It is mature and battle-tested, but cgo means every build needs a C
+  compiler for the target platform. Cross-compiling (building a Linux
+  binary from a Mac, for example) requires a full cross C toolchain, and
+  `CGO_ENABLED=1` disables some of the simple, static-binary build habits
+  Go developers rely on elsewhere in this book.
+- **`modernc.org/sqlite`** is SQLite's C source mechanically translated
+  into pure Go. It has no cgo dependency at all, so `GOOS=linux
+  GOARCH=arm64 go build` just works, the same as any other pure-Go
+  program, with no cross toolchain required. The tradeoff is performance:
+  the translated code is generally somewhat slower than the original,
+  hand-tuned C, though for the low-to-moderate traffic where SQLite makes
+  sense in the first place, that gap rarely matters in practice.
+
+For most new Go services, especially anything you plan to cross-compile or
+ship as a container built with `CGO_ENABLED=0`, `modernc.org/sqlite` is the
+easier and safer starting point. Reach for `mattn/go-sqlite3` only if you
+have already measured a real performance gap that matters for your
+workload.
+
+### A Complete Working Example
+
+Install the pure-Go driver:
+
+```sh
+go get modernc.org/sqlite
+```
+
+The driver registers itself under the name `"sqlite"`. Everything else is
+plain `database/sql`:
+
+```go
+package main
+
+import (
+	"database/sql"
+	"log"
+
+	_ "modernc.org/sqlite"
+)
+
+func main() {
+	db, err := sql.Open("sqlite", "app.db")
+	if err != nil {
+		log.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		log.Fatalf("enable wal: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		log.Fatalf("busy timeout: %v", err)
+	}
+
+	schema := `
+	CREATE TABLE IF NOT EXISTS notes (
+		id    INTEGER PRIMARY KEY AUTOINCREMENT,
+		title TEXT NOT NULL,
+		body  TEXT NOT NULL
+	);`
+	if _, err := db.Exec(schema); err != nil {
+		log.Fatalf("create table: %v", err)
+	}
+
+	res, err := db.Exec(
+		"INSERT INTO notes (title, body) VALUES (?, ?)",
+		"Groceries", "Milk, eggs, bread",
+	)
+	if err != nil {
+		log.Fatalf("insert: %v", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		log.Fatalf("last insert id: %v", err)
+	}
+
+	var title, body string
+	row := db.QueryRow("SELECT title, body FROM notes WHERE id = ?", id)
+	if err := row.Scan(&title, &body); err != nil {
+		log.Fatalf("scan: %v", err)
+	}
+	log.Printf("note %d: %s - %s", id, title, body)
+}
+```
+
+This is ordinary `database/sql` code, the same shapes used against
+Postgres in the previous chapter: `db.Exec` for statements that don't
+return rows, `db.QueryRow` for a single row, `Scan` to pull columns into Go
+variables, and `?` as SQLite's placeholder syntax (rather than Postgres's
+`$1`, `$2`, ...). Swapping the underlying database rarely means rewriting
+your query logic -- it means changing the driver import and, occasionally,
+the placeholder style.
+
+### Enabling WAL Mode
+
+By default, SQLite uses a rollback-journal mode where writers and readers
+briefly block each other. **Write-Ahead Logging** (WAL) mode changes that:
+writes go to a separate log file first, and readers keep reading the
+last-committed state of the main database without waiting for an
+in-progress write to finish. The practical effect is that a Go service
+with one writer and several concurrent readers -- a very common API
+shape -- stops seeing readers stall behind writes.
+
+Turning it on is one statement, executed once:
+
+```go
+db.Exec("PRAGMA journal_mode=WAL;")
+```
+
+Unlike most SQLite pragmas, `journal_mode` is stored in the database file
+itself and persists across restarts and reconnections, so you don't need
+to set it on every new connection the way you would, say,
+`PRAGMA foreign_keys=ON`. Setting `busy_timeout` alongside it is worth
+doing too: it tells SQLite to retry quietly for the given number of
+milliseconds when it hits a lock, instead of immediately returning
+`SQLITE_BUSY` to your application code, which turns a normal, brief
+contention moment into a real, handled error only if it actually persists.
+
+<Warning title="A blank busy_timeout makes contention look like a bug">Without `PRAGMA busy_timeout`, any write that overlaps another in-flight write fails immediately with `SQLITE_BUSY`, and that error surfaces in your Go code as a hard failure your handler has to deal with on every request. Setting a busy timeout of a few seconds turns brief, ordinary lock contention into an invisible short wait instead of a user-facing error -- do this on every connection you open, not just the first one you happen to test with.</Warning>
+
+### Sizing the Connection Pool
+
+The previous chapter spent real effort sizing a Postgres pool against the
+server's `max_connections`. SQLite flips that problem around: because only
+one writer can hold the lock at a time, opening dozens of connections to
+the same file doesn't buy you concurrent writes the way it would against
+Postgres -- it mostly buys you connections that queue up behind each
+other. A common, deliberately conservative setting for a Go service
+writing to SQLite is:
+
+```go
+db.SetMaxOpenConns(1)
+```
+
+Forcing a single connection sidesteps `SQLITE_BUSY` entirely for writes
+issued from that process, at the cost of serializing every query, reads
+included, through that one connection. If your workload is read-heavy and
+you've already enabled WAL mode, a small pool (a handful of connections)
+with a healthy `busy_timeout` is usually a better balance: readers get to
+run concurrently, and the occasional writer-vs-writer collision waits out
+the timeout instead of failing outright. Whichever you choose, size it
+deliberately -- copying a Postgres-sized pool of twenty or fifty
+connections onto a SQLite file is a good way to manufacture lock
+contention that wouldn't otherwise exist.
+
+### Backups Are Just File Copies -- Almost
+
+Because a SQLite database is a single file, backing it up sounds as simple
+as `cp app.db backup.db`. That's true only when nothing is writing to the
+file at the moment you copy it; in WAL mode, a plain file copy can miss
+changes still sitting in the `-wal` file alongside the main database,
+producing a backup that looks fine but is subtly stale. Two safer options
+exist: SQLite's own `VACUUM INTO 'backup.db'` statement, which produces a
+consistent, compacted copy from Go with a single `db.Exec` call, or a
+purpose-built continuous replication tool like `benbjohnson/litestream`,
+which streams every WAL change to object storage (S3 or compatible) in
+near real time and can restore a database to any recent point. For
+anything beyond a personal project, prefer one of those over a raw file
+copy.
+
+### Testing with an In-Memory Database
+
+<DeepDive title="In-memory SQLite for fast repository tests">Chapter 6.13 covered testing and mocking APIs, including the tradeoff between mocking a data layer and exercising a real one. SQLite's `:memory:` special filename gives you a third option that is often better than either: `sql.Open("sqlite", ":memory:")` creates a fresh, empty database that lives only for the lifetime of the connection, with zero setup cost and no Docker container to start. Your repository code runs against a real SQL engine -- real constraints, real transactions, real query syntax -- instead of a hand-written mock that can silently drift from what the production database actually enforces. There is one sharp edge: `database/sql` pools multiple connections, and by default each new connection to `:memory:` gets its own separate, empty database, so a pooled test that opens more than one connection can appear to "lose" rows it just inserted. The fix is either `db.SetMaxOpenConns(1)` in tests, so every query shares one connection, or a shared-cache DSN such as `"file::memory:?cache=shared"`, which lets multiple connections see the same in-memory database. Either way, in-memory SQLite turns repository tests from slow, container-dependent integration tests into tests that run in milliseconds as part of `go test ./...`.</DeepDive>
+
+### Key Takeaways
+
+- SQLite fits embedded, single-binary services, CLI tools, tests, and
+  low-traffic or edge deployments; it is the wrong choice once multiple
+  processes need heavy, concurrent write access, because only one writer
+  can hold the database lock at a time.
+- `modernc.org/sqlite` is pure Go and cross-compiles trivially;
+  `mattn/go-sqlite3` wraps real C SQLite via cgo, which is mature but
+  complicates cross-compilation and static builds.
+- Both drivers work through the same `database/sql` interface you already
+  know from Postgres -- only the driver import and placeholder syntax
+  (`?` instead of `$1`) change.
+- Enable `PRAGMA journal_mode=WAL` so concurrent readers don't block
+  behind an in-progress writer, and pair it with `PRAGMA busy_timeout` so
+  transient lock contention doesn't surface as a hard error.
+- An in-memory SQLite database (`:memory:`, or `file::memory:?cache=shared`
+  for multiple pooled connections) is a fast, realistic way to test
+  repository code without standing up a real database server.

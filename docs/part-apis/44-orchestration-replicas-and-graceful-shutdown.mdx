@@ -1,0 +1,217 @@
+---
+id: "[6.44.0]"
+title: "Orchestration, Replicas, and Graceful Shutdown"
+---
+
+# Orchestration, Replicas, and Graceful Shutdown
+
+Chapter 6.17 introduced running multiple replicas behind a load balancer and sketched a first graceful shutdown using `signal.NotifyContext` and `http.Server.Shutdown`. This chapter goes deeper on both halves of that picture: exactly what running replicas demands from how you write the API, and the precise, complete shutdown sequence a production Go service needs to survive rolling deploys, node drains, and autoscaling events without dropping a single in-flight request.
+
+---
+
+## Why Replicas, and What They Demand
+
+A single Go process can hold open thousands of concurrent connections, so replicas aren't primarily about raw throughput — they're about failure isolation. One replica crashing, one node rebooting, one instance being replaced mid-deploy should never be visible to a client as downtime, and that's only true if a load balancer can send the next request to *any* replica and get an identical answer.
+
+That constraint reaches back into how the API is written, not just how it's deployed: no handler may assume a previous request from the same client landed on the same process. Concretely, that means no in-memory session map, no local-disk cache of uploaded files, no "the counter is at 42 in this process's memory" logic — any state that needs to survive between requests belongs in a shared store (Redis, Postgres, object storage) that every replica reaches identically. Chapter 6.17 covers this statelessness requirement in more detail; the rest of this chapter assumes it and focuses on the orchestration mechanics built on top of it.
+
+A session lookup makes the difference concrete. The version below only works as long as every request from the same client happens to land on the same replica — true on a developer's laptop with one process, false the moment there are three replicas and a load balancer:
+
+```go
+// Fragile: state lives only in this one process's memory.
+var sessions = map[string]Session{}
+
+func currentSession(r *http.Request) (Session, bool) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		return Session{}, false
+	}
+	s, ok := sessions[cookie.Value]
+	return s, ok
+}
+```
+
+A replica that never saw the request that created a given session simply doesn't have it — the user gets logged out at random, depending on which replica the load balancer happens to pick next. Moving the lookup to a shared store fixes it for any number of replicas, present or future:
+
+```go
+// Correct: any replica can serve any request identically.
+func currentSession(ctx context.Context, r *http.Request,
+	rdb *redis.Client) (Session, bool) {
+
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		return Session{}, false
+	}
+	data, err := rdb.Get(ctx, "session:"+cookie.Value).Bytes()
+	if err != nil {
+		return Session{}, false
+	}
+	var s Session
+	if json.Unmarshal(data, &s) != nil {
+		return Session{}, false
+	}
+	return s, true
+}
+```
+
+---
+
+## A Real Deployment, Probes, and a Disruption Budget
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapi
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: myapi}
+  template:
+    metadata:
+      labels: {app: myapi}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: myapi
+          image: registry.example.com/myapi:1.5.0
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8080}
+            periodSeconds: 5
+            failureThreshold: 1
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+```
+
+The two probes ask genuinely different questions, and mixing them up is one of the more common Kubernetes mistakes:
+
+| Aspect | Liveness probe (`/healthz`) | Readiness probe (`/readyz`) |
+|---|---|---|
+| Question asked | Is this process alive at all? | Can this pod handle traffic *right now*? |
+| Failure action | Kubernetes kills and restarts the pod | Kubernetes removes the pod from the Service |
+| Should it check dependencies? | No — a slow database shouldn't restart the app | Yes — not ready if a dependency is unreachable |
+| Typical failure mode caught | Deadlock, crashed event loop, stuck process | Startup still loading, or draining during shutdown |
+
+A liveness check that also verifies the database connection is a classic bug: if the database has a brief outage, every replica's liveness probe fails at once, Kubernetes restarts all of them simultaneously, and a database hiccup turns into a full outage of the API itself. Liveness should answer only "is this process fundamentally stuck," which is why `/healthz` below does nothing but respond:
+
+```go
+func healthzHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+}
+```
+
+`/readyz`, by contrast, is exactly where dependency checks and the shutdown-draining logic below belong:
+
+```go
+var ready atomic.Bool
+
+func readyzHandler(w http.ResponseWriter, r *http.Request) {
+	if !ready.Load() {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ready"))
+}
+```
+
+Alongside the two probes, a `PodDisruptionBudget` protects the replica count during *voluntary* disruptions — a node drain during a cluster upgrade, or the cluster autoscaler consolidating nodes — as opposed to a pod simply crashing, which no PDB can prevent:
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: myapi-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: {app: myapi}
+```
+
+With `minAvailable: 2` set against 3 replicas, Kubernetes will refuse to voluntarily evict a pod if doing so would drop the available count below two — a node drain simply waits, evicting one pod at a time as replacements become ready, instead of taking down two-thirds of the API's capacity at once.
+
+<DeepDive title="Rolling updates use the same readiness signal">A rolling update (a new `Deployment` revision replacing `myapi:1.4.0` with `myapi:1.5.0`) starts a new pod, waits for its readiness probe to pass before routing any traffic to it, then terminates one old pod through the graceful shutdown sequence below, and repeats. The `PodDisruptionBudget` applies here too, so a rollout that would otherwise take down too many replicas at once is throttled to respect it.</DeepDive>
+
+---
+
+## Graceful Shutdown, Precisely
+
+When Kubernetes terminates a pod — during a rollout, a scale-down, or a node drain — it sends `SIGTERM` and starts a clock: `terminationGracePeriodSeconds` later, if the process hasn't exited on its own, it receives `SIGKILL`, which cannot be caught or cleaned up after. Everything in this section exists to make sure the process finishes on its own, well inside that window.
+
+```go
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", healthzHandler)
+	mux.HandleFunc("/readyz", readyzHandler)
+	mux.Handle("/", apiHandler())
+
+	srv := &http.Server{Addr: ":8080", Handler: mux}
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(), syscall.SIGTERM, syscall.SIGINT,
+	)
+	defer stop()
+
+	ready.Store(true)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("listen: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("shutdown signal received, failing readiness")
+
+	// Fail readiness immediately. The Service's endpoint list
+	// updates asynchronously across the cluster, so a short
+	// pause here bridges the gap before new traffic stops
+	// arriving, without yet refusing requests already in flight.
+	ready.Store(false)
+	time.Sleep(5 * time.Second)
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(), 20*time.Second,
+	)
+	defer cancel()
+
+	log.Println("draining in-flight requests")
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("forced shutdown after deadline: %v", err)
+	} else {
+		log.Println("shutdown complete")
+	}
+}
+```
+
+Reading this top to bottom: `signal.NotifyContext` turns `SIGTERM` (and, for local testing, `Ctrl+C` as `SIGINT`) into a cancelable `context.Context` instead of the process dying immediately — `ctx.Done()` closes the instant either signal arrives. The server runs in a goroutine so `main` is free to block on that context. The moment a signal arrives, `ready.Store(false)` makes `/readyz` start failing, so the next readiness probe tells Kubernetes to stop routing new requests to this pod — but the process does not stop serving yet, since requests already routed here need to complete. The five-second sleep exists specifically to cover the propagation delay between the readiness probe failing and every kube-proxy and load balancer in the cluster actually removing this pod's endpoint. Only after that does `srv.Shutdown(shutdownCtx)` run: it stops accepting new connections and blocks until every in-flight request finishes or the 20-second deadline expires, whichever comes first — a request still running past the deadline is cut off, but everything that finished in time got a real response instead of a dropped connection.
+
+Add up the worst case: 5 seconds of pre-drain sleep plus 20 seconds of shutdown deadline is 25 seconds, which is why the `Deployment` above sets `terminationGracePeriodSeconds: 30` — comfortably longer than the shutdown logic can possibly take, with a small margin left over.
+
+<DeepDive title="A preStop hook does the same job, one layer out">Instead of (or in addition to) an in-process sleep, a container `lifecycle.preStop` hook running `sleep 5` achieves the same bridging effect from outside the application: Kubernetes runs `preStop` to completion *before* it sends `SIGTERM` at all, so the pod keeps serving normally through the readiness-propagation window without any application code needing to know about it. Either approach works; the important part is that something bridges that gap, since without it a rolling update can drop a small percentage of requests on almost every deploy.</DeepDive>
+
+<Warning title="A grace period shorter than your shutdown logic is a silent SIGKILL">If `terminationGracePeriodSeconds` is left at its default of 30 seconds but the application's own drain sleep plus shutdown deadline can take 40, Kubernetes sends `SIGKILL` ten seconds before the process would have finished on its own — killing it mid-request, with no chance for `Shutdown` to return or for any cleanup code after it to run. This is easy to miss in testing, since it usually only shows up under real traffic with genuinely slow in-flight requests, and it presents as intermittent dropped requests during deploys that look like an unrelated bug. Always size the grace period a few seconds above the true worst-case shutdown time, not the average one.</Warning>
+
+<Axiom>Replicas make an API available; graceful shutdown makes replacing one of them invisible. A fleet of stateless, horizontally scaled instances is only as reliable as the shutdown sequence each individual instance runs when its turn comes to be replaced.</Axiom>
+
+---
+
+## Real-World Example: A Node Drain During a Cluster Upgrade
+
+A cluster administrator runs `kubectl drain node-7` to take a node out of service for a Kubernetes version upgrade. `node-7` happens to be running one of `myapi`'s three pods. The drain command asks Kubernetes to evict that pod; the `PodDisruptionBudget` with `minAvailable: 2` allows the eviction, since the other two replicas on different nodes stay up throughout. Eviction triggers exactly the same sequence a rolling deploy would: the pod's `SIGTERM` handler fires, `/readyz` starts failing immediately, the Service stops routing new traffic to it over the next few seconds, and `srv.Shutdown` drains whatever was already in flight — all comfortably inside the 30-second grace period. The scheduler places a replacement pod on a healthy node, its readiness probe passes once it's actually able to serve, and traffic resumes flowing to it. From outside the cluster, a client making requests throughout the entire drain sees nothing except perhaps a few milliseconds of added latency on the requests that happened to be mid-flight on `node-7` at the moment the drain began — no errors, no dropped connections, because every piece of the mechanism above did exactly the job it was built for.
+
+---
+
+## Key Takeaways
+
+- Multiple replicas buy availability and horizontal scale, but only if every replica is interchangeable — no per-process state a client's next request might depend on.
+- Liveness answers "restart me if this fails"; readiness answers "don't send me traffic yet." Never let a liveness probe depend on an external service.
+- A `PodDisruptionBudget` protects replica count during voluntary disruptions like node drains and cluster upgrades, not against pods simply crashing.
+- `signal.NotifyContext` on `SIGTERM`, flipping readiness false, a short propagation-bridging sleep, then `http.Server.Shutdown(ctx)` with a bounded deadline is the complete, correct shutdown sequence.
+- Set `terminationGracePeriodSeconds` comfortably above the worst-case total of that sequence — never equal to it, and never left at a framework default without checking.

@@ -216,6 +216,54 @@ fmt.Println(<-messages)
 
 [Exercise: Goroutines and Channels](../../exercises/part2/02-goroutines-channels/main.go)
 
+### 9. Goroutines Meet the Network: The Accept Loop
+
+Every goroutine and channel concept from Go Fundamentals, Chapter 8,
+exists in this book for one killer use case: the accept loop. A
+`net.Listener`'s `Accept()` blocks until a client connects, hands back a
+`net.Conn`, and then blocks again waiting for the next one — spawning a
+goroutine per connection lets the loop go straight back to blocking
+instead of waiting for the current client to finish first:
+
+```go
+ln, err := net.Listen("tcp", ":9000")
+if err != nil {
+    log.Fatal(err)
+}
+for {
+    conn, err := ln.Accept()
+    if err != nil {
+        log.Println("accept error:", err)
+        continue
+    }
+    go handleConn(conn) // one goroutine per client; loop keeps spinning
+}
+```
+
+Every TCP and UDP server for the rest of this book is a variation on
+this same shape: block on `Accept`, spawn, repeat. A goroutine costs a
+few KB of stack rather than a whole OS thread, so `go handleConn(conn)`
+scales to thousands of simultaneous connections with no extra ceremony
+— it's one of the main reasons Go is popular for network services.
+
+It doesn't scale to *infinity*. Ten thousand slow, mostly-idle clients
+are cheap; a flood of a million connections in the same few seconds
+still means a million live goroutines, each holding a stack, a
+`net.Conn`, and whatever buffers the handler allocates — memory and
+file descriptors run out even though goroutines don't. The escape
+hatch, covered in full in Chapter 8 of Part 2 (Concurrency in
+Networking), is a **worker pool**: a fixed number of goroutines pulling
+connections off a channel instead of one goroutine per connection.
+Treat the loop above as the default, and reach for a worker pool only
+once you've actually measured that unbounded goroutines are the
+problem.
+
+<DeepDive title="Why the accept loop doesn't need a mutex on conn">Each trip through `for { conn, err := ln.Accept(); ... }` declares a brand-new `conn` with `:=`, so unlike a variable declared once outside the loop, nothing is shared between the goroutines spawned by different iterations — each closes over its own private connection. Synchronization only becomes necessary once handlers start touching something *outside* their own connection, like a shared map, log file, or counter.</DeepDive>
+
+<Warning title="The loop variable trap, before and after Go 1.22">Go 1.21 and earlier reused a single loop variable across every iteration of a `for range`, so `for _, addr := range addrs { go func() { dial(addr) }() }` could have every goroutine dial whatever `addr` happened to be *last* by the time they actually ran — the classic fix was passing it in explicitly, `go func(a string) { dial(a) }(addr)`. Go 1.22 changed the language so each iteration gets its own fresh copy of the variable, fixing this whole class of bug by default — but plenty of code (and this book) still passes the variable in explicitly, since it stays correct on any Go version and makes the capture obvious to the reader.</Warning>
+
+<Warning title="A shared net.Conn still needs its own synchronization">The standard library documents `net.Conn` as safe for multiple goroutines to call methods on simultaneously, so nothing panics if one goroutine reads while another writes on the same connection — but "safe" only means no data race, not "protocol-correct." Two goroutines calling `Write` on the same connection at the same time can have their bytes interleave on the wire, corrupting whatever framing your protocol expects. A connection written to from more than one goroutine still needs a mutex, or a single writer goroutine fed by a channel.</Warning>
+
 ---
 
 ## Real-World Example: Simple TCP Client

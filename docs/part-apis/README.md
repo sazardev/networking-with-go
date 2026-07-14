@@ -43,6 +43,20 @@ Esta sección cubre el diseño, implementación y despliegue de APIs modernas y 
 33. [APIs for Advanced Observability: Metrics and Logging](33-apis-for-advanced-observability.mdx)
 34. [APIs for Advanced Observability: Distributed Tracing](34-apis-for-advanced-observability.mdx)
 
+### Production Backend Track: One Project, Start to Finish
+Chapters 35-42 build a single coherent order-management API across all of them (RPC layer, real database, container, architecture, capstone); 43-45 cover deploying, operating, and attacking it.
+35. [RPC and gRPC for APIs](35-rpc-and-grpc-for-apis.mdx)
+36. [Working with SQL Databases: PostgreSQL](36-working-with-sql-databases-postgresql.mdx)
+37. [Working with SQLite in Go](37-working-with-sqlite-in-go.mdx)
+38. [Containerizing Go APIs with Docker](38-containerizing-go-apis-with-docker.mdx)
+39. [Clean Architecture for Go APIs](39-clean-architecture-for-go-apis.mdx)
+40. [Hexagonal Architecture (Ports and Adapters) for Go APIs](40-hexagonal-architecture-ports-and-adapters.mdx)
+41. [Domain-Driven Design in Go](41-domain-driven-design-in-go.mdx)
+42. [Building a Complete Project End-to-End](42-building-a-complete-project-end-to-end.mdx)
+43. [Deploying to Google Cloud](43-deploying-to-google-cloud.mdx)
+44. [Orchestration, Replicas, and Graceful Shutdown](44-orchestration-replicas-and-graceful-shutdown.mdx)
+45. [Thinking Like an Attacker: API Security](45-thinking-like-an-attacker-api-security.mdx)
+
 ---
 
 > Cada archivo contiene teoría, ejemplos y enlaces a ejercicios prácticos.

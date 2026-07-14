@@ -1,0 +1,415 @@
+---
+id: "[6.40.0]"
+title: "Hexagonal Architecture (Ports and Adapters) for Go APIs"
+---
+
+# Hexagonal Architecture (Ports and Adapters) for Go APIs
+
+Chapter 6.39 drew Clean Architecture as concentric rings and established the
+rule that matters: dependencies point inward, and domain logic never imports
+a framework or a driver. Alistair Cockburn's Hexagonal Architecture — also
+called Ports and Adapters — arrives at almost the same place from a
+different picture, and it's worth learning both because you'll meet both
+vocabularies in the wild, often describing the same codebase.
+
+Cockburn coined the term in the early 2000s specifically to push back
+against the then-common assumption that a web application's "natural" shape
+is UI on one side and database on the other, with business logic sandwiched
+in between and quietly coupled to both. The hexagon is a deliberate visual
+correction: no side of the shape is more central than any other, and the
+only privileged position belongs to whatever sits inside it.
+
+---
+
+## Hexagon, Not Rings
+
+Instead of rings, picture a hexagon. Inside it sits the application core —
+your domain model and use cases, exactly like the inner two rings of Clean
+Architecture. Each side of the hexagon is a **port**: an interface the core
+defines, describing something it needs from, or offers to, the outside
+world. Outside the hexagon, **adapters** plug into those ports — one adapter
+per side, translating between the core's language and some specific
+technology.
+
+The hexagon shape isn't just decoration; it encodes the pattern's one real
+addition over how people often picture Clean Architecture. Cockburn draws
+attention to a symmetry: every adapter is "outside," whether it's a thing
+that *drives* the application (an HTTP handler calling into your use case
+because a request arrived) or a thing the application *drives* (a Postgres
+repository the application calls because it needs to persist something).
+Clean Architecture's rings can read, at a glance, as if HTTP sits somewhere
+different from the database — outer ring versus outer ring, sure, but a
+diagram of circles doesn't foreground the "driving vs. driven" distinction
+the way six equal sides of a hexagon do.
+
+<DeepDive title="So which one should I say I'm using?">In practice, teams that say "Clean Architecture" and teams that say "Hexagonal Architecture" usually produce nearly identical Go package layouts: a domain/core package with no framework imports, use cases that depend on interfaces, and adapters implementing those interfaces on the outside. The honest answer is that the distinction matters more for communication than for code — use whichever term your team already recognizes, and reserve energy for the one thing both insist on: the core must never import an adapter.</DeepDive>
+
+### Driving vs. driven, concretely
+
+- A **driving adapter** (also "primary adapter") initiates action: an HTTP
+  handler, a CLI command, a scheduled job — anything that calls *into* the
+  application core because something external happened.
+- A **driven adapter** (also "secondary adapter") is called *by* the
+  application core to satisfy a need it declared as a port: a Postgres
+  repository, an email sender, a payment gateway client.
+
+Both are adapters. Both live outside the hexagon. Both are replaceable
+without the core noticing, provided they satisfy the port's interface.
+
+---
+
+## Ports for the Order-Management Core
+
+Continuing the order-management example from Chapter 6.39, this section
+folds the `domain` and `usecase` packages into a single `core` package,
+purely to keep the hexagon metaphor's vocabulary front and center — the
+capstone in Chapter 6.42 goes back to the `domain`/`usecase` split from
+Chapter 6.39, since that separation is worth keeping once a project grows
+past a single example. The application core defines two ports it needs —
+one for persistence, one to publish what happened after a change:
+
+```go
+// internal/core/ports.go
+package core
+
+import "context"
+
+type OrderRepository interface {
+	FindByID(ctx context.Context, id string) (*Order, error)
+	Save(ctx context.Context, o *Order) error
+}
+
+type EventPublisher interface {
+	Publish(ctx context.Context, eventName string, payload any) error
+}
+```
+
+`OrderRepository` is a driven port — the core calls out through it.
+`EventPublisher` is also driven — publishing an `OrderShipped` event (the
+kind of event Chapter 6.23 covers turning into an outbound webhook) is
+something the core asks for, not something that asks the core for anything.
+The use case that ships an order depends on both, entirely through
+interfaces:
+
+```go
+// internal/core/ship_order.go
+package core
+
+import "context"
+
+type ShipOrder struct {
+	Orders     OrderRepository
+	Publisher  EventPublisher
+}
+
+func (uc *ShipOrder) Execute(ctx context.Context, orderID string) error {
+	order, err := uc.Orders.FindByID(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if err := order.Ship(); err != nil {
+		return err
+	}
+	if err := uc.Orders.Save(ctx, order); err != nil {
+		return err
+	}
+	return uc.Publisher.Publish(ctx, "OrderShipped", order)
+}
+```
+
+---
+
+## A Driving Adapter: the HTTP Handler
+
+```go
+// internal/adapter/http/handler.go
+package http
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"ordermgmt/internal/core"
+)
+
+type OrderHandler struct {
+	ShipOrder *core.ShipOrder
+}
+
+func (h *OrderHandler) Ship(w http.ResponseWriter, r *http.Request) {
+	orderID := r.PathValue("id")
+
+	err := h.ShipOrder.Execute(r.Context(), orderID)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusOK)
+	case err == core.ErrOrderNotPaid:
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+```
+
+This handler is a thin translator: it pulls an ID out of the URL (routing
+patterns like this are covered in Chapter 6.4), calls the port, and maps
+domain errors onto HTTP status codes. It contains zero business logic —
+notice it doesn't know what "shipped" means, only that `ErrOrderNotPaid`
+maps to `409 Conflict`.
+
+### A second driving adapter, for free
+
+The symmetry Hexagonal Architecture emphasizes shows up clearly the moment a
+second driving adapter appears. Suppose an internal operations tool needs a
+one-off CLI command to ship an order manually:
+
+```go
+// cmd/opstool/ship.go
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"ordermgmt/internal/core"
+)
+
+func shipCommand(uc *core.ShipOrder, orderID string) {
+	if err := uc.Execute(context.Background(), orderID); err != nil {
+		fmt.Fprintln(os.Stderr, "ship failed:", err)
+		os.Exit(1)
+	}
+	fmt.Println("order shipped")
+}
+```
+
+Nothing about `core.ShipOrder` changed to support this. The CLI command and
+the HTTP handler are both driving adapters calling the identical port; one
+translates a URL path segment into an order ID, the other translates an
+`os.Args` entry into the same string. Neither adapter can shortcut the
+`ErrOrderNotPaid` check — it isn't theirs to shortcut, since it lives one
+layer further in, on the port's other side.
+
+## A Driven Adapter: Postgres
+
+```go
+// internal/adapter/postgres/order_repository.go
+package postgres
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"ordermgmt/internal/core"
+)
+
+type OrderRepository struct {
+	pool *pgxpool.Pool
+}
+
+func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
+	return &OrderRepository{pool: pool}
+}
+
+func (r *OrderRepository) FindByID(
+	ctx context.Context, id string,
+) (*core.Order, error) {
+	var o core.Order
+	row := r.pool.QueryRow(ctx,
+		`SELECT id, customer_id, status FROM orders WHERE id = $1`, id)
+	if err := row.Scan(&o.ID, &o.CustomerID, &o.Status); err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+func (r *OrderRepository) Save(ctx context.Context, o *core.Order) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE orders SET status = $2 WHERE id = $1`, o.ID, o.Status)
+	return err
+}
+```
+
+This satisfies `core.OrderRepository` implicitly, exactly as in Chapter 6.39.
+Hexagonal Architecture doesn't add anything new mechanically here — it just
+gives this file a name ("a driven adapter for the persistence port") that
+foregrounds its symmetry with the HTTP handler above ("a driving adapter for
+the same core").
+
+---
+
+## The Payoff: an In-Memory Adapter for Testing
+
+The reason this pattern earns its keep day to day is testability. Because
+`ShipOrder` depends only on the `OrderRepository` and `EventPublisher`
+interfaces, a second driven adapter — one with no database at all — can
+stand in during tests:
+
+```go
+// internal/adapter/memory/order_repository.go
+package memory
+
+import (
+	"context"
+	"errors"
+	"sync"
+
+	"ordermgmt/internal/core"
+)
+
+type OrderRepository struct {
+	mu     sync.Mutex
+	orders map[string]*core.Order
+}
+
+func NewOrderRepository() *OrderRepository {
+	return &OrderRepository{orders: make(map[string]*core.Order)}
+}
+
+func (r *OrderRepository) Put(o *core.Order) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.orders[o.ID] = o
+}
+
+func (r *OrderRepository) FindByID(
+	ctx context.Context, id string,
+) (*core.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	o, ok := r.orders[id]
+	if !ok {
+		return nil, errors.New("order not found")
+	}
+	return o, nil
+}
+
+func (r *OrderRepository) Save(ctx context.Context, o *core.Order) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.orders[o.ID] = o
+	return nil
+}
+```
+
+And a matching fake for the publisher port, kept in the test file itself
+since it only needs to record what it saw:
+
+```go
+// internal/core/ship_order_test.go
+package core_test
+
+import (
+	"context"
+	"testing"
+
+	"ordermgmt/internal/adapter/memory"
+	"ordermgmt/internal/core"
+)
+
+type recordingPublisher struct {
+	events []string
+}
+
+func (p *recordingPublisher) Publish(
+	ctx context.Context, name string, payload any,
+) error {
+	p.events = append(p.events, name)
+	return nil
+}
+
+func TestShipOrder_RejectsUnpaidOrder(t *testing.T) {
+	repo := memory.NewOrderRepository()
+	order := core.NewOrder("order-1", "cust-1")
+	repo.Put(order)
+
+	pub := &recordingPublisher{}
+	uc := &core.ShipOrder{Orders: repo, Publisher: pub}
+
+	err := uc.Execute(context.Background(), "order-1")
+
+	if err != core.ErrOrderNotPaid {
+		t.Fatalf("want ErrOrderNotPaid, got %v", err)
+	}
+	if len(pub.events) != 0 {
+		t.Fatalf("expected no events published, got %v", pub.events)
+	}
+}
+
+func TestShipOrder_PublishesEventOnSuccess(t *testing.T) {
+	repo := memory.NewOrderRepository()
+	order := core.NewOrder("order-1", "cust-1")
+	order.MarkPaid()
+	repo.Put(order)
+
+	pub := &recordingPublisher{}
+	uc := &core.ShipOrder{Orders: repo, Publisher: pub}
+
+	if err := uc.Execute(context.Background(), "order-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pub.events) != 1 || pub.events[0] != "OrderShipped" {
+		t.Fatalf("expected OrderShipped event, got %v", pub.events)
+	}
+}
+```
+
+This test suite runs in milliseconds, needs no database connection, no
+Docker container, no network — and it's testing the exact same business
+rule (`ErrOrderNotPaid`) that will run in production against real
+Postgres. That's the concrete payoff of ports and adapters: business logic
+correctness and infrastructure correctness become two separate concerns,
+tested separately, at different speeds.
+
+<Warning title="An in-memory adapter is a test double, not a caching layer">It's tempting to reuse the in-memory repository as a cache in front of Postgres once it exists. Resist this by default — a cache needs invalidation, consistency, and eviction policy decisions that a test fake was never designed to handle correctly, and quietly promoting it to production infrastructure is how test-only code ends up load-bearing. Build a real caching layer deliberately if you need one.</Warning>
+
+---
+
+## Clean Architecture and Hexagonal, Side by Side
+
+| Concept | Clean Architecture | Hexagonal Architecture |
+|---|---|---|
+| Core metaphor | Concentric rings | A hexagon with adapters on each side |
+| Rule enforced | Dependencies point inward | Core defines ports; adapters implement/call them |
+| Vocabulary | Entities, use cases, adapters, frameworks | Core, ports, driving adapters, driven adapters |
+| What it foregrounds | Layered distance from the domain | Symmetry between "in" and "out" adapters |
+| Go implementation | Interfaces defined in inner packages | Interfaces (ports) defined in the core package |
+
+In both, the practical Go mechanism is identical: define the interface next
+to the code that needs it, implement it in a separate package that the
+interface's owner never imports. The names differ; the compiler-enforced
+discipline does not.
+
+Adopting this incrementally in an existing codebase doesn't require a
+rewrite. Start with the highest-value seam first — usually the repository,
+since a database is the slowest and hardest-to-set-up dependency in most
+test suites. Extract an interface for whatever your handlers currently call
+directly, write an in-memory implementation, and let your existing tests
+start using it. Only once that's paying off does it make sense to widen the
+boundary further — a driving-adapter split for a CLI, a second driven
+adapter for an email or payment provider — one port at a time, in the order
+that removes the most pain first.
+
+<Axiom>A port is just an interface with a name that tells you which direction the call goes — naming it well is documentation, not architecture.</Axiom>
+
+---
+
+## Key Takeaways
+
+- Hexagonal Architecture's ports are the same interfaces Clean Architecture
+  calls repository/gateway interfaces — the vocabulary differs, the
+  compiler-level rule (core never imports an adapter) is identical.
+- The driving/driven distinction is the pattern's one genuinely useful
+  addition: it names the difference between adapters that call into your
+  core (HTTP handlers) and adapters your core calls out to (databases,
+  publishers).
+- The concrete payoff is testability: swap a driven adapter for an in-memory
+  fake and test business rules with no database, no network, and
+  millisecond-fast tests.
+- Don't repurpose a test-only adapter as production infrastructure just
+  because it happens to satisfy the same interface.
+- Pick Clean or Hexagonal vocabulary based on what your team already knows —
+  the code they produce converges regardless.

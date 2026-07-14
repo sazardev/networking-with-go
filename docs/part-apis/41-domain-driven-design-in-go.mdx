@@ -1,0 +1,411 @@
+---
+id: "[6.41.0]"
+title: "Domain-Driven Design in Go"
+---
+
+# Domain-Driven Design in Go
+
+Chapters 6.39 and 6.40 answered "which package can import which." This
+chapter answers a different question: once your domain logic lives in its
+own package, protected from frameworks and databases, how do you design the
+types *inside* that package so the business rules they encode can't be
+bypassed? Eric Evans' Domain-Driven Design (DDD) is a large book full of
+strategic-design ceremony — bounded contexts, context maps, anticlimactic
+diagrams. This chapter skips almost all of that and keeps the part that pays
+for itself immediately in a working Go API: entities, value objects,
+aggregates, domain services, and domain events, applied to the same
+order-management example.
+
+---
+
+## Entities vs. Value Objects
+
+An **entity** has an identity that persists across changes — two orders with
+identical contents are still different orders if they have different IDs. A
+**value object** has no identity of its own — it's defined entirely by its
+fields, and two value objects with the same fields are interchangeable.
+
+`Money` is a natural value object:
+
+```go
+// internal/domain/money.go
+package domain
+
+import "errors"
+
+type Money struct {
+	AmountCents int64
+	Currency    string
+}
+
+func NewMoney(cents int64, currency string) (Money, error) {
+	if cents < 0 {
+		return Money{}, errors.New("money: amount cannot be negative")
+	}
+	if currency == "" {
+		return Money{}, errors.New("money: currency is required")
+	}
+	return Money{AmountCents: cents, Currency: currency}, nil
+}
+
+func (m Money) Add(other Money) (Money, error) {
+	if m.Currency != other.Currency {
+		return Money{}, errors.New("money: currency mismatch")
+	}
+	return Money{AmountCents: m.AmountCents + other.AmountCents,
+		Currency: m.Currency}, nil
+}
+
+func (m Money) Multiply(qty int) Money {
+	return Money{AmountCents: m.AmountCents * int64(qty),
+		Currency: m.Currency}
+}
+```
+
+`Money` values are never mutated in place — every operation returns a new
+value. There's no `MoneyID`; a `Money{500, "USD"}` is identical to any other
+`Money{500, "USD"}` wherever it appears. `Order` is the entity: two orders
+holding the exact same line items are still different orders because they
+carry different `OrderID`s.
+
+---
+
+## The Aggregate: One Root, Enforced Invariants
+
+An **aggregate** is a cluster of entities and value objects treated as one
+unit for the purpose of data changes, with a single **aggregate root** that
+is the only object external code is allowed to reference directly. Everything
+inside the aggregate is reached, and changed, only through the root's
+methods — never by grabbing an inner object and mutating it from outside.
+
+For order management, `Order` is the aggregate root and `OrderLine` is a
+value object it owns:
+
+```go
+// internal/domain/order.go
+package domain
+
+import (
+	"errors"
+	"time"
+)
+
+type OrderStatus string
+
+const (
+	StatusPending   OrderStatus = "pending"
+	StatusPaid      OrderStatus = "paid"
+	StatusShipped   OrderStatus = "shipped"
+	StatusCancelled OrderStatus = "cancelled"
+)
+
+var (
+	ErrOrderNotPending  = errors.New("order: not in pending status")
+	ErrOrderNotPaid     = errors.New("order: not in paid status")
+	ErrRefundRequired   = errors.New("order: shipped orders need a refund")
+)
+
+type OrderLine struct {
+	ProductID string
+	Quantity  int
+	UnitPrice Money
+}
+
+type Order struct {
+	id         string
+	customerID string
+	lines      []OrderLine
+	status     OrderStatus
+	events     []DomainEvent
+}
+
+func NewOrder(id, customerID string) *Order {
+	return &Order{id: id, customerID: customerID, status: StatusPending}
+}
+
+func (o *Order) ID() string     { return o.id }
+func (o *Order) Status() OrderStatus { return o.status }
+
+func (o *Order) Lines() []OrderLine {
+	out := make([]OrderLine, len(o.lines))
+	copy(out, o.lines)
+	return out
+}
+
+func (o *Order) AddLine(productID string, qty int, price Money) error {
+	if o.status != StatusPending {
+		return ErrOrderNotPending
+	}
+	if qty <= 0 {
+		return errors.New("order: quantity must be positive")
+	}
+	o.lines = append(o.lines, OrderLine{
+		ProductID: productID, Quantity: qty, UnitPrice: price,
+	})
+	return nil
+}
+
+func (o *Order) MarkPaid() error {
+	if o.status != StatusPending {
+		return ErrOrderNotPending
+	}
+	o.status = StatusPaid
+	return nil
+}
+
+func (o *Order) Ship() error {
+	if o.status != StatusPaid {
+		return ErrOrderNotPaid
+	}
+	o.status = StatusShipped
+	o.events = append(o.events, OrderShipped{
+		OrderID: o.id, ShippedAt: time.Now().UTC(),
+	})
+	return nil
+}
+
+func (o *Order) Cancel() error {
+	if o.status == StatusShipped {
+		return ErrRefundRequired
+	}
+	o.status = StatusCancelled
+	o.events = append(o.events, OrderCancelled{OrderID: o.id})
+	return nil
+}
+
+// cancelWithRefund is unexported: only the domain service in this
+// package may call it, after it has confirmed a refund succeeded.
+func (o *Order) cancelWithRefund(refundID string) {
+	o.status = StatusCancelled
+	o.events = append(o.events, OrderCancelled{
+		OrderID: o.id, RefundID: refundID,
+	})
+}
+
+func (o *Order) PullEvents() []DomainEvent {
+	events := o.events
+	o.events = nil
+	return events
+}
+```
+
+Every field is unexported. There is no way, from outside this package, to
+append to `lines` or flip `status` directly — the only entry points are
+`AddLine`, `MarkPaid`, `Ship`, and `Cancel`, and each one checks the
+invariant it's responsible for before doing anything. Trying to add a line
+item to a cancelled order isn't a bug you have to remember to guard against
+in every caller — it's a compile-time impossibility to bypass and a
+guaranteed `ErrOrderNotPending` if attempted, because `lines` cannot be
+reached any other way.
+
+<Warning title="Getters that return internal slices directly leak the invariant">`Lines()` returns a fresh copy, never the aggregate's own backing slice. If it returned `o.lines` directly, a caller could take that slice and append to it or write past its length, mutating the same underlying array `Order` uses internally — bypassing `AddLine` and its status check entirely, with no compiler error to catch it. Always copy a slice (or expose narrower, single-item accessors) before returning it from any method on an aggregate root.</Warning>
+
+### Testing an Aggregate With Nothing but `go test`
+
+Because every rule above lives inside `Order` itself, with dependencies on
+nothing but the standard library, the aggregate's invariants can be tested
+without a repository, a port, or a single mock — no in-memory adapter from
+Chapter 6.40 required, because there's no I/O to fake in the first place:
+
+```go
+// internal/domain/order_test.go
+package domain_test
+
+import (
+	"testing"
+
+	"ordermgmt/internal/domain"
+)
+
+func TestOrder_CannotAddLineAfterCancel(t *testing.T) {
+	order := domain.NewOrder("order-1", "cust-1")
+	price, _ := domain.NewMoney(1000, "USD")
+
+	if err := order.Cancel(); err != nil {
+		t.Fatalf("cancel failed: %v", err)
+	}
+
+	err := order.AddLine("product-1", 1, price)
+	if err != domain.ErrOrderNotPending {
+		t.Fatalf("want ErrOrderNotPending, got %v", err)
+	}
+}
+
+func TestOrder_CannotShipWithoutPayment(t *testing.T) {
+	order := domain.NewOrder("order-1", "cust-1")
+
+	err := order.Ship()
+	if err != domain.ErrOrderNotPaid {
+		t.Fatalf("want ErrOrderNotPaid, got %v", err)
+	}
+}
+```
+
+These tests run faster than the ones in Chapter 6.40, because they don't
+even need an in-memory adapter standing in for a repository — the aggregate
+under test has no collaborators at all. This is the innermost layer of the
+testing pyramid this whole four-chapter arc has been building toward: pure
+domain tests needing nothing, use-case tests needing fakes for ports
+(Chapter 6.40), and a smaller number of adapter tests needing the real
+Postgres or HTTP machinery (Chapter 6.42).
+
+This is also a useful signal for aggregate boundaries: if testing a rule
+suddenly seems to need a second aggregate loaded alongside `Order`, that's
+often a sign the boundary is drawn wrong, not a sign the test needs more
+setup. A `Product` aggregate's own price changes, for instance, shouldn't
+require loading every `Order` that referenced that product at purchase time
+— which is exactly why `OrderLine.UnitPrice` is captured as a `Money` value
+at the moment a line is added, not looked up live from `Product` on every
+read. Aggregates that stay small and self-contained keep staying easy to
+test this way; aggregates that grow to reference several others usually stop
+being.
+
+---
+
+## Domain Services: Logic That Doesn't Belong to One Entity
+
+Cancelling a shipped order needs a refund first — and processing a refund
+isn't something `Order` itself can do; it requires calling out to a payment
+gateway, which is exactly the kind of dependency a domain entity must never
+have (Chapter 6.39's inward-pointing rule again). This is what a **domain
+service** is for: a piece of business logic that spans more than one thing,
+expressed as a plain function or small struct, still living in the domain
+package, still framework-free — its dependency is a domain-defined
+interface, not a framework.
+
+```go
+// internal/domain/refund_service.go
+package domain
+
+import "context"
+
+type Refunder interface {
+	Refund(ctx context.Context, orderID string) (refundID string, err error)
+}
+
+type CancellationService struct {
+	Refunder Refunder
+}
+
+func (s *CancellationService) CancelShippedOrder(
+	ctx context.Context, o *Order,
+) error {
+	if o.Status() != StatusShipped {
+		return o.Cancel()
+	}
+	refundID, err := s.Refunder.Refund(ctx, o.ID())
+	if err != nil {
+		return err
+	}
+	o.cancelWithRefund(refundID)
+	return nil
+}
+```
+
+`Refunder` is a port in the Chapter 6.40 sense, owned by the domain package
+itself rather than the use-case package, because the rule it protects
+("shipped orders need a confirmed refund before cancelling") is domain logic,
+not application orchestration. The use case that handles an HTTP cancel
+request calls `CancellationService.CancelShippedOrder`, which calls the
+private `cancelWithRefund` — a method regular calling code cannot reach
+directly, only this trusted service in the same package can.
+
+---
+
+## Domain Events
+
+`Ship()` and `Cancel()` above both append to `o.events` — small, immutable
+facts about what already happened, not commands:
+
+```go
+// internal/domain/events.go
+package domain
+
+import "time"
+
+type DomainEvent interface {
+	EventName() string
+}
+
+type OrderShipped struct {
+	OrderID   string
+	ShippedAt time.Time
+}
+
+func (OrderShipped) EventName() string { return "OrderShipped" }
+
+type OrderCancelled struct {
+	OrderID  string
+	RefundID string
+}
+
+func (OrderCancelled) EventName() string { return "OrderCancelled" }
+```
+
+The use case that calls `order.Ship()`, then saves the order, then calls
+`order.PullEvents()` and hands each one to an `EventPublisher` port — this is
+the same publisher port introduced in Chapter 6.40 — is exactly the seam
+where Chapter 6.23's webhook and event-driven design chapter picks up: an
+`OrderShipped` domain event, published internally, is a natural payload for
+an outbound webhook to a customer's integration, with no coupling between
+"the aggregate decided it shipped" and "some other system found out."
+
+```go
+// internal/usecase/ship_order.go (excerpt)
+if err := order.Ship(); err != nil {
+	return err
+}
+if err := repo.Save(ctx, order); err != nil {
+	return err
+}
+for _, event := range order.PullEvents() {
+	if err := publisher.Publish(ctx, event.EventName(), event); err != nil {
+		return err
+	}
+}
+```
+
+The repository interface, expressed in domain terms rather than raw SQL, is
+what makes the aggregate itself persistable without leaking its internals:
+
+```go
+// internal/domain/repository.go
+package domain
+
+import "context"
+
+type OrderRepository interface {
+	NextID(ctx context.Context) (string, error)
+	FindByID(ctx context.Context, id string) (*Order, error)
+	Save(ctx context.Context, o *Order) error
+}
+```
+
+No `Scan`, no `*sql.Rows`, no table names — the interface speaks `Order`,
+because the adapter implementing it (Chapter 6.42 builds the Postgres one)
+is responsible for translating to and from rows, not the other way around.
+
+<DeepDive title="Why the ubiquitous language matters in practice">DDD calls this the "ubiquitous language" — the same words a product manager, a support engineer, and the code all use for the same concept. It sounds like process advice, but it has a direct, boring payoff in Go: name the type `Order`, not `OrderDTO`, `OrderRow`, or `OrderModel`. When a support ticket says "the order won't ship," and the code has a type literally called `Order` with a method literally called `Ship`, the distance between the bug report and the relevant fifteen lines of code is nearly zero. The moment a codebase has `Order` (domain), `OrderEntity` (ORM), and `OrderResponse` (API) all describing the same thing with three different names, every conversation about it needs a translation step, and that translation step is where bugs hide.</DeepDive>
+
+<Axiom>An aggregate's job is to make invalid states unrepresentable through its own package boundary, not to trust every caller to remember the rules.</Axiom>
+
+---
+
+## Key Takeaways
+
+- Entities have identity that persists across change; value objects
+  (`Money`, `OrderLine`) are defined entirely by their fields and are safest
+  as immutable.
+- An aggregate root (`Order`) is the only object external code references
+  directly — invariants are enforced by its exported methods, never by
+  external mutation of its fields, which is why every `Order` field here is
+  unexported.
+- A domain service (`CancellationService`) holds logic that spans more than
+  one entity or needs an external dependency, expressed through a
+  domain-owned interface (`Refunder`), never a concrete framework or SDK.
+- Domain events (`OrderShipped`, `OrderCancelled`) are facts recorded by the
+  aggregate and drained by the use case after a successful save — the
+  natural bridge into Chapter 6.23's webhook and event-driven patterns.
+- A domain-terms repository interface (returning `*Order`, not `*sql.Rows`)
+  keeps persistence details out of the type that support engineers, product
+  managers, and other developers all need to read the same way.
