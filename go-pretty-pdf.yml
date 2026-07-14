@@ -16,7 +16,7 @@ lint:
 render:
   timeout: 60s
   paper: a4
-  margin_top: 20mm
-  margin_bottom: 20mm
-  margin_left: 15mm
-  margin_right: 15mm
+  margin_top: 15mm
+  margin_bottom: 15mm
+  margin_left: 0mm
+  margin_right: 0mm
