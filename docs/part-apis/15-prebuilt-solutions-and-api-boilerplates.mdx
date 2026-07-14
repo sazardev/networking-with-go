@@ -5,4 +5,141 @@ title: "Prebuilt Solutions and API Boilerplates"
 
 # Prebuilt Solutions and API Boilerplates
 
-// ...contenido y ejemplos...
+Every chapter so far has built things from small pieces — a mux, a middleware chain, a JWT check — on purpose, so the mechanics are visible. In real projects, you don't always want to start from an empty `main.go`. This chapter surveys the Go ecosystem's prebuilt solutions: project generators, standard layouts, and the libraries that commonly fill in the gaps around routing (ORMs, dependency injection, CLI tooling) so you know what exists before deciding whether to reach for it.
+
+---
+
+## Standard Project Layout
+
+There's no single official Go project layout the way some other ecosystems have, but `golang-standards/project-layout` on GitHub documents the de facto conventions most medium-to-large Go services converge on:
+
+```
+myapi/
+  cmd/
+    myapi/
+      main.go        # entry point, wires everything together
+  internal/
+    api/              # HTTP handlers
+    store/             # data access
+    config/            # configuration loading
+  go.mod
+  go.sum
+```
+
+The `internal/` directory is enforced by the Go compiler itself: packages under `internal/` can only be imported by code rooted at the parent of that `internal/` directory, which is a simple, built-in way to keep implementation details from leaking into a public API surface if you ever publish this as a library too.
+
+<DeepDive title="cmd/ for multiple binaries">
+The `cmd/<name>/main.go` pattern exists specifically for projects that produce more than one binary from the same module — an API server and a separate worker process, for instance, both importing shared code from `internal/`. For a single-binary service, `cmd/myapi/main.go` might feel like unnecessary nesting, but it costs nothing and keeps the door open if a second binary shows up later.
+</DeepDive>
+
+---
+
+## Project Generators
+
+Rather than copying a layout by hand, tools like `go-blueprint` (`github.com/Melkeydev/go-blueprint`) scaffold a working starting point interactively:
+
+```sh
+go install github.com/Melkeydev/go-blueprint@latest
+go-blueprint create
+```
+
+It walks through prompts — which framework (standard library, Gin, Fiber, Echo, Chi), which database driver, whether to include Docker Compose files — and generates a working project with those choices already wired together. This is worth reaching for when starting a genuinely new service and you'd otherwise spend the first hour just wiring up the same boilerplate you've written a dozen times before.
+
+---
+
+## ORMs and Query Builders
+
+Every example so far has used an in-memory map for storage to keep focus on the HTTP layer, but real APIs need a real database. Two common approaches in Go:
+
+- **`gorm.io/gorm`**: a full-featured ORM — struct tags define your schema, and it generates queries, migrations, and associations for you.
+
+```go
+type Product struct {
+	ID    uint    `gorm:"primaryKey"`
+	Name  string
+	Price float64
+}
+
+db.Create(&Product{Name: "Keyboard", Price: 49.99})
+var products []Product
+db.Where("price < ?", 50).Find(&products)
+```
+
+- **`entgo.io/ent`**: a code-generation-based ORM from Facebook/Meta, where you describe your schema in Go code and it generates a fully typed client, including graph-style relationship traversal.
+
+- **`sqlx` (`github.com/jmoiron/sqlx`)**: a thinner layer over `database/sql` that adds struct scanning without hiding SQL behind an ORM's query builder — a good middle ground when you want to write real SQL but avoid `rows.Scan(&a, &b, &c)` boilerplate for every query.
+
+Which one fits depends on how much you want the database's shape to drive your Go types (ORM) versus writing SQL directly and mapping results (`sqlx`). Neither choice is wrong; teams commonly default to `sqlx` or raw `database/sql` when queries are complex and hand-tuned, and to `gorm`/`ent` when CRUD-heavy models dominate the codebase.
+
+---
+
+## Dependency Injection
+
+As a service grows, wiring together a store, a cache client, a logger, and multiple handlers by hand in `main.go` gets unwieldy. `google/wire` generates that wiring at compile time from a set of "provider" functions, rather than doing runtime reflection:
+
+```go
+func provideStore() *Store { return NewStore() }
+func provideAPI(s *Store) *API { return &API{store: s} }
+
+// wire.go (build-tagged, not compiled into the real binary)
+func InitializeAPI() *API {
+	wire.Build(provideStore, provideAPI)
+	return nil
+}
+```
+
+Running `wire` generates a real `wire_gen.go` with the actual construction code spelled out — no runtime magic, just less manual plumbing. For smaller services, plain constructor functions called directly from `main` are often clearer than adopting a DI framework at all; `wire` earns its place once the dependency graph has enough branches that hand-wiring becomes error-prone.
+
+---
+
+## CLI Companion Tools
+
+Most API projects eventually need a companion CLI — running migrations, seeding data, generating an admin token. `github.com/spf13/cobra` is the standard choice, powering tools like `kubectl` and the Hugo static site generator:
+
+```go
+var rootCmd = &cobra.Command{Use: "myapi"}
+
+var migrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "Run database migrations",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runMigrations()
+	},
+}
+
+func main() {
+	rootCmd.AddCommand(migrateCmd)
+	rootCmd.Execute()
+}
+```
+
+This gives you `myapi migrate`, `myapi seed`, or `myapi serve` as clearly separated subcommands sharing the same codebase and configuration as the API server itself.
+
+---
+
+## Other Frameworks Worth Knowing
+
+Gin and Fiber, covered in dedicated chapters, aren't the only options. `github.com/labstack/echo` is a long-standing `net/http`-based framework with an API and philosophy close to Gin's — grouped routes, middleware chains, JSON helpers — and is worth considering if a project's existing team already has Echo experience; there's rarely a strong technical reason to prefer one over the other for a typical CRUD API. Whichever framework a boilerplate generator defaults to, the CRUD patterns from earlier chapters transfer directly, since they all converge on the same shape: a router, a handler signature, and a JSON encoder.
+
+---
+
+## A Minimal, Honest Starter
+
+Putting the pieces from this chapter together, a reasonable "day one" structure for a new Go API looks like:
+
+```
+myapi/
+  cmd/myapi/main.go       # calls internal/api.NewServer(cfg) and starts it
+  internal/api/           # net/http, Gin, or Fiber handlers (chapters 4-6)
+  internal/store/         # sqlx or gorm-backed persistence
+  internal/config/        # env-based configuration loading
+  docker-compose.yml       # local Postgres/Redis for development
+  Dockerfile                # multi-stage build (covered in a later chapter)
+  go.mod / go.sum
+```
+
+<Axiom>A boilerplate's job is to remove repetitive setup, not to remove understanding — use one to save the first afternoon, not to avoid learning what each moving part actually does.</Axiom>
+
+Whether you start from a generator like `go-blueprint` or grow this structure by hand as your project needs it, the goal is the same: a layout that scales from a weekend project to a production service without a disruptive rewrite in between.
+
+Next, we'll turn to keeping a running API healthy: performance monitoring and observability.

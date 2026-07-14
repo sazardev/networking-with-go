@@ -5,4 +5,107 @@ title: "SIEM and Log Analysis for Network Security"
 
 # SIEM and Log Analysis for Network Security
 
-// ...contenido y ejemplos de SIEM y análisis de logs para seguridad de red...
+> A single firewall log tells you one connection was blocked. A single server log tells you one login succeeded. Neither tells you a breach happened. Put both in the same room, correlate them by time and identity, and the story suddenly writes itself. That correlation room is what a SIEM is for.
+
+## What a SIEM Actually Does
+
+**SIEM** stands for Security Information and Event Management, and the name describes two jobs that used to be separate products. Security *Information* Management is the collection, normalization, and long-term storage of log data. Security *Event* Management is the real-time correlation and alerting layer on top of it. Modern platforms (Splunk, Elastic Security, Microsoft Sentinel, and open-source stacks built on the Elastic stack or Wazuh) merge both into a single pipeline:
+
+1. **Collection** - agents, syslog forwarders, and API integrations pull logs from firewalls, routers, IDS/IPS sensors, DNS resolvers, authentication systems, endpoints, and cloud audit trails.
+2. **Normalization** - wildly different log formats get parsed into a common schema (timestamp, source, destination, user, action, outcome) so a query can span every source at once.
+3. **Correlation** - rules or models tie discrete events together across sources and time, turning "failed login" plus "unusual outbound connection" plus "new scheduled task" into a single flagged incident instead of three ignorable noise items.
+4. **Alerting and response** - matches trigger notifications, tickets, or automated playbooks (which overlaps heavily with the automation techniques covered later in this part).
+5. **Retention and search** - logs are kept for a compliance-driven window (often 90 days to a year or more) so analysts can retroactively hunt once a new indicator of compromise becomes known.
+
+## Why Correlation Beats Single-Source Alerting
+
+Any individual security tool only sees its own slice of the environment. A firewall sees connections; it doesn't know which user account initiated them. An identity provider sees logins; it doesn't know what that session did on the network afterward. A SIEM's entire value proposition is stitching these fragments into a timeline for one entity - a user, a host, an IP - across every system that touched it.
+
+This is also why log normalization matters so much in practice. If your firewall logs timestamps in UTC and your Windows event logs are in local time, or one source calls the field `src_ip` and another calls it `source_address`, correlation silently breaks. Most of the unglamorous engineering effort in running a SIEM goes into keeping every source mapped into the same schema.
+
+<DeepDive title="Log Sources Worth Prioritizing">
+If you can only onboard a handful of log sources first, authentication events (successful and failed logins, privilege escalation, new account creation), DNS query logs (malware and C2 channels rely heavily on DNS), firewall/flow logs (who talked to whom, how much data, how often), and endpoint process/command-line logs tend to give the highest signal-to-effort ratio. Network-layer visibility without identity context, or identity logs without network context, both leave dangerous blind spots.
+</DeepDive>
+
+## Correlation Rules and Use Cases
+
+A useful way to think about SIEM rules is as codified analyst intuition. A few classic examples:
+
+- **Impossible travel**: the same user account authenticates from two geographically distant locations within a time window too short for actual travel.
+- **Brute-force followed by success**: many failed logins from one source, followed by a success, especially against a privileged account.
+- **Beaconing**: a host makes outbound connections to the same external address at suspiciously regular intervals - a strong indicator of malware phoning home (covered in more depth in the malware chapter).
+- **Data staging**: a host that normally never touches large file shares suddenly reads a large volume of data shortly before an unusual outbound transfer.
+
+None of these individually proves compromise; each is a hypothesis worth investigating. Tuning a SIEM is largely the ongoing work of adjusting thresholds so these rules catch real incidents without burying analysts in false positives - the same alert-fatigue problem introduced in the IDS/IPS chapter, just at a larger scale spanning the whole environment.
+
+## A Minimal Normalization Pipeline in Go
+
+Most of what a SIEM's ingestion layer does, at its core, is take heterogeneous text and turn it into structured, comparable events. A small Go program illustrates the idea: parse loosely-formatted log lines and normalize them into a common JSON event shape.
+
+```go
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+)
+
+// NormalizedEvent is the common schema every log source gets mapped into,
+// regardless of its original format.
+type NormalizedEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Source    string    `json:"source"`
+	SourceIP  string    `json:"source_ip"`
+	Action    string    `json:"action"`
+	Outcome   string    `json:"outcome"`
+}
+
+var firewallLine = regexp.MustCompile(`^(\S+ \S+) BLOCK src=(\S+)`)
+
+func normalizeFirewallLog(line string) (NormalizedEvent, bool) {
+	m := firewallLine.FindStringSubmatch(line)
+	if m == nil {
+		return NormalizedEvent{}, false
+	}
+	ts, err := time.Parse("2006-01-02 15:04:05", m[1])
+	if err != nil {
+		return NormalizedEvent{}, false
+	}
+	return NormalizedEvent{
+		Timestamp: ts,
+		Source:    "firewall",
+		SourceIP:  m[2],
+		Action:    "connection_blocked",
+		Outcome:   "denied",
+	}, true
+}
+
+func main() {
+	raw := strings.NewReader(
+		"2024-03-01 08:15:03 BLOCK src=203.0.113.55 dst=10.0.0.4:22\n" +
+			"not a log line we understand\n" +
+			"2024-03-01 08:15:07 BLOCK src=203.0.113.55 dst=10.0.0.5:22\n",
+	)
+
+	scanner := bufio.NewScanner(raw)
+	for scanner.Scan() {
+		if event, ok := normalizeFirewallLog(scanner.Text()); ok {
+			payload, _ := json.Marshal(event)
+			fmt.Println(string(payload))
+		}
+	}
+}
+```
+
+Each vendor's real log format is messier than this example, but the shape of the problem never changes: parse, extract the fields that matter, discard or quarantine what fails to parse, and emit a consistent structure downstream. Once every source speaks the same JSON schema, writing a correlation rule - "same `source_ip` blocked more than three times in sixty seconds" - becomes a straightforward query instead of a cross-format nightmare.
+
+## Summary
+
+- A SIEM's value comes from correlation across sources, not from any single log in isolation.
+- Normalization is the unglamorous but essential step that makes correlation possible at all.
+- Prioritize identity, DNS, network flow, and endpoint logs first - they cover the most common attack patterns with the least onboarding effort.
+- Tuning correlation rules against real traffic is an ongoing process, not a one-time setup task.

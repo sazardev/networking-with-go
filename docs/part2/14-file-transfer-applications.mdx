@@ -1,10 +1,279 @@
 ---
 id: "[2.14.0]"
-title: "File Transfer Applications: Protocols and Go Implementation 📁"
+title: "File Transfer Applications: Protocols and Go Implementation"
 ---
 
-# File Transfer Applications: Protocols and Go Implementation 📁
+# File Transfer Applications: Protocols and Go Implementation
 
-Learn about file transfer protocols and how to implement them in Go.
+> "Sending a chat message is like passing a note across the room. Sending a file is like passing an entire box of documents — you need to say how big the box is, make sure nothing falls out along the way, and confirm the recipient got every last page. That's file transfer."
+
+---
+
+## From Messages to Files
+
+In the chat application chapter, every message was small and self-contained: a line of text, sent and displayed almost instantly. File transfer introduces a new set of problems that small text messages never expose:
+
+- **Size:** A file can be a few bytes or several gigabytes. You cannot always assume it fits in one `Read` call, or even in memory.
+- **Framing:** TCP gives you a stream of bytes with no built-in concept of "where one file ends." Your protocol has to say so explicitly.
+- **Integrity:** A dropped or corrupted byte in a chat message is a minor annoyance. A dropped byte in an executable or a database backup can be catastrophic.
+- **Progress and resumption:** Large transfers take time, and users expect to see progress — and ideally resume after a failure instead of starting over.
+
+None of this requires a new protocol from scratch. It requires being deliberate about *framing* (how the receiver knows how much to read) and reusing tools Go already gives you: `io.Copy`, `io.Reader`/`io.Writer`, and the `net` package you've been using since the TCP chapter.
+
+---
+
+## A Look at Real-World File Transfer Protocols
+
+- **FTP (File Transfer Protocol):** One of the oldest internet protocols, using separate control and data connections. Still around, but its lack of built-in encryption and awkward active/passive modes have pushed most systems toward alternatives.
+- **SFTP:** File transfer over SSH — encrypted, authenticated, and a single connection. Common in ops tooling.
+- **HTTP uploads/downloads:** Because HTTP already solved framing (`Content-Length`, chunked transfer encoding) and is universally supported, plain HTTP `PUT`/`POST` and multipart form uploads have become the de facto way most applications move files today.
+- **Custom TCP protocols:** For internal tools, peer-to-peer sync, or anything performance-sensitive, teams often roll a small custom framing protocol on top of raw TCP — exactly what we already have the tools to build.
+
+We'll implement two of these approaches: a minimal custom TCP protocol, and an HTTP-based transfer using the standard library's `net/http`.
+
+---
+
+## Designing a Simple Framing Protocol
+
+The core idea of framing: before sending the file bytes, send a small, fixed-format header describing what's coming. A workable minimal header is:
+
+```
+[8 bytes: file size, big-endian uint64][file name length: 2 bytes][file name][file bytes...]
+```
+
+Once the receiver reads the header, it knows exactly how many bytes to expect next, and can stop reading (or write to disk) at precisely the right point — no ambiguity about where the file ends.
+
+<DeepDive title="Why not just read until EOF?">
+Reading until the connection closes works only if you open a *new* connection per file and close it right after. That's fine for a small tool, but it defeats connection reuse and makes multiplexing multiple files over one connection impossible. Sending an explicit length up front is the same principle HTTP uses with `Content-Length`.
+</DeepDive>
+
+---
+
+## Go Implementation: A Custom TCP File Transfer Protocol
+
+**Server** (accepts a connection, reads the header, then streams the file body to disk):
+
+```go
+package main
+
+import (
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+	"os"
+)
+
+func handleConn(conn net.Conn) {
+	defer conn.Close()
+
+	// 1. Read the 8-byte size prefix.
+	var size uint64
+	if err := binary.Read(conn, binary.BigEndian, &size); err != nil {
+		fmt.Println("failed to read size:", err)
+		return
+	}
+
+	// 2. Read the 2-byte name length, then the name itself.
+	var nameLen uint16
+	if err := binary.Read(conn, binary.BigEndian, &nameLen); err != nil {
+		fmt.Println("failed to read name length:", err)
+		return
+	}
+	nameBuf := make([]byte, nameLen)
+	if _, err := io.ReadFull(conn, nameBuf); err != nil {
+		fmt.Println("failed to read name:", err)
+		return
+	}
+	name := string(nameBuf)
+
+	// 3. Create the destination file and copy exactly `size` bytes into it.
+	out, err := os.Create("received_" + name)
+	if err != nil {
+		fmt.Println("failed to create file:", err)
+		return
+	}
+	defer out.Close()
+
+	// io.CopyN stops after exactly `size` bytes, protecting us from a
+	// misbehaving or malicious client sending more than it declared.
+	written, err := io.CopyN(out, conn, int64(size))
+	if err != nil && err != io.EOF {
+		fmt.Println("transfer error:", err)
+		return
+	}
+	fmt.Printf("received %q (%d bytes)\n", name, written)
+}
+
+func main() {
+	ln, err := net.Listen("tcp", ":9100")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("file server listening on :9100")
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		go handleConn(conn)
+	}
+}
+```
+
+**Client** (sends a local file with the matching header):
+
+```go
+package main
+
+import (
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+)
+
+func sendFile(path, addr string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	name := filepath.Base(path)
+
+	// Write the header: size, then name length, then name.
+	if err := binary.Write(conn, binary.BigEndian, uint64(info.Size())); err != nil {
+		return err
+	}
+	if err := binary.Write(conn, binary.BigEndian, uint16(len(name))); err != nil {
+		return err
+	}
+	if _, err := conn.Write([]byte(name)); err != nil {
+		return err
+	}
+
+	// io.Copy streams the file in chunks — it never loads the whole
+	// file into memory, so this works the same for a 1 KB file or a 10 GB one.
+	sent, err := io.Copy(conn, f)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("sent %d bytes\n", sent)
+	return nil
+}
+
+func main() {
+	if err := sendFile(os.Args[1], "localhost:9100"); err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+}
+```
+
+[Exercise: TCP File Transfer](../../exercises/part2/14-tcp-file-transfer/main.go)
+
+<Warning title="Never trust the declared size">
+A malicious or buggy client can lie about the size prefix. `io.CopyN` bounds how much the server reads, but production code should also enforce a maximum file size and validate the file name (reject `../` path traversal) before writing to disk.
+</Warning>
+
+---
+
+## Go Implementation: File Transfer over HTTP
+
+Since HTTP already handles framing, uploads and downloads often need almost no custom protocol work — just the standard `net/http` server and `multipart` form parsing you saw when working with JSON and XML payloads.
+
+**Upload handler:**
+
+```go
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	// 32 MB is the memory ceiling for parsed form parts; larger files
+	// spill over to temporary disk files automatically.
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "bad upload", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "missing file field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	dst, err := os.Create("uploads/" + filepath.Base(header.Filename))
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	written, err := io.Copy(dst, file)
+	if err != nil {
+		http.Error(w, "write failed", http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(w, "uploaded %d bytes as %s\n", written, header.Filename)
+}
+```
+
+**Download handler**, using `http.ServeFile`, which sets `Content-Length`, honors `Range` requests for resumable downloads, and streams straight from disk:
+
+```go
+func downloadHandler(w http.ResponseWriter, r *http.Request) {
+	name := filepath.Base(r.URL.Query().Get("name"))
+	http.ServeFile(w, r, filepath.Join("uploads", name))
+}
+```
+
+[Exercise: HTTP File Upload/Download](../../exercises/part2/14-http-file-transfer/main.go)
+
+`http.ServeFile` is worth pausing on: it already implements conditional requests (`If-Modified-Since`) and byte-range requests, which is exactly the mechanism resumable downloads rely on — a client that got disconnected at byte 4,000,000 can ask for `Range: bytes=4000000-` and continue rather than restarting.
+
+---
+
+## Progress Reporting and Integrity
+
+For a progress bar, wrap the underlying reader with a small type that counts bytes as they pass through — `io.Copy` doesn't care what kind of `io.Writer` or `io.Reader` you give it, as long as it satisfies the interface:
+
+```go
+type progressWriter struct {
+	total, written int64
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	p.written += int64(len(b))
+	fmt.Printf("\rprogress: %d/%d bytes", p.written, p.total)
+	return len(b), nil
+}
+```
+
+Pass `io.MultiWriter(dst, &progressWriter{total: size})` to `io.Copy` and every chunk written to disk also updates the progress counter.
+
+For integrity, compute a checksum while copying using `io.MultiWriter` with a `crypto/sha256` hash, then compare the hex digest the sender computed against what the receiver ends up with — a cheap way to detect corruption without a heavier protocol.
+
+---
+
+## Key Takeaways
+
+- File transfer is a framing problem: the receiver must always know exactly how many bytes belong to the file.
+- `io.Copy`, `io.CopyN`, and `io.ReadFull` are the workhorses — they stream data without loading entire files into memory.
+- HTTP already solves most of this for you: multipart uploads for sending, `http.ServeFile` for sending back (including range requests for resumable downloads).
+- Always validate declared sizes and file names before trusting them — a file transfer server is a prime target for path traversal and resource-exhaustion attacks.
+
+---
 
 [Previous: Chat Applications](13-chat-applications.md) | [Next: Proxy Servers and Clients](15-proxy-servers-and-clients.md)

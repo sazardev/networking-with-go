@@ -5,4 +5,154 @@ title: "Rate Limiting, CORS, and API Gateways"
 
 # Rate Limiting, CORS, and API Gateways
 
-// ...contenido y ejemplos...
+Authentication answers who can call your API. This chapter covers three separate but related concerns that shape how much they can call it, from where, and — as your API grows — whether a dedicated layer in front of it should handle all of this centrally: rate limiting, Cross-Origin Resource Sharing (CORS), and API gateways.
+
+---
+
+## Why Rate Limit
+
+Without a limit, a single misbehaving client — a buggy retry loop, a scraper, or an outright attacker — can exhaust the resources every other client depends on. Rate limiting protects availability, and it's also your first line of defense for sensitive endpoints like login, where limiting request rate directly slows down brute-force attempts.
+
+### Token Bucket with golang.org/x/time/rate
+
+The standard library ecosystem's `golang.org/x/time/rate` package implements a token bucket limiter: tokens refill at a steady rate, and a burst allowance lets short spikes through without rejecting them outright.
+
+```sh
+go get golang.org/x/time/rate
+```
+
+```go
+import "golang.org/x/time/rate"
+
+limiter := rate.NewLimiter(rate.Limit(5), 10) // 5 requests/sec, burst of 10
+
+if !limiter.Allow() {
+	http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+	return
+}
+```
+
+A single shared limiter throttles the whole server; most APIs need one limiter *per client*, keyed by IP address or API key:
+
+```go
+type ClientLimiter struct {
+	mu       sync.Mutex
+	limiters map[string]*rate.Limiter
+}
+
+func (c *ClientLimiter) get(key string) *rate.Limiter {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	l, ok := c.limiters[key]
+	if !ok {
+		l = rate.NewLimiter(rate.Limit(5), 10)
+		c.limiters[key] = l
+	}
+	return l
+}
+
+func (c *ClientLimiter) middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("X-API-Key")
+		if key == "" {
+			key = r.RemoteAddr
+		}
+		if !c.get(key).Allow() {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+`429 Too Many Requests` is the correct status code, and the `Retry-After` header tells well-behaved clients how long to back off before trying again.
+
+<DeepDive title="Token bucket vs sliding window">
+Token bucket (used above) allows short bursts up to the bucket's capacity, then settles into the steady refill rate — good for typical API traffic, which is naturally bursty. A sliding window counts requests in a rolling time frame and is stricter about not letting any window exceed the limit, at the cost of more bookkeeping. For a single-process API, token bucket's simplicity usually wins; distributed, multi-instance rate limiting (covered later) often needs a shared store regardless of algorithm.
+</DeepDive>
+
+This in-memory approach works for a single server instance; once you run multiple instances behind a load balancer, each has its own map and the effective limit multiplies by instance count. A later chapter covers distributed rate limiting with a shared store like Redis for that case.
+
+---
+
+## CORS: Letting Browsers Call Your API
+
+Same-origin policy blocks a web page served from `https://app.example.com` from calling `https://api.example.com` via JavaScript unless the API explicitly allows it. That's what CORS headers communicate.
+
+For a "simple" request (GET, certain content types), the browser sends the request and checks the response headers. For anything else — a `PUT`, a custom header, `Content-Type: application/json` on some browsers — it first sends a **preflight** `OPTIONS` request to ask permission before sending the real one.
+
+```go
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "https://app.example.com")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+The preflight `OPTIONS` request never reaches your real handler — the middleware answers it directly with `204 No Content` and the allowed methods/headers, and the browser only proceeds with the actual request if that answer permits it.
+
+<Warning title="Avoid Access-Control-Allow-Origin: *  with credentials">
+A wildcard origin is fine for a fully public, unauthenticated API. The moment requests carry cookies or an `Authorization` header meant to be trusted, echo back a specific, validated origin instead of `*` — browsers refuse to combine a wildcard origin with `Access-Control-Allow-Credentials: true` for exactly this reason, and even where they didn't, a wildcard plus credentials would let any site on the internet act on a logged-in user's behalf.
+</Warning>
+
+For production use, reaching for `github.com/rs/cors` is usually simpler and safer than hand-rolling every edge case:
+
+```go
+import "github.com/rs/cors"
+
+c := cors.New(cors.Options{
+	AllowedOrigins:   []string{"https://app.example.com"},
+	AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE"},
+	AllowedHeaders:   []string{"Content-Type", "Authorization"},
+	AllowCredentials: true,
+})
+handler := c.Handler(mux)
+```
+
+---
+
+## API Gateways
+
+Once you run more than one backend service, or need consistent auth, rate limiting, and logging applied everywhere without repeating it in every service, an API gateway sits in front of everything as a single entry point. Well-known examples include Kong, NGINX (as a reverse proxy with additional modules), Traefik, and cloud-managed options like AWS API Gateway.
+
+A gateway typically centralizes:
+
+- **Routing**: mapping public paths to internal services, including versioned paths (`/v1/orders` maps to the `orders` service).
+- **Authentication**: validating tokens once, at the edge, instead of in every backend.
+- **Rate limiting and quotas**: enforced consistently across all services behind it.
+- **Observability**: a single place to collect request logs, latency metrics, and error rates for the whole API surface.
+
+For a single Go service, building CORS and rate-limiting middleware directly into the application, as shown above, is entirely reasonable — you don't need a gateway on day one. It earns its place once you have multiple services that all need the same cross-cutting policies applied consistently, which we'll return to in a later chapter on advanced gateway patterns.
+
+---
+
+## Real-World Example: A Rejected Request
+
+**Request (over the limit):**
+
+```http
+GET /api/v1/products HTTP/1.1
+X-API-Key: abc123
+```
+
+**Response:**
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 1
+Content-Type: application/json
+
+{"error": "rate limit exceeded, try again shortly"}
+```
+
+Rate limiting, CORS, and gateways all answer the same underlying question from different angles: not just who is allowed to call this API, but how much, from where, and through what front door. Next, we'll look at documenting the API surface itself, so both humans and tools can discover what's actually available to call.

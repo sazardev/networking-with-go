@@ -5,4 +5,47 @@ title: "Wireless Network Security: Theory and Attacks"
 
 # Wireless Network Security: Theory and Attacks
 
-// ...contenido y ejemplos de seguridad en redes inalámbricas...
+> Wired traffic stays inside a cable; someone has to physically tap it to listen in. Wireless traffic is broadcast into the air for anyone with an antenna and no scruples to receive - the network equivalent of holding a conversation by shouting across a crowded room. Everything about wireless security exists to compensate for that fundamental fact.
+
+## The Evolution of Wi-Fi Security
+
+**WEP** (Wired Equivalent Privacy), the original Wi-Fi encryption scheme, is thoroughly broken by modern standards - its use of RC4 with a small, reused initialization vector made key recovery practical within minutes of capturing enough traffic, and it should never appear in any network built today.
+
+**WPA** (Wi-Fi Protected Access) was a stopgap that patched WEP's most severe flaws using TKIP while remaining compatible with older WEP-era hardware, but it inherited enough of WEP's design that it's also considered obsolete now.
+
+**WPA2**, built around AES-CCMP encryption, was the standard for over a decade and remains widely deployed. Its main practical weakness isn't the cryptography itself but the four-way handshake used during authentication: an attacker who captures a handshake can attempt an offline dictionary or brute-force attack against the pre-shared key, entirely without further interaction with the network - which is why passphrase strength matters as much as the protocol version.
+
+**WPA3** replaces the WPA2 handshake with Simultaneous Authentication of Equals (SAE), a protocol specifically designed to resist offline dictionary attacks even against comparatively weak passphrases, and adds forward secrecy so capturing one session's traffic doesn't compromise past or future sessions encrypted under the same password.
+
+<DeepDive title="KRACK: A Well-Documented Protocol-Level Flaw">
+In 2017, researchers publicly disclosed the Key Reinstallation Attack (KRACK), a flaw in the WPA2 four-way handshake itself rather than in any particular vendor's implementation - by manipulating handshake message retransmission, an attacker could force reinstallation of an already-in-use encryption key, resetting nonce counters and enabling packet decryption or injection in some configurations. It was fixed through software and firmware patches across essentially the entire Wi-Fi ecosystem rather than requiring a new protocol version, and it's a good illustration of how a flaw in the protocol's state machine, not its cryptographic primitives, can undermine an otherwise sound design.
+</DeepDive>
+
+## Common Wireless Attacks
+
+**Deauthentication attacks** exploit the fact that 802.11 management frames (including the ones that tell a client to disconnect) are typically unauthenticated in older configurations, letting an attacker forcibly disconnect a client - often as a setup step for capturing a fresh handshake or forcing a client onto a malicious network instead.
+
+**Rogue access points and evil twins** involve setting up a Wi-Fi network with the same SSID as a legitimate one, hoping client devices or unwary users connect to the attacker's version instead. Combined with a captive portal that mimics a real login page, this becomes a social engineering attack riding on a wireless-layer trick, connecting directly back to the previous chapter.
+
+**War driving / passive reconnaissance** simply involves surveying an area for visible networks, their signal strength, and their apparent security configuration, which remains a legitimate reconnaissance technique for authorized wireless security assessments and a genuine risk when it's not authorized.
+
+**Bluetooth and BLE risks** deserve a brief mention alongside Wi-Fi: many of the same categories of attack apply (unauthenticated pairing flows, protocol implementation bugs, and device impersonation), and BLE's ubiquity in IoT devices makes it directly relevant to the IoT security chapter that follows this one.
+
+<Warning title="Wireless Testing Requires Explicit Authorization">
+Capturing handshakes, deauthenticating clients, or standing up a rogue access point against any network you don't own or have explicit written authorization to test is illegal in most jurisdictions, independent of intent. Radio spectrum interference (deauth frames, jamming) can also affect devices and networks well outside your intended target due to how radio propagation works, which is an additional reason authorized scope needs to be precise and geographically bounded.
+</Warning>
+
+## Defending a Wireless Network
+
+- **Use WPA3 where hardware supports it**, and WPA2-AES at minimum otherwise; never WEP or open networks for anything sensitive.
+- **Use long, high-entropy pre-shared keys** for personal-mode networks, or better, **enterprise mode with 802.1X/EAP**, which authenticates each user or device individually against a RADIUS server rather than sharing one passphrase across everyone.
+- **Segment guest and IoT wireless networks** from the trusted internal network entirely, ideally on separate VLANs with no routing between them - the wireless equivalent of the network segmentation principles covered earlier in this part.
+- **Deploy a Wireless Intrusion Detection System (WIDS)** to detect rogue access points, unusual deauthentication frame volume, and known-attack signatures over the air, mirroring the wired IDS concepts from earlier in this part but applied to the radio layer.
+- **Disable WPS** (Wi-Fi Protected Setup) on consumer-grade access points, since several widely known implementation flaws make its PIN-based pairing mode a common weak point.
+
+## Summary
+
+- Wireless security compensates for a fundamentally broadcast, unauthenticated physical medium - anyone in range can receive the signal.
+- WEP and original WPA are obsolete; WPA2 remains common but depends heavily on passphrase strength; WPA3's SAE handshake is a meaningful structural improvement.
+- KRACK is a real, well-documented example of a protocol-level (not just implementation-level) wireless vulnerability.
+- Segmentation, enterprise authentication, and WIDS monitoring extend the same defense-in-depth principles used on wired networks into the radio domain.

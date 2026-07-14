@@ -5,4 +5,107 @@ title: "Building a Custom Honeypot in Go"
 
 # Building a Custom Honeypot in Go
 
-// ...contenido y ejemplos de honeypots personalizados en Go...
+> A honeypot is a fake vault sitting next to the real one, wired with an alarm and a camera. Nobody with legitimate business ever has a reason to open it, so any interaction with it - by definition - is worth investigating. That single property is what makes honeypots such a high-signal, low-noise detection tool compared to almost anything else in this part of the book.
+
+## What a Honeypot Is For
+
+A honeypot is a decoy system deliberately exposed to attract and record unauthorized interaction. Because a properly deployed honeypot has no legitimate function, every connection to it is inherently suspicious - there's no "normal user" baseline to distinguish from noise, which is precisely the alert-fatigue problem that makes tuning IDS and SIEM rules (covered earlier in this part) genuinely hard. Honeypots sidestep that problem almost entirely.
+
+**Low-interaction honeypots** simulate just enough of a service's surface (a banner, a login prompt) to log connection attempts and basic interaction without exposing any real functionality an attacker could actually exploit - simple to build and very safe to run. **High-interaction honeypots** run real (but isolated and heavily monitored) services or operating systems, capturing much richer behavioral data at the cost of significantly higher operational risk and complexity, since a real service really can be exploited if isolation fails.
+
+Honeypots also serve a distinct research purpose beyond detection: capturing the actual tools, credentials, and techniques attackers try against a given service type, which feeds directly into the malware analysis and threat intelligence practices covered earlier in this part.
+
+<Warning title="Isolation and Legal Care Are Not Optional">
+A honeypot must run in an isolated network segment with no route to production systems or sensitive data - treat it as hostile territory that will, by design, attract attackers. Logging attacker input can itself raise privacy and wiretap-style legal considerations depending on jurisdiction and what gets captured, so avoid logging anything beyond what's needed for detection and analysis, and get explicit sign-off before deploying a honeypot on any network you don't fully control. Never deploy a honeypot that could plausibly be mistaken for a real production system by a legitimate user - that's a liability, not a detection tool.
+</Warning>
+
+## Go Implementation: A Low-Interaction SSH Honeypot
+
+A minimal but genuinely useful honeypot needs surprisingly little code: listen on the port a real service would use, present a convincing banner, capture whatever the connecting client sends, and log it all with enough structure to feed a SIEM.
+
+```go
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"log/slog"
+	"net"
+	"os"
+	"time"
+)
+
+// Event is a single recorded interaction with the honeypot, structured
+// for direct ingestion by a SIEM or log pipeline.
+type Event struct {
+	Timestamp time.Time `json:"timestamp"`
+	SourceIP  string    `json:"source_ip"`
+	Banner    string    `json:"banner_sent"`
+	Input     string    `json:"input_received"`
+}
+
+const fakeBanner = "SSH-2.0-OpenSSH_8.9\r\n"
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	ln, err := net.Listen("tcp", ":2222")
+	if err != nil {
+		logger.Error("failed to start honeypot listener", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("honeypot listening", "addr", ln.Addr().String())
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		go handleSession(conn, logger)
+	}
+}
+
+func handleSession(conn net.Conn, logger *slog.Logger) {
+	defer conn.Close()
+	// Bound how long any single connection can occupy a goroutine -
+	// a honeypot is an attractive target for simple resource exhaustion.
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	conn.Write([]byte(fakeBanner))
+
+	scanner := bufio.NewScanner(conn)
+	var input string
+	if scanner.Scan() {
+		input = scanner.Text()
+	}
+
+	event := Event{
+		Timestamp: time.Now().UTC(),
+		SourceIP:  host,
+		Banner:    fakeBanner,
+		Input:     input,
+	}
+	payload, _ := json.Marshal(event)
+	logger.Info("honeypot interaction recorded", "event", string(payload))
+}
+```
+
+This deliberately does nothing else: it never authenticates a real session, never executes anything the client sends, and never exposes any actual filesystem or shell. The value is entirely in the log line it produces - a real source IP, a real timestamp, and the exact bytes an automated scanner or human attacker sent immediately after seeing what looks like a real SSH banner, which is often enough on its own to fingerprint known scanning tools or credential-stuffing scripts by their characteristic first message.
+
+## What to Do With the Data
+
+A honeypot only produces value once its output actually reaches something that acts on it. The structured JSON events above feed naturally into the same SIEM normalization pipeline described earlier in this part: source IPs seen hitting the honeypot are strong candidates for an automatic blocklist (an application of the security automation practices from the previous chapter), and unique input patterns worth comparing against known attack-tool signatures or threat intelligence feeds.
+
+Because nothing legitimate ever talks to a honeypot, even a single hit is worth an alert - a sharp contrast to production IDS tuning, where the entire challenge is separating rare true positives from a much larger volume of normal traffic.
+
+## Extending the Concept
+
+The same skeleton generalizes to any service worth decoying: a fake HTTP admin panel that logs every request path and credential attempt, a fake database listener that logs connection attempts and any query text sent before the connection is closed, or several fake services running simultaneously on a single host to widen the net. In every case, the design principle stays the same: convincing enough surface to attract interaction, zero real functionality behind it, and structured logging of everything that happens.
+
+## Summary
+
+- A honeypot's core value is that any interaction with it is inherently suspicious, sidestepping the false-positive tuning problem that dominates most other detection tools.
+- Low-interaction honeypots are simple and safe; high-interaction honeypots capture richer data at meaningfully higher operational risk.
+- Isolation from production systems and careful attention to what gets logged are non-negotiable before deployment.
+- A working honeypot can be built with nothing beyond Go's standard library: `net` for the listener, `bufio` for reading input, and `log/slog` with `encoding/json` for structured, SIEM-ready output.

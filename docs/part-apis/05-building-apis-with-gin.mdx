@@ -5,4 +5,245 @@ title: "Building APIs with Gin"
 
 # Building APIs with Gin
 
-// ...contenido y ejemplos...
+`net/http` gets you far, but as an API grows — dozens of routes, shared middleware, request binding and validation on every endpoint — the boilerplate adds up. Gin (`github.com/gin-gonic/gin`) is the most widely used Go web framework, built around a fast radix-tree router and a small, expressive API for handlers, middleware, and JSON binding. This chapter rebuilds the task API from the previous chapter, this time with Gin.
+
+---
+
+## Installing Gin
+
+```sh
+go get github.com/gin-gonic/gin
+```
+
+---
+
+## The Engine and Basic Routes
+
+`gin.Default()` creates a router pre-loaded with logging and panic-recovery middleware — the two things almost every service wants from the start:
+
+```go
+package main
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	r := gin.Default()
+
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	r.Run(":8080") // listens on 0.0.0.0:8080
+}
+```
+
+`gin.H` is just a shorthand for `map[string]any` — convenient for building ad-hoc JSON bodies without declaring a struct.
+
+---
+
+## Path and Query Parameters
+
+Gin exposes path parameters via `c.Param` and query parameters via `c.Query` (with a default) or `c.DefaultQuery`:
+
+```go
+r.GET("/products/:id", func(c *gin.Context) {
+	id := c.Param("id")
+	category := c.DefaultQuery("category", "")
+	c.JSON(http.StatusOK, gin.H{"id": id, "category": category})
+})
+```
+
+Gin's route syntax uses `:name` for a required segment and `*name` for a wildcard that captures the rest of the path — functionally equivalent to the `{name}` syntax in the standard library's Go 1.22+ mux, just with Gin's own notation.
+
+---
+
+## Binding and Validating JSON
+
+Gin's binding layer decodes the request body into a struct and can enforce validation rules declared as struct tags, powered by `go-playground/validator` under the hood:
+
+```go
+type CreateTaskRequest struct {
+	Text string `json:"text" binding:"required,min=1,max=280"`
+}
+
+func createTask(c *gin.Context) {
+	var req CreateTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	task := store.Create(req.Text)
+	c.JSON(http.StatusCreated, task)
+}
+```
+
+`ShouldBindJSON` returns an error instead of aborting the request itself, which keeps error handling explicit and consistent with the rest of the handler.
+
+---
+
+## A Complete Task API in Gin
+
+```go
+type Task struct {
+	ID   int    `json:"id"`
+	Text string `json:"text"`
+	Done bool   `json:"done"`
+}
+
+func setupRouter(store *Store) *gin.Engine {
+	r := gin.Default()
+
+	api := r.Group("/api/v1")
+	{
+		api.POST("/tasks", func(c *gin.Context) {
+			var req CreateTaskRequest
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusCreated, store.Create(req.Text))
+		})
+
+		api.GET("/tasks", func(c *gin.Context) {
+			c.JSON(http.StatusOK, store.List())
+		})
+
+		api.GET("/tasks/:id", func(c *gin.Context) {
+			id, err := strconv.Atoi(c.Param("id"))
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+				return
+			}
+			task, err := store.Get(id)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+				return
+			}
+			c.JSON(http.StatusOK, task)
+		})
+
+		api.DELETE("/tasks/:id", func(c *gin.Context) {
+			id, err := strconv.Atoi(c.Param("id"))
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+				return
+			}
+			if err := store.Delete(id); err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+				return
+			}
+			c.Status(http.StatusNoContent)
+		})
+	}
+
+	return r
+}
+```
+
+Route groups (`r.Group("/api/v1")`) are how Gin keeps versioned or namespaced APIs organized — every route registered on the group inherits its prefix and any middleware attached to it.
+
+**Request:**
+
+```http
+POST /api/v1/tasks HTTP/1.1
+Content-Type: application/json
+
+{"text": "Learn Gin"}
+```
+
+**Response:**
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{"id":1,"text":"Learn Gin","done":false}
+```
+
+---
+
+## Custom Middleware
+
+Middleware in Gin is a `gin.HandlerFunc` that calls `c.Next()` to continue the chain, or stops it early with `c.Abort()`:
+
+```go
+func requestID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.GetHeader("X-Request-ID")
+		if id == "" {
+			id = uuid.NewString()
+		}
+		c.Set("request_id", id)
+		c.Writer.Header().Set("X-Request-ID", id)
+		c.Next()
+	}
+}
+
+func requireAPIKey(validKey string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetHeader("X-API-Key") != validKey {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
+			return
+		}
+		c.Next()
+	}
+}
+```
+
+Attach middleware globally with `r.Use(requestID())`, or scope it to a single group: `api := r.Group("/api/v1", requireAPIKey(key))`.
+
+<DeepDive title="gin.Default() vs gin.New()">
+`gin.Default()` attaches the `Logger()` and `Recovery()` middleware automatically — good defaults for development and most production services. `gin.New()` gives you a bare engine with no middleware at all, useful when you want full control over logging format or need to swap in your own recovery/observability stack (for example, wiring in OpenTelemetry tracing middleware instead).
+</DeepDive>
+
+---
+
+## Error Handling Conventions
+
+A consistent JSON error shape across the whole API makes client-side error handling predictable:
+
+```go
+func abortWithError(c *gin.Context, status int, msg string) {
+	c.AbortWithStatusJSON(status, gin.H{"error": msg})
+}
+```
+
+Using one helper everywhere means every error response — 400, 401, 404, 500 — has the same `{"error": "..."}` shape, which clients can parse without a switch statement per status code.
+
+---
+
+## Testing a Gin Handler
+
+Gin handlers are still just functions taking a `*gin.Context`, so testing them follows the same `httptest` pattern from the standard-library chapter — you don't need to spin up a real server:
+
+```go
+func TestGetTask(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := NewStore()
+	store.Create("write tests")
+
+	router := setupRouter(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/1", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+```
+
+`gin.SetMode(gin.TestMode)` silences Gin's default request logging during tests, and `router.ServeHTTP` drives the whole request through the real routing and middleware stack, exactly as it would run in production.
+
+---
+
+## Why Choose Gin
+
+Gin's appeal is speed (its router is one of the fastest in the Go ecosystem, benchmarked repeatedly against alternatives), a huge middleware ecosystem (CORS, JWT, rate limiting, Swagger generation all have mature Gin integrations), and an API that stays close to plain `net/http` concepts — `*gin.Context` wraps `http.ResponseWriter` and `*http.Request` rather than hiding them, so you can drop down to the standard library at any point (`c.Writer`, `c.Request`) when you need to.
+
+Next, we'll build the same API again with Fiber, a framework that takes a different — and even faster — path by building on `fasthttp` instead of `net/http`.

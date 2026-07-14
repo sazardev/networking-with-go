@@ -1,10 +1,178 @@
 ---
 id: "[2.22.0]"
-title: "Performance Optimization: Concepts and Go Implementation 🚀"
+title: "Performance Optimization: Concepts and Go Implementation"
 ---
 
-# Performance Optimization: Concepts and Go Implementation 🚀
+# Performance Optimization: Concepts and Go Implementation
 
-Optimize your Go network applications for speed and efficiency.
+> "Tuning a race car before you've measured its lap times is just guessing with extra steps. Performance work on a network service follows the same rule: profile first, find the actual bottleneck, then change one thing at a time — otherwise you risk making the code more complicated without making it any faster."
+
+---
+
+## Where Network Applications Actually Lose Time
+
+Every server built in this book does some combination of four things, and the bottleneck is almost always one of them:
+
+- **I/O waiting:** Time spent blocked on the network or disk, not doing useful CPU work.
+- **Memory allocation and GC pressure:** Every allocation is eventually cleaned up by the garbage collector; a hot path that allocates constantly makes the GC work harder, stealing CPU time from your actual logic.
+- **Connection overhead:** Repeatedly setting up and tearing down connections (TCP handshakes, TLS handshakes) instead of reusing them.
+- **Goroutine misuse:** Either too few goroutines serializing work that could run in parallel, or so many that scheduling and memory overhead start to dominate.
+
+The `pprof` tooling in the standard library measures all four without guesswork.
+
+---
+
+## Profiling with `net/http/pprof`
+
+Importing `net/http/pprof` for its side effects wires up a set of profiling endpoints on any `net/http` server:
+
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+	_ "net/http/pprof"
+)
+
+func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
+	// ... the rest of your application's real server setup ...
+	select {}
+}
+```
+
+With that running, `go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30` captures a 30-second CPU profile, and `go tool pprof http://localhost:6060/debug/pprof/heap` captures a memory snapshot — both open into an interactive explorer that shows exactly which functions are consuming CPU or allocating memory.
+
+<Warning title="Don't expose pprof publicly">
+The `/debug/pprof/` endpoints reveal internal details (goroutine stacks, memory layout) and can be used to trigger expensive profiling on demand. Bind them to a localhost-only listener, as above, or gate them behind authentication — never leave them reachable from the public internet.
+</Warning>
+
+---
+
+## Benchmarking with `testing.B`
+
+Before optimizing anything, get a repeatable number. Go's `testing` package (already used for correctness tests in the previous chapter) also runs benchmarks:
+
+```go
+func BenchmarkParseHeader(b *testing.B) {
+	data := []byte{0, 0, 0, 0, 0, 0, 0, 10}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		parseHeader(data)
+	}
+}
+```
+
+Run it with `go test -bench=. -benchmem`, which reports iterations per second alongside allocations per operation — the `-benchmem` flag is what surfaces the GC-pressure story, not just raw speed.
+
+---
+
+## Reducing Allocations with `sync.Pool`
+
+A server that allocates a fresh buffer for every request or every connection creates constant garbage for the collector to clean up. `sync.Pool` lets you reuse buffers instead of discarding them:
+
+```go
+var bufferPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 4096)
+	},
+}
+
+func handleConn(conn net.Conn) {
+	defer conn.Close()
+
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			return
+		}
+		process(buf[:n])
+	}
+}
+```
+
+Each call to `Get` returns either a previously used buffer or a newly allocated one if the pool is empty; `Put` returns it for reuse instead of letting it become garbage. This directly reduces the allocation count a benchmark's `-benchmem` output would report.
+
+<DeepDive title="sync.Pool is not a cache">
+Objects in a `sync.Pool` can be dropped by the garbage collector at any time, including between two calls in the same request — it exists purely to reduce allocation churn under load, not to hold onto data you need later. Never rely on a pooled object still being there.
+</DeepDive>
+
+---
+
+## Reusing Connections
+
+Every TCP or TLS handshake costs round trips before a single byte of application data moves. The HTTP chapter's `http.Client` already does this for you by default — its underlying `http.Transport` keeps idle connections open and reuses them for subsequent requests to the same host. Tuning that pool matters under load:
+
+```go
+client := &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+	},
+	Timeout: 10 * time.Second,
+}
+```
+
+Raising `MaxIdleConnsPerHost` above its conservative default matters specifically when your client makes many concurrent requests to the *same* backend, since the default caps how many idle connections are kept ready per host before new connections must be dialed from scratch.
+
+---
+
+## Buffered I/O
+
+Repeatedly calling `Read`/`Write` with tiny amounts of data means a system call per call, and system calls aren't free. `bufio.Reader`/`bufio.Writer` — wrapping any `io.Reader`/`io.Writer`, including a `net.Conn` — batch small reads and writes into fewer, larger system calls:
+
+```go
+reader := bufio.NewReader(conn)
+writer := bufio.NewWriter(conn)
+defer writer.Flush() // buffered writes must be flushed explicitly
+
+line, err := reader.ReadString('\n')
+```
+
+`io.Copy`, used throughout the file transfer chapter, already performs its own internal chunked buffering — the manual wrapping above matters most for line-oriented or small-message protocols where you're issuing many small reads yourself.
+
+---
+
+## Goroutines and `GOMAXPROCS`
+
+The concurrency chapter's deep dive explained Go's M:N scheduler: goroutines are multiplexed onto a small number of OS threads, controlled by `GOMAXPROCS` (defaulting to the number of CPU cores). For most network servers, the default is correct and shouldn't be touched — the scheduler already parks goroutines blocked on I/O and runs others in their place. The more common performance mistake is launching an unbounded goroutine per unit of work with no limit, which can exhaust memory under a traffic spike. A **worker pool** — a fixed number of goroutines pulling from a shared channel — bounds concurrency explicitly:
+
+```go
+func worker(jobs <-chan Job, results chan<- Result) {
+	for job := range jobs {
+		results <- process(job)
+	}
+}
+
+func main() {
+	jobs := make(chan Job, 100)
+	results := make(chan Result, 100)
+
+	for i := 0; i < 10; i++ { // fixed pool of 10 workers
+		go worker(jobs, results)
+	}
+	// ... feed jobs, collect results ...
+}
+```
+
+---
+
+## Key Takeaways
+
+- Profile before optimizing: `net/http/pprof` and `go tool pprof` locate the actual bottleneck instead of a guessed one.
+- `testing.B` benchmarks with `-benchmem` turn "is this faster?" into a measured, repeatable number.
+- `sync.Pool` reduces GC pressure by reusing short-lived buffers, but never treat it as a cache.
+- Reuse connections (`http.Transport` tuning) and batch small I/O operations (`bufio`) to cut down on handshake and syscall overhead.
+- Bound goroutine growth with a worker pool rather than launching one goroutine per unit of work without limit.
+
+---
 
 [Previous: Testing and Debugging](21-testing-and-debugging.md) | [Next: Deploying Go Network Applications](23-deploying-go-network-applications.md)

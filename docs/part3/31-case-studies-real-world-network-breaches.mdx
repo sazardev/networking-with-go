@@ -5,4 +5,36 @@ title: "Case Studies: Real-World Network Breaches"
 
 # Case Studies: Real-World Network Breaches
 
-// ...contenido y ejemplos de estudios de caso de brechas de red reales...
+> Every concept in this part of the book - segmentation, IDS/IPS, patching discipline, least privilege, social engineering awareness - exists because a real organization, at some point, learned its absence the hard way. Studying how well-documented breaches actually unfolded turns abstract principles into concrete, memorable lessons about exactly what happens when one of them is missing.
+
+## Mirai: Default Credentials at Botnet Scale
+
+The Mirai botnet, first identified in 2016, remains one of the clearest illustrations of the IoT threat model discussed earlier in this part. Mirai worked by continuously scanning the internet for IoT devices - routers, IP cameras, DVRs - still running factory-default administrative credentials, logging in with a built-in list of common default username/password pairs, and enlisting the device into a botnet capable of launching large-scale distributed denial-of-service attacks. Mirai was used against DNS provider Dyn in late 2016, an attack widely reported to have disrupted access to a number of major internet services that depended on Dyn's DNS infrastructure, illustrating how a chokepoint dependency (in this case, on a single DNS provider) can turn a botnet of unmanaged consumer devices into an internet-wide availability incident. The Mirai source code was subsequently released publicly, which both accelerated understanding of the technique in the security community and enabled a wave of derivative botnets built on the same default-credential-scanning approach. The pattern - unmanaged, unpatched, default-credentialed devices at massive scale, aggregated into attack infrastructure - remains the dominant IoT botnet model today.
+
+## Target: Third-Party Access and Flat Networks
+
+The Target Corporation breach, disclosed in December 2013, is frequently cited as a case study in network segmentation failure. According to public post-incident reporting, attackers gained an initial foothold using credentials belonging to a third-party HVAC (heating, ventilation, and air conditioning) vendor with remote access into Target's network for billing and system-monitoring purposes. From that foothold, the attackers were reportedly able to move laterally to point-of-sale systems and deploy malware designed to capture payment card data directly from card readers during the holiday shopping season, resulting in one of the largest payment card breaches publicly disclosed up to that point. The recurring lesson drawn from this incident across the security industry is that third-party vendor access needs the same least-privilege, segmented treatment as any internal account - a vendor connection scoped narrowly to only the systems it actually needs would have prevented the lateral movement that made the incident as large as it was.
+
+## Equifax: Unpatched, Publicly Known Vulnerabilities
+
+The Equifax breach, disclosed in 2017, is widely documented as resulting from exploitation of a known vulnerability in Apache Struts (a Java web application framework) for which a patch had already been publicly released before the breach occurred. Public post-incident reporting describes a gap between the vulnerability being disclosed and patched upstream and the affected system actually being updated internally, during which attackers exploited the unpatched instance to access sensitive data affecting a very large number of individuals. This incident is one of the most commonly referenced illustrations of why patch management - discussed as a security fundamental earlier in this book - remains one of the highest-leverage, least glamorous security practices an organization can invest in: the vulnerability wasn't unknown or novel, it was simply unpatched in time.
+
+## SolarWinds: Supply Chain Compromise
+
+The SolarWinds incident, publicly disclosed in December 2020, represents a different attack pattern entirely: rather than exploiting a vulnerability in a deployed system, attackers reportedly compromised the build process for SolarWinds' Orion network monitoring software itself, inserting a backdoor (widely referred to as Sunburst) into legitimate, digitally signed software updates subsequently distributed to a large number of Orion customers, including multiple government agencies and large enterprises. Because the malicious code arrived through an official, trusted update channel, it bypassed the kind of perimeter and signature-based defenses that assume incoming software from a known vendor is safe by definition. This incident is widely cited as a turning point in industry attention toward software supply chain integrity - build pipeline security, software bill of materials practices, and code-signing verification - topics explored further in the closing chapter of this part.
+
+## WannaCry: A Leaked Exploit Turned Worm
+
+The WannaCry ransomware outbreak in May 2017 spread using EternalBlue, an exploit targeting a vulnerability in the SMBv1 file-sharing protocol that had been developed and later leaked publicly by a group known as the Shadow Brokers. Microsoft had released a patch for the underlying vulnerability roughly a month before the outbreak, but a large number of systems worldwide remained unpatched, allowing WannaCry to self-propagate across networks as a worm without any user interaction beyond an initially infected host being reachable over the network - a sharp contrast to the phishing-driven infection pattern of most ransomware. The outbreak was eventually slowed after a researcher identified and registered a domain name that functioned, apparently unintentionally by the malware's authors, as a kill switch. WannaCry is frequently cited alongside Equifax as another illustration of the gap between a patch being available and a patch actually being applied across a real fleet of systems.
+
+<DeepDive title="The Recurring Pattern Behind These Incidents">
+None of these five incidents required a genuinely novel or exotic technique. Default credentials, an under-segmented third-party connection, a known and already-patched vulnerability, a compromised trusted update channel, and a leaked exploit against an old protocol - every one of these is a pattern this book has already named and addressed directly: least privilege, segmentation, patch management, supply chain integrity, and protocol hygiene. The consistent lesson across large, well-documented breaches is less often "nobody could have predicted this" and more often "the fix was already known, and the gap was in consistently applying it."
+</DeepDive>
+
+## Summary
+
+- Mirai illustrates the IoT threat model at internet scale: default credentials, unmanaged devices, and DNS as a single point of failure.
+- Target illustrates the risk of unsegmented third-party access reaching sensitive systems it never needed to touch.
+- Equifax and WannaCry both illustrate the gap between a patch being available and a patch actually being deployed in time.
+- SolarWinds illustrates how compromising a trusted software supply chain can bypass defenses built around trusting a known vendor.
+- Across all of them, the recurring lesson is that most large breaches trace back to known, addressable gaps rather than truly novel techniques.

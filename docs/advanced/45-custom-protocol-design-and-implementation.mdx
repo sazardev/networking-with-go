@@ -1,8 +1,160 @@
 ---
 id: "[3.45.0]"
-title: "Custom Protocol Design and Implementation 🛠️"
+title: "Custom Protocol Design and Implementation"
 ---
 
-# Custom Protocol Design and Implementation 🛠️
+# Custom Protocol Design and Implementation
 
-// ...content coming soon...
+> Two people inventing a board game together need to agree on more than the pieces. Whose turn goes first? How do you signal that your turn is over? What happens if someone disconnects mid-game? What counts as a valid move, and what happens when an invalid one arrives? A protocol is exactly that set of agreed rules, written down precisely enough that two independently written programs, possibly years apart, can still play the same game correctly.
+
+Every protocol you have used in this book -- HTTP, WebSocket, gRPC's framing over HTTP/2 -- is somebody else's answer to this design problem. Sometimes their answer does not fit yours: you need less overhead than HTTP for a high-frequency binary stream, or semantics that neither HTTP nor a generic message queue quite captures. `net.Conn` gives you a raw, ordered byte stream (over TCP) or discrete datagrams (over UDP); everything above that -- what a "message" is, how you know where one ends and the next begins, how you version the format -- is your job to define. This chapter is about doing that job well.
+
+### The Core Problem: Framing
+
+TCP gives you a stream of bytes with no message boundaries at all -- a single `Write` on one end can arrive as multiple `Read`s on the other, or multiple `Write`s can coalesce into one `Read`. If your protocol has any concept of a discrete "message," you must invent a way to mark where each one starts and ends. There are three common strategies:
+
+- **Delimiter-based**: end each message with a sentinel byte sequence (like `\r\n` in HTTP/1.1 headers). Simple, but the delimiter can never appear in the payload unless you escape it, which adds its own complexity.
+- **Length-prefixed**: send a fixed-size header containing the length of the message that follows, then exactly that many bytes. No escaping needed, and the reader knows in advance exactly how much to read. This is the approach most binary protocols -- including HTTP/2 and gRPC's framing -- actually use.
+- **Fixed-size messages**: every message is the same number of bytes. Simplest of all, but wasteful or outright unworkable for variable-length payloads.
+
+Length-prefixing is the right default for most custom binary protocols, and it is what the implementation below uses.
+
+### Designing the Header
+
+Beyond framing, a serious protocol header usually carries a **version** (so you can evolve the format without breaking old clients), a **type** or **opcode** (so a single connection can carry different kinds of messages), and the **length** itself. Everything after the header is the payload, whose interpretation depends on the type field.
+
+```go
+package protocol
+
+import (
+	"encoding/binary"
+	"errors"
+	"io"
+)
+
+const (
+	Version1 uint8 = 1
+
+	TypePing    uint8 = 0
+	TypePong    uint8 = 1
+	TypeMessage uint8 = 2
+)
+
+// Header is fixed-size and always sent first: 1 byte version,
+// 1 byte type, 4 bytes big-endian length of the payload that follows.
+type Header struct {
+	Version uint8
+	Type    uint8
+	Length  uint32
+}
+
+const headerSize = 6
+
+func (h Header) Encode() []byte {
+	buf := make([]byte, headerSize)
+	buf[0] = h.Version
+	buf[1] = h.Type
+	binary.BigEndian.PutUint32(buf[2:], h.Length)
+	return buf
+}
+
+func DecodeHeader(buf []byte) (Header, error) {
+	if len(buf) < headerSize {
+		return Header{}, errors.New("buffer too small for header")
+	}
+	return Header{
+		Version: buf[0],
+		Type:    buf[1],
+		Length:  binary.BigEndian.Uint32(buf[2:]),
+	}, nil
+}
+```
+
+Big-endian ("network byte order") is the conventional choice for wire formats -- it is what most established protocols use, and picking it explicitly (rather than relying on host byte order) is what makes your protocol work identically whether the two ends are little-endian x86 machines or big-endian hardware.
+
+### Reading a Message Safely
+
+The critical correctness point when reading length-prefixed data: a single `conn.Read` call is not guaranteed to fill your buffer, even if the sender wrote it all at once. You must loop until you have exactly the bytes you asked for, which is precisely what `io.ReadFull` does:
+
+```go
+package protocol
+
+import (
+	"fmt"
+	"io"
+)
+
+type Message struct {
+	Header  Header
+	Payload []byte
+}
+
+func ReadMessage(r io.Reader) (*Message, error) {
+	headerBuf := make([]byte, headerSize)
+	if _, err := io.ReadFull(r, headerBuf); err != nil {
+		return nil, fmt.Errorf("reading header: %w", err)
+	}
+
+	header, err := DecodeHeader(headerBuf)
+	if err != nil {
+		return nil, err
+	}
+
+	const maxPayload = 16 * 1024 * 1024 // refuse to allocate unbounded memory for a hostile length
+	if header.Length > maxPayload {
+		return nil, fmt.Errorf("payload too large: %d bytes", header.Length)
+	}
+
+	payload := make([]byte, header.Length)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, fmt.Errorf("reading payload: %w", err)
+	}
+
+	return &Message{Header: header, Payload: payload}, nil
+}
+
+func WriteMessage(w io.Writer, msgType uint8, payload []byte) error {
+	header := Header{Version: Version1, Type: msgType, Length: uint32(len(payload))}
+	if _, err := w.Write(header.Encode()); err != nil {
+		return fmt.Errorf("writing header: %w", err)
+	}
+	if _, err := w.Write(payload); err != nil {
+		return fmt.Errorf("writing payload: %w", err)
+	}
+	return nil
+}
+```
+
+The `maxPayload` guard is not optional polish -- without it, a malicious or buggy peer can send a `Header.Length` of close to 4 GiB and force your server to allocate that much memory before it even sees whether the rest of the data ever arrives. Any protocol that trusts a length field from the network needs an upper bound.
+
+### Putting It Together: A Minimal Server and Client
+
+```go
+func handleConn(conn net.Conn) {
+	defer conn.Close()
+	for {
+		msg, err := protocol.ReadMessage(conn)
+		if err != nil {
+			return // connection closed or malformed stream
+		}
+		switch msg.Header.Type {
+		case protocol.TypePing:
+			protocol.WriteMessage(conn, protocol.TypePong, nil)
+		case protocol.TypeMessage:
+			log.Printf("received: %s", msg.Payload)
+		}
+	}
+}
+```
+
+Because every message is self-delimiting, this loop works whether the peer sends one message per TCP segment or batches ten of them into a single `Write` -- `ReadMessage` will keep pulling exactly as many bytes as each header promises, for as long as the connection stays open.
+
+### Versioning and Evolution
+
+Put the version byte in from day one, even if you only ever ship `Version1` for the first year. When you need to add a field, you have two honest options: bump the version and require both ends to negotiate a shared version during connection setup, or design the payload format itself to be forward-compatible (a length-prefixed list of optional fields, similar in spirit to protobuf's tag-based approach from the gRPC chapter). Retrofitting either strategy after a protocol has shipped without a version field is far more painful than reserving the byte up front.
+
+<DeepDive title="State machines keep protocols honest">
+Beyond framing, most real protocols have a notion of valid message *order* -- a handshake must complete before data messages are accepted, a `Close` message ends the conversation. Modeling this explicitly as a state machine (a `type connState int` with defined transitions, rejecting messages that arrive in the wrong state) turns "what should never happen" into something your code actively checks for, instead of an assumption baked silently into control flow.
+</DeepDive>
+
+<Axiom>A protocol is not the bytes you send -- it is the promises both sides agree to keep about what those bytes mean.</Axiom>

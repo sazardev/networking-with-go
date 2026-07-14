@@ -1,10 +1,185 @@
 ---
 id: "[2.18.0]"
-title: "Authentication and Authorization: Security Theory and Go Implementation 🔑"
+title: "Authentication and Authorization: Security Theory and Go Implementation"
 ---
 
-# Authentication and Authorization: Security Theory and Go Implementation 🔑
+# Authentication and Authorization: Security Theory and Go Implementation
 
-Theory and Go code for authentication and authorization in network applications.
+> "A bouncer at a club does two separate jobs: check your ID to confirm you are who you say you are (authentication), and check the guest list to decide whether *that person* is allowed into the VIP room (authorization). Mixing up the two jobs is how security bugs happen — verifying who somebody is tells you nothing about what they're allowed to do."
+
+---
+
+## Authentication vs. Authorization
+
+Every HTTP handler you've written since the HTTP chapter has implicitly trusted every request. Once an application matters — user accounts, private data, paid features — it needs to answer two distinct questions on every request:
+
+- **Authentication (authn):** Who is making this request? Proving identity — a password, a token, a client certificate.
+- **Authorization (authz):** Is this identity allowed to do *this specific thing*? Checking permissions, roles, or ownership.
+
+A request can be authenticated (we know it's Alice) and still be unauthorized (Alice isn't an admin). Keeping these as two separate checks, in two separate places in your code, makes both easier to reason about and to test.
+
+### Common Authentication Schemes
+
+- **Basic Auth:** Username and password sent (base64-encoded, not encrypted) on every request. Simple, but only safe over TLS.
+- **API keys:** A long-lived secret token identifying a caller, usually sent as a header.
+- **Bearer tokens:** A token — often a JWT or an opaque session token — sent in an `Authorization: Bearer <token>` header, typically issued after a login step.
+- **mTLS (mutual TLS):** Both client and server present certificates during the TLS handshake, authenticating each other at the transport layer, before any application data is exchanged. Covered in depth in the next chapter.
+
+---
+
+## Go Implementation: HTTP Basic Auth
+
+`net/http`'s `Request` type parses the `Authorization` header for you:
+
+```go
+func basicAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || !validCredentials(user, pass) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="restricted"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+This is the same middleware-wrapping pattern used for logging and other cross-cutting concerns: a function that takes an `http.Handler` and returns a new one, letting you layer authentication in front of any handler without touching its logic.
+
+<Warning title="Never compare secrets with ==">
+Comparing passwords or tokens with `==` leaks timing information an attacker can use to guess the value byte by byte. Use `crypto/subtle.ConstantTimeCompare` for any secret comparison.
+</Warning>
+
+```go
+import "crypto/subtle"
+
+func validCredentials(user, pass string) bool {
+	expectedUser := []byte("admin")
+	expectedPass := []byte(storedPasswordHash) // never store plaintext
+	return subtle.ConstantTimeCompare([]byte(user), expectedUser) == 1 &&
+		subtle.ConstantTimeCompare([]byte(pass), expectedPass) == 1
+}
+```
+
+---
+
+## Hashing Passwords Correctly
+
+Never store passwords in plaintext, and never hash them with a fast general-purpose hash like SHA-256 alone — it's *designed* to be fast, which is exactly what makes brute-forcing a stolen password database cheap. Passwords need a slow, salted, adaptive hash. The standard library doesn't ship one, so the Go ecosystem's accepted answer is `golang.org/x/crypto/bcrypt`, maintained by the Go team as an extension of the standard library:
+
+```go
+import "golang.org/x/crypto/bcrypt"
+
+func hashPassword(plain string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
+func checkPassword(hash, plain string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain)) == nil
+}
+```
+
+`bcrypt` embeds a random salt in its output automatically and deliberately takes milliseconds to compute — that cost is the whole point.
+
+---
+
+## Token-Based Authentication
+
+For APIs, a common pattern issues a signed token after login, which the client then sends on every subsequent request instead of resending credentials. You don't need a third-party JWT library to understand or build the core mechanism — a signed token is just a payload plus an HMAC signature proving it wasn't tampered with:
+
+```go
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"strings"
+	"time"
+)
+
+var secretKey = []byte("server-only-secret-key")
+
+func issueToken(userID string) string {
+	payload := fmt.Sprintf("%s|%d", userID, time.Now().Add(1*time.Hour).Unix())
+	mac := hmac.New(sha256.New, secretKey)
+	mac.Write([]byte(payload))
+	sig := base64.URLEncoding.EncodeToString(mac.Sum(nil))
+	return base64.URLEncoding.EncodeToString([]byte(payload)) + "." + sig
+}
+
+func verifyToken(token string) (userID string, ok bool) {
+	parts := strings.SplitN(token, ".", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	payloadBytes, err := base64.URLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return "", false
+	}
+
+	mac := hmac.New(sha256.New, secretKey)
+	mac.Write(payloadBytes)
+	expectedSig := base64.URLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(expectedSig), []byte(parts[1])) {
+		return "", false // signature mismatch — token was tampered with or forged
+	}
+
+	fields := strings.SplitN(string(payloadBytes), "|", 2)
+	var expiry int64
+	fmt.Sscanf(fields[1], "%d", &expiry)
+	if time.Now().Unix() > expiry {
+		return "", false // expired
+	}
+	return fields[0], true
+}
+```
+
+This is structurally the same idea a JWT implements: a payload plus a signature the server can verify without a database round trip, since the signature itself proves the payload wasn't altered. `hmac.Equal` — not `==` — is used for the same constant-time reason as the password comparison above.
+
+---
+
+## Go Implementation: Authorization Middleware
+
+Once a request is authenticated, authorization is a separate check — typically comparing the authenticated identity's role against what the requested action requires:
+
+```go
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
+func requireRole(role string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		userID, ok := verifyToken(token)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !userHasRole(userID, role) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+```
+
+Attaching the authenticated user ID to the request's `context.Context` — the same context type used for cancellation earlier in the book — lets downstream handlers retrieve "who is making this request" without re-parsing the token, using `r.Context().Value(userIDKey)`.
+
+Note the distinct status codes: `401 Unauthorized` means "I don't know who you are," while `403 Forbidden` means "I know who you are, and the answer is no" — a direct reflection of the authn/authz split at the HTTP level.
+
+---
+
+## Key Takeaways
+
+- Authentication proves identity; authorization decides what that identity may do. Keep the checks separate.
+- Use `crypto/subtle.ConstantTimeCompare` or `hmac.Equal` for any secret comparison — never `==`.
+- Hash passwords with an adaptive, salted algorithm like bcrypt — never a fast general-purpose hash.
+- Signed tokens (HMAC-based, or a full JWT library) let a server verify a caller's identity without a database lookup on every request.
+- `401` vs. `403` is not a stylistic choice — it communicates which half of the authn/authz split failed.
+
+---
 
 [Previous: NAT Traversal and P2P Networking](17-nat-traversal-and-p2p-networking.md) | [Next: Security in Go Networking](19-security-in-go-networking.md)

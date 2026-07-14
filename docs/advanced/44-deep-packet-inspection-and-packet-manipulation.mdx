@@ -1,8 +1,125 @@
 ---
 id: "[3.44.0]"
-title: "Deep Packet Inspection and Packet Manipulation 🔬"
+title: "Deep Packet Inspection and Packet Manipulation"
 ---
 
-# Deep Packet Inspection and Packet Manipulation 🔬
+# Deep Packet Inspection and Packet Manipulation
 
-// ...content coming soon...
+> A postal sorting facility usually just reads the address on the envelope and routes it accordingly -- it never opens the letter inside. Deep packet inspection is what happens when the sorting facility starts opening every envelope, reading the actual letter, and deciding what to do based on the content, not just the address. It can be used to catch a real threat hidden inside, or it can be an invasive overreach, depending entirely on who is doing it and why.
+
+Every network tool you have built so far in this book -- TCP servers, proxies, HTTP clients -- has operated at the level the protocol intends: read the headers you are supposed to read, act on the payload your own application produced or expects. Deep packet inspection (DPI) is different in kind: it means examining packets your program did not originate and was not necessarily the intended final recipient of, looking past the headers that a router would normally use for forwarding, and into the payload itself, often reconstructing entire application-layer conversations from raw frames.
+
+### Why DPI Exists
+
+Firewalls that only look at IP addresses and port numbers cannot tell the difference between legitimate HTTPS traffic and a tunnel smuggling something else over port 443. Intrusion detection systems need to match traffic content against signatures of known attacks, not just source and destination. Network operators doing traffic shaping need to identify *what kind* of traffic is congesting a link, not just how much of it there is. All three needs come back to the same requirement: look inside the packet, past the addressing information, at the actual bytes being carried.
+
+<Warning title="This is a genuine ethical and legal boundary, not a footnote">
+Inspecting traffic you do not own or are not authorized to monitor is illegal in most jurisdictions and is a serious breach of trust even where it is technically legal (for example, inspecting traffic on your own home lab or with explicit, informed consent from all parties). Everything in this chapter assumes you are working with traffic you have clear authority to capture -- your own test network, your own application's traffic, or an environment where you have documented authorization.
+</Warning>
+
+### The Go Tool for This: gopacket
+
+The standard library's `net` package deliberately operates above this level -- it gives you a TCP stream or a UDP datagram's payload, not raw frames off the wire. Capturing and dissecting raw packets is the job of [gopacket](https://github.com/google/gopacket), Google's Go bindings around `libpcap` (the same capture engine behind Wireshark and `tcpdump`), paired with `gopacket/layers`, which understands the byte layout of dozens of protocols so you do not have to hand-decode Ethernet or IP headers yourself.
+
+### Go Implementation: Capturing and Inspecting Live Traffic
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
+)
+
+func main() {
+	const device = "eth0"
+	const snapshotLen int32 = 1600
+	const promiscuous = false
+
+	handle, err := pcap.OpenLive(device, snapshotLen, promiscuous, pcap.BlockForever)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer handle.Close()
+
+	// A BPF filter narrows capture to traffic we actually care about,
+	// pushing the filtering into the kernel instead of userspace.
+	if err := handle.SetBPFFilter("tcp port 80"); err != nil {
+		log.Fatal(err)
+	}
+
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	for packet := range packetSource.Packets() {
+		inspect(packet)
+	}
+}
+
+func inspect(packet gopacket.Packet) {
+	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	if ipLayer == nil || tcpLayer == nil {
+		return
+	}
+
+	ip, _ := ipLayer.(*layers.IPv4)
+	tcp, _ := tcpLayer.(*layers.TCP)
+
+	fmt.Printf("%s:%d -> %s:%d [seq=%d]\n",
+		ip.SrcIP, tcp.SrcPort, ip.DstIP, tcp.DstPort, tcp.Seq)
+
+	appLayer := packet.ApplicationLayer()
+	if appLayer != nil {
+		payload := appLayer.Payload()
+		fmt.Printf("  payload (%d bytes): %q\n", len(payload), truncate(payload, 80))
+	}
+}
+
+func truncate(b []byte, n int) []byte {
+	if len(b) > n {
+		return b[:n]
+	}
+	return b
+}
+```
+
+This is the essence of DPI: `packet.Layer(layers.LayerTypeTCP)` gets you the header a router would normally stop at, but `packet.ApplicationLayer().Payload()` reaches past it into whatever bytes the application actually sent -- an HTTP request line, a chunk of a file transfer, anything. The BPF filter (`SetBPFFilter`) matters for more than convenience: it runs in the kernel before packets even reach your Go process, so you are not paying userspace CPU cost to inspect and discard traffic you never wanted in the first place.
+
+### Reassembling a Conversation
+
+A single packet is rarely the unit you actually want to inspect -- an HTTP request is usually split across several TCP segments. `gopacket`'s `tcpassembly` (or the newer `reassembly`) subpackage reconstructs ordered, gap-free byte streams from a sequence of captured segments, handling retransmissions and out-of-order delivery the same way the kernel's own TCP stack would, so your inspection code can work with a coherent stream instead of raw, possibly-reordered fragments.
+
+### Packet Manipulation: The Other Direction
+
+Everything above reads packets off the wire. `gopacket` also supports building and sending them, which is how you would implement a custom traffic generator, a protocol fuzzer, or a tool that needs to craft packets a normal `net.Dial` call could never produce (a raw ICMP echo, a TCP SYN with unusual flags for a scanning tool, and so on):
+
+```go
+buf := gopacket.NewSerializeBuffer()
+opts := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
+
+eth := &layers.Ethernet{ /* ... */ }
+ipLayer := &layers.IPv4{Version: 4, Protocol: layers.IPProtocolTCP /* ... */}
+tcpLayer := &layers.TCP{SrcPort: 12345, DstPort: 80 /* ... */}
+tcpLayer.SetNetworkLayerForChecksum(ipLayer)
+
+if err := gopacket.SerializeLayers(buf, opts, eth, ipLayer, tcpLayer); err != nil {
+	log.Fatal(err)
+}
+
+if err := handle.WritePacketData(buf.Bytes()); err != nil {
+	log.Fatal(err)
+}
+```
+
+`SerializeLayers` writes each layer's header in order into the buffer, and `FixLengths`/`ComputeChecksums` fill in the length and checksum fields that would otherwise be tedious and error-prone to compute by hand -- exactly the kind of low-level correctness that makes hand-rolled packet crafting risky without a library like this one.
+
+<DeepDive title="Root privileges and platform setup">
+Raw packet capture requires elevated privileges on every platform -- `CAP_NET_RAW` (or root) on Linux, Administrator on Windows with Npcap installed, and root on macOS -- because reading traffic that was not addressed to your process is precisely the capability an operating system restricts by default. `gopacket/pcap` is a cgo binding to `libpcap`/`Npcap`, so those native libraries and headers need to be installed on the build machine as well as the target machine.
+</DeepDive>
+
+### Where This Belongs in a Real System
+
+DPI-style inspection is the mechanism behind intrusion detection systems (matching payloads against known attack signatures), application-aware load balancers (routing based on the actual protocol inside a TLS-terminated stream), and network troubleshooting tools that need to see what a `tcpdump` capture file actually contains, programmatically, instead of eyeballing it. Used within its legal and ethical bounds, it is one of the few tools that lets you verify what is really happening on the wire, rather than trusting what a protocol's headers claim.

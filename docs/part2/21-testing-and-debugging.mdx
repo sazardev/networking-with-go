@@ -1,10 +1,205 @@
 ---
 id: "[2.21.0]"
-title: "Testing and Debugging Go Network Applications: Theory and Practice 🧪"
+title: "Testing and Debugging Go Network Applications: Theory and Practice"
 ---
 
-# Testing and Debugging Go Network Applications: Theory and Practice 🧪
+# Testing and Debugging Go Network Applications: Theory and Practice
 
-Testing and debugging strategies for Go network code.
+> "Pilots don't learn to handle engine failure by waiting for one at 30,000 feet — they train in a simulator first. Testing network code is the same idea: you want to exercise timeouts, dropped connections, and concurrent clients on your own terms, in a controlled harness, long before real users do it for you in production."
+
+---
+
+## Why Network Code Is Harder to Test
+
+Every chapter so far has built code that depends on things outside your program's control: the network, timing, other machines, concurrent goroutines. That makes network code harder to test than a pure function, for a few concrete reasons:
+
+- **Nondeterminism:** The order in which goroutines run, or how quickly a connection is accepted, isn't guaranteed.
+- **External dependencies:** A test that dials a real server outside your machine is slow, flaky, and breaks without your code changing at all.
+- **Concurrency bugs:** Race conditions may only appear under specific timing, making them easy to miss with a single test run.
+
+The fix isn't to avoid testing network code — it's to remove the actual network from the test wherever possible, and to lean on Go's tooling for the concurrency-specific risks.
+
+---
+
+## Testing HTTP Handlers Without a Real Server
+
+`net/http/httptest` lets you test an `http.Handler` directly, without binding a real port — you already saw the request/response model in the HTTP chapter; `httptest` just drives it in-process.
+
+```go
+package main
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestHealthHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+
+	healthHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+	if rec.Body.String() != "ok" {
+		t.Errorf("expected body %q, got %q", "ok", rec.Body.String())
+	}
+}
+```
+
+For tests that need a real listening server — for example, testing an actual HTTP client against it — `httptest.NewServer` spins one up on a random free port and tears it down automatically:
+
+```go
+func TestUploadEndToEnd(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(uploadHandler))
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/upload", "text/plain", strings.NewReader("test data"))
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+}
+```
+
+[Exercise: Testing HTTP Handlers](../../exercises/part2/21-http-handler-tests/main_test.go)
+
+---
+
+## Testing Raw TCP Code with `net.Pipe`
+
+For code built directly on `net.Conn` — a custom protocol handler, for instance — `net.Pipe` gives you two connected, in-memory `net.Conn` values with no actual socket or OS involvement:
+
+```go
+func TestEchoHandler(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	go handleConn(serverConn) // the same handler you'd use with a real net.Listener
+
+	clientConn.Write([]byte("hello"))
+
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(clientConn, buf); err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if string(buf) != "hello" {
+		t.Errorf("expected echo, got %q", buf)
+	}
+}
+```
+
+Because `handleConn` receives a plain `net.Conn` interface value, it can't tell the difference between the in-memory pipe and a real TCP connection from `net.Listen` — the same handler code is exercised either way, which is exactly why designing around the `net.Conn` interface (rather than a concrete type) pays off in tests.
+
+<Warning title="net.Pipe is synchronous">
+Unlike a real socket, `net.Pipe`'s `Write` blocks until a corresponding `Read` consumes the data — there's no OS-level buffer. Tests that write and read on the same goroutine without a matching concurrent reader will deadlock; always drive one side from a separate goroutine, as in the example above.
+</Warning>
+
+---
+
+## Testing Concurrent Code
+
+The concurrency chapter introduced goroutines and channels; testing them safely means combining two habits:
+
+- **Run tests with the race detector:** `go test -race ./...` instruments memory accesses and flags data races that a normal test run would silently miss.
+- **Use `sync.WaitGroup` to avoid `time.Sleep` guesswork:** A test that sleeps "long enough" for goroutines to finish is both slow and unreliable. Wait on the actual completion signal instead.
+
+```go
+func TestConcurrentHandlers(t *testing.T) {
+	var wg sync.WaitGroup
+	results := make(chan int, 10)
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			results <- process(n)
+		}(i)
+	}
+
+	wg.Wait()
+	close(results)
+
+	count := 0
+	for range results {
+		count++
+	}
+	if count != 10 {
+		t.Errorf("expected 10 results, got %d", count)
+	}
+}
+```
+
+Bound every test that talks to a real network resource with a timeout via `context.WithTimeout`, so a hung connection fails the test loudly instead of hanging the whole test suite:
+
+```go
+func TestDialTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var d net.Dialer
+	_, err := d.DialContext(ctx, "tcp", "10.255.255.1:81") // an address expected to be unreachable
+	if err == nil {
+		t.Fatal("expected dial to fail")
+	}
+}
+```
+
+---
+
+## Table-Driven Tests
+
+For protocol parsing or validation logic — the kind of code that shows up in framing (file transfer chapter) or token verification (authentication chapter) — a table of inputs and expected outputs keeps the test readable as cases grow:
+
+```go
+func TestParseHeader(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   []byte
+		wantErr bool
+	}{
+		{"valid header", []byte{0, 0, 0, 0, 0, 0, 0, 10}, false},
+		{"truncated header", []byte{0, 0, 0}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseHeader(tc.input)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("parseHeader(%v): error = %v, wantErr %v", tc.input, err, tc.wantErr)
+			}
+		})
+	}
+}
+```
+
+`t.Run` gives each case its own named subtest, so a failure points straight at the offending case instead of an opaque line number in a shared loop.
+
+---
+
+## Debugging Live Network Issues
+
+- **`net/http/pprof`:** Importing it for its side effects (`import _ "net/http/pprof"`) exposes goroutine dumps, CPU profiles, and heap snapshots over HTTP — invaluable for diagnosing a hung or leaking server without attaching a debugger.
+- **Goroutine leaks:** A server that spawns a goroutine per connection but never lets it exit (blocked forever on a channel or a read with no deadline) leaks memory slowly. The `/debug/pprof/goroutine` endpoint shows exactly how many goroutines are alive and where they're stuck.
+- **Wire-level tools:** For anything that isn't explained by your own logs, packet capture tools like `tcpdump` or Wireshark show what's actually crossing the wire — useful for catching cases where your Go code believes it sent something the network never delivered.
+- **`delve`:** Go's standard debugger (`dlv`) supports breakpoints, stepping, and inspecting goroutines live, including attaching to a running process for production incident debugging.
+
+---
+
+## Key Takeaways
+
+- Prefer `httptest` and `net.Pipe` over real sockets in tests — they're faster, deterministic, and exercise the exact same handler code.
+- Always run concurrent code through `go test -race`; timing-dependent bugs rarely show up otherwise.
+- Bound network-touching tests with `context.WithTimeout` so a hang fails fast instead of stalling the suite.
+- `net/http/pprof` and goroutine dumps are the fastest way to answer "why is this server stuck" in a live system.
+
+---
 
 [Previous: Logging and Monitoring](20-logging-and-monitoring.md) | [Next: Performance Optimization](22-performance-optimization.md)

@@ -1,10 +1,124 @@
 ---
 id: "[4.2.0]"
-title: "Threat Modeling and Attack Surfaces 🎯"
+title: "Threat Modeling and Attack Surfaces"
 ---
 
-# Threat Modeling and Attack Surfaces 🎯
+# Threat Modeling and Attack Surfaces
 
-Learn how to identify and model threats in networked systems.
+> "Before a locksmith recommends a single lock, they walk the whole building: every door, every window, every vent big enough for a cat. Threat modeling is that walk-through, done for software."
+
+---
+
+## Why Guess When You Can Model?
+
+It's tempting to secure a system by intuition: "let's add a firewall," "let's require passwords," "let's turn on HTTPS." Those are all good ideas, but applied without a model of what you're actually defending against, they're guesses. Threat modeling replaces guessing with a repeatable process: list what you have, list how it can be reached, list what could go wrong, and decide what's worth fixing first.
+
+For network software specifically, this matters because the attack surface is rarely visible from the code alone. A Go service might have an obvious HTTP handler, but also a health-check endpoint, a metrics port, a debug pprof route left on by default, and a database connection that trusts anything on the internal subnet. Threat modeling is how you find all of those before someone else does.
+
+---
+
+## Core Vocabulary
+
+- **Asset:** anything worth protecting — data, a credential, an API, uptime itself.
+- **Actor (or threat agent):** anyone who might attack the asset — an opportunistic scanner, a competitor, a malicious insider, an automated botnet.
+- **Threat:** a specific way an actor could harm an asset (e.g., "an unauthenticated actor reads customer records via the reporting API").
+- **Vulnerability:** the specific weakness that makes a threat possible (e.g., "the reporting API doesn't check auth tokens").
+- **Attack surface:** the complete set of points where an actor could interact with your system to attempt an attack.
+- **Risk:** the combination of how likely a threat is and how much damage it would cause if realized.
+
+Threat modeling is the process of walking through these in order: assets, then attack surface, then threats against that surface, then which of those threats matter enough to act on.
+
+---
+
+## STRIDE: A Practical Threat Framework
+
+One of the most widely taught models for enumerating threats is **STRIDE**, which gives you six categories to check a system against:
+
+<DeepDive title="The STRIDE categories">
+**Spoofing** — pretending to be something or someone you're not (a fake server, a forged source IP, a stolen session token). **Tampering** — modifying data or code in transit or at rest without authorization. **Repudiation** — being able to deny having performed an action, because nothing logged it. **Information disclosure** — exposing data to someone not authorized to see it. **Denial of service** — degrading or blocking legitimate access to a service. **Elevation of privilege** — gaining capabilities beyond what was granted, such as an unauthenticated user reaching an admin-only route.
+</DeepDive>
+
+Running each component of your system through these six lenses is a fast way to surface threats you wouldn't think of by just staring at the architecture diagram. A TCP listener, for instance: can it be spoofed (source IP forgery)? Tampered with (no integrity check on the payload)? Used for denial of service (no connection limit)?
+
+---
+
+## Mapping an Attack Surface
+
+A network service's attack surface is everything an outside actor can touch, directly or indirectly:
+
+- **Listening ports and protocols** — every `net.Listen` or `http.ListenAndServe` call is a new surface.
+- **Input parsers** — anywhere you decode JSON, XML, or binary protocol frames from an untrusted source.
+- **Authentication and session boundaries** — login endpoints, token validation, cookie handling.
+- **Dependencies** — third-party libraries and the network calls they make on your behalf.
+- **Administrative and debug interfaces** — metrics endpoints, health checks, `pprof`, anything meant for operators that an attacker could also reach if misconfigured.
+- **Trust boundaries** — the points where data crosses from "less trusted" to "more trusted" (public internet into your API, one internal service into another).
+
+A common mistake is only counting the surfaces you intentionally designed and forgetting the ones that came along for free — a debug port left open in production is just as much a door as the login page.
+
+---
+
+## Go in Action: A Minimal Attack-Surface Inventory
+
+Threat modeling doesn't require special software, but a small structured inventory makes it much easier to keep track of exposure as a system grows. Here's a self-contained Go program that models a set of network entry points and flags which ones deserve the closest attention:
+
+```go
+package main
+
+import "fmt"
+
+// EntryPoint represents one way into the system from the network.
+type EntryPoint struct {
+	Name           string
+	Protocol       string
+	RequiresAuth   bool
+	InternalOnly   bool // only reachable from the internal network, not the public internet
+	AcceptsInput   bool // parses attacker-controlled data
+}
+
+// riskScore is a deliberately simple heuristic: exposure to the
+// public internet without authentication, while parsing input,
+// is the highest-risk combination worth reviewing first.
+func riskScore(e EntryPoint) int {
+	score := 0
+	if !e.InternalOnly {
+		score += 2
+	}
+	if !e.RequiresAuth {
+		score += 2
+	}
+	if e.AcceptsInput {
+		score += 1
+	}
+	return score
+}
+
+func main() {
+	surface := []EntryPoint{
+		{"public-api", "HTTP", true, false, true},
+		{"admin-panel", "HTTP", false, false, true},
+		{"metrics", "HTTP", false, true, false},
+		{"internal-rpc", "TCP", true, true, true},
+	}
+
+	for _, e := range surface {
+		fmt.Printf("%-14s proto=%-5s auth=%-5v internal=%-5v risk=%d\n",
+			e.Name, e.Protocol, e.RequiresAuth, e.InternalOnly, riskScore(e))
+	}
+}
+```
+
+Running this immediately highlights `admin-panel` as the entry to review first: it's public-facing and has no authentication in this snapshot — exactly the kind of finding a real threat-modeling session is meant to surface before it becomes an incident report in Chapter 4.9.
+
+---
+
+## From Threats to Priorities
+
+Once you've listed threats, you still need to decide what to fix first. Most teams use some variant of **likelihood x impact**: a threat that's easy to pull off and devastating if it succeeds outranks one that's theoretical and low-consequence. This is also where formal vulnerability scoring (CVSS, covered in Chapter 4.6) becomes useful once you move from your own designs to assessing known software.
+
+<Axiom>You cannot secure what you haven't mapped. Every minute spent listing entry points is a minute not spent guessing at your defenses later.</Axiom>
+
+Threat modeling isn't a one-time diagram you draw and file away — it's a habit you repeat every time the system changes: a new endpoint, a new dependency, a new network path all deserve a fresh pass through the same questions.
+
+---
 
 [Previous: Introduction to Cybersecurity in Networking](01-introduction-to-cybersecurity-in-networking.md) | [Next: Common Network Attacks](03-common-network-attacks.md)

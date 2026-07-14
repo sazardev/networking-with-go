@@ -1,10 +1,124 @@
 ---
 id: "[4.1.0]"
-title: "Introduction to Cybersecurity in Networking 🛡️"
+title: "Introduction to Cybersecurity in Networking"
 ---
 
-# Introduction to Cybersecurity in Networking 🛡️
+# Introduction to Cybersecurity in Networking
 
-Start your journey into cybersecurity for network applications.
+> "A network engineer builds roads between cities. A security engineer asks: who's allowed to drive on them, what happens if a truck crashes in the tunnel, and what do we do if someone forges a license plate?"
+
+---
+
+## Welcome to Part 3
+
+In Parts 1 and 2 you learned how networks move bytes around: sockets, TCP and UDP, HTTP, and the protocols that make the internet work. Part 3 asks a different question: **what happens when someone doesn't play by the rules?**
+
+Every piece of networking code you've written so far — a TCP server, an HTTP client, a WebSocket handler — is also, from an attacker's point of view, a potential entry point. A `net.Listen` call that accepts connections from anywhere is a door. A JSON endpoint that trusts its input is a door with no lock. Cybersecurity in networking is the discipline of thinking about your own code the way an intruder would, and then closing the gaps before they do.
+
+This chapter sets the tone and vocabulary for everything that follows in Part 3: scanning, sniffing, exploitation basics, TLS, PKI, secure coding, zero trust, and more.
+
+---
+
+## Two Ways of Looking at the Same Wire
+
+Every network conversation can be read from two perspectives:
+
+- **The builder's view:** "I need this API to accept requests, this service to reply fast, this connection to stay open."
+- **The attacker's view:** "What happens if I send garbage instead of what's expected? What if I open ten thousand connections at once? What if I pretend to be someone else?"
+
+Security work means holding both views in your head simultaneously. You are still the engineer who ships working code — you're just also the person who tries to break it first, on purpose, in a controlled way, before someone less friendly does it in an uncontrolled one.
+
+<Axiom>Security is not a feature you add at the end. It's a question you ask at every step: what happens if this input, this connection, or this assumption turns out to be hostile?</Axiom>
+
+---
+
+## Confidentiality, Integrity, Availability — Applied to the Wire
+
+Chapter 1.10 introduced the CIA triad as a general security model. Applied specifically to networking, it looks like this:
+
+- **Confidentiality:** Can someone on the path between two hosts read data they shouldn't? This is why we encrypt traffic with TLS (Chapter 4.12) instead of sending credentials in plaintext.
+- **Integrity:** Can someone alter data in transit without either side noticing? Checksums, message authentication codes, and TLS record integrity all exist to answer "no."
+- **Availability:** Can someone make the service unusable by flooding it, exhausting its resources, or severing its connectivity? This is the domain of denial-of-service defenses (Chapter 4.3).
+
+Almost every technique in this part of the book maps back to protecting one or more of these three properties over the network.
+
+---
+
+## The Mindset: Assume Breach, Verify Everything
+
+Modern network security design leans on a few recurring principles that will resurface throughout Part 3:
+
+- **Defense in depth:** no single control is perfect, so layer several (firewall, TLS, authentication, monitoring) so that one failure doesn't mean total compromise.
+- **Least privilege:** a service should only be able to reach — and be reached by — exactly what it needs, nothing more.
+- **Assume breach:** design as if an attacker is already somewhere on your network, and ask what limits the damage they can do from there. This idea reappears fully in Chapter 4.15 (Zero Trust).
+- **Fail closed:** when something goes wrong (a certificate doesn't validate, a permission check errors out), the safe default is to deny, not allow.
+
+None of these principles require exotic tools. They're design habits, and Go's explicit error handling and strong typing make them easier to apply than in languages that let you silently ignore a failed check.
+
+---
+
+## A Tiny Go Model of "Assets"
+
+Security conversations get abstract fast, so it helps to ground them in something concrete. Here's a minimal Go program that models a handful of network-facing assets and the security property each one primarily protects — the kind of inventory a defender keeps mentally (and, at scale, in a real asset-management system):
+
+```go
+package main
+
+import "fmt"
+
+// Asset represents something reachable over the network that
+// a defender is responsible for protecting.
+type Asset struct {
+	Name     string
+	Address  string
+	Exposed  bool // reachable from outside the local network?
+	Property string // primary security property at risk: "confidentiality", "integrity", "availability"
+}
+
+func main() {
+	assets := []Asset{
+		{"internal-db", "10.0.4.12:5432", false, "confidentiality"},
+		{"public-api", "203.0.113.10:443", true, "integrity"},
+		{"dns-resolver", "203.0.113.53:53", true, "availability"},
+	}
+
+	for _, a := range assets {
+		risk := "low"
+		if a.Exposed {
+			risk = "elevated"
+		}
+		fmt.Printf("%-14s %-20s exposed=%-5v primary-risk=%-13s posture=%s\n",
+			a.Name, a.Address, a.Exposed, a.Property, risk)
+	}
+}
+```
+
+This is deliberately simple — a real inventory would pull from your infrastructure rather than a hardcoded slice — but the shape of the thinking is exactly what Chapter 4.2 (Threat Modeling) builds on: know what you have, know what's exposed, know what property matters most for each thing.
+
+---
+
+## What "Hacking" Means in This Book
+
+<Warning title="Scope and authorization">
+Every scanning, sniffing, and exploitation technique in Part 3 is presented for use in environments you own or are explicitly authorized to test: your own lab, a virtual machine, a CTF, or a target covered by a signed penetration-testing agreement. Running these techniques against systems you don't own or lack permission to test is illegal in most jurisdictions and unethical regardless of jurisdiction. Chapter 4.10 covers the legal boundaries in detail — read it before pointing any tool from this book at a network that isn't yours.
+</Warning>
+
+"Hacking" here means the classic, technical sense: understanding a system deeply enough to find where its assumptions break down. That skill is exactly what defenders need, which is why penetration testing, red teaming, and vulnerability research are legitimate, well-paid professions built entirely on authorized versions of the same techniques attackers use.
+
+---
+
+## What's Ahead in Part 3
+
+The rest of this part builds up in layers:
+
+- **Foundations** (4.2–4.3): how to model threats and attack surfaces, and the common attack categories you'll defend against.
+- **Hands-on tooling** (4.4–4.7): building scanners, sniffers, and small security tools in Go.
+- **Process** (4.8–4.11): how penetration tests, incident response, and ethical/legal boundaries actually work in practice.
+- **Cryptography and trust** (4.12–4.13): TLS and the PKI that makes it trustworthy.
+- **Secure design** (4.14–4.16): writing safer Go code, and structuring networks around zero trust and segmentation.
+
+By the end, you'll be able to look at a piece of networking code — yours or someone else's — and ask the right questions before it ships.
+
+---
 
 [Previous: Further Resources and Next Steps](../part2/25-further-resources-and-next-steps.md) | [Next: Threat Modeling and Attack Surfaces](02-threat-modeling-and-attack-surfaces.md)

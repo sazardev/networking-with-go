@@ -5,4 +5,54 @@ title: "Red Team vs Blue Team: Concepts and Labs"
 
 # Red Team vs Blue Team: Concepts and Labs
 
-// ...contenido y ejemplos de ejercicios Red Team vs Blue Team...
+> Chess players get stronger by playing against opponents who actually try to beat them, not by studying the rulebook alone. Security teams are no different: a network defended only on paper, never tested by someone actively trying to break in, tends to have gaps nobody noticed until an actual attacker finds them first.
+
+## The Two Sides of the Exercise
+
+A **red team** plays the attacker: given a defined scope and set of rules of engagement, they attempt to achieve specific objectives (gain domain admin, exfiltrate a marked file, establish persistence) using the same tools, techniques, and creativity a real adversary would use, but under authorization and with a mechanism to safely stop if something goes wrong.
+
+A **blue team** plays the defender: monitoring, detecting, and responding to the red team's activity using the organization's actual security tooling - the SIEM correlation rules, IDS/IPS alerts, and incident response process covered earlier in this part, exercised against a live adversary instead of a tabletop scenario.
+
+A **purple team** exercise removes the adversarial framing and has both sides collaborate in real time: the red team executes a specific technique, and the blue team immediately checks whether it was detected, adjusting detection rules on the spot. Purple teaming trades some of the realism of a blind red-team engagement for much faster feedback loops on detection coverage.
+
+<DeepDive title="Adversary Emulation Frameworks">
+Rather than improvising attacker behavior, many red teams structure engagements around the MITRE ATT&CK framework, which catalogs real-world adversary tactics and techniques (initial access, lateral movement, exfiltration, and so on) observed across many actual incidents. Tools like Atomic Red Team package individual ATT&CK techniques as small, runnable tests, and Caldera automates chaining them into full emulated campaigns. This gives both sides a shared, well-documented vocabulary for what happened and what should have been detected.
+</DeepDive>
+
+## Rules of Engagement
+
+No red team exercise should start without a written rules-of-engagement (RoE) document, agreed to in advance by people with the authority to approve it. At minimum, it should define: exact scope (which systems, networks, and accounts are in bounds), explicit exclusions (production systems that must never be touched, third-party systems out of the organization's control), the time window, an emergency stop procedure, and who holds the "get out of jail" authorization letter in case an operation is mistaken for a real attack mid-exercise.
+
+<Warning title="Authorization Is Not Optional">
+Every technique described in this book's red-team-adjacent chapters assumes explicit, written, in-scope authorization from someone with the legal authority to grant it. Without that authorization, the exact same actions are simply unauthorized computer intrusion, regardless of intent. This is covered in more depth in the ethical and legal considerations chapter earlier in the book, and it applies with equal force here.
+</Warning>
+
+## Exercise Formats
+
+**Tabletop exercises** are discussion-based: a facilitator walks stakeholders through a hypothetical incident scenario, and the group talks through decisions and hand-offs without touching a live system. They're low cost and good for testing process and communication gaps, but they can't reveal whether your tools would actually have caught the scenario in question.
+
+**Live-fire exercises** involve an actual red team operating against real (or realistic lab) infrastructure, with the blue team responding in real time. These are far more expensive to run but validate detection and response capability directly rather than by proxy.
+
+**Capture-the-flag (CTF) labs** sit somewhere in between for training purposes: intentionally vulnerable environments (purpose-built platforms, or classic targets like a deliberately misconfigured web application or an outdated service) where individuals or teams practice offensive techniques against a target that exists purely to be broken, with no operational risk at all. These are excellent for building red-team skill in isolation, and pair naturally with the lab-building content in the simulating-attacks chapter later in this part.
+
+## Measuring the Exercise, Not Just Running It
+
+The point of a red/blue exercise is the data it produces afterward, not the exercise itself. Common metrics worth tracking across engagements:
+
+- **Mean Time to Detect (MTTD)**: how long after the red team's action did any alert fire?
+- **Mean Time to Respond (MTTR)**: how long from detection to the defender taking meaningful action?
+- **Dwell time**: how long could the red team operate before being noticed at all, if ever?
+- **Coverage**: of the ATT&CK techniques attempted, what fraction produced any detection signal?
+
+Tracked over successive exercises, these numbers turn "we did a red team exercise" into "our detection coverage for lateral movement techniques improved from 40% to 70% over two quarters" - a far more useful statement to a security program's stakeholders.
+
+## Building a Home Lab for Practice
+
+A personal red/blue lab doesn't need to be elaborate: a hypervisor (VirtualBox, VMware, or a cloud provider's free tier) running a handful of VMs - an attacker box with common tooling, one or two intentionally vulnerable targets, and a lightweight SIEM or log collector to practice the blue side - is enough to practice both offense and defense safely, isolated from any production network. The lab-building chapter later in this part goes into topology and isolation practices in more detail; the short version is: keep it on an isolated virtual network with no route to anything you can't afford to have broken.
+
+## Summary
+
+- Red teams emulate attackers under authorization; blue teams detect and respond; purple teaming collaborates both in real time for faster feedback.
+- A written rules-of-engagement document with explicit scope and a stop procedure is a prerequisite, not a formality.
+- Structuring exercises around MITRE ATT&CK gives both sides a shared vocabulary and makes results comparable across engagements.
+- Track MTTD, MTTR, dwell time, and technique coverage across exercises - the trend over time matters more than any single engagement's result.

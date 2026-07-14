@@ -1,8 +1,203 @@
 ---
 id: "[3.52.0]"
-title: "Mesh Networks and Dynamic Routing 🕸️"
+title: "Mesh Networks and Dynamic Routing"
 ---
 
-# Mesh Networks and Dynamic Routing 🕸️
+# Mesh Networks and Dynamic Routing
 
-// ...content coming soon...
+> "A hub-and-spoke airport is elegant until the hub closes for weather—then every flight is grounded. A mesh is more like a bucket brigade at a fire: nobody carries the water the whole way, but everybody passes it along, and the line reroutes around anyone who steps out. Mesh networks trade a single point of failure for shared, adaptive responsibility."
+
+## What Makes a Network a Mesh
+
+In a traditional star or hierarchical network, traffic flows through central points—a router, a base station, an access point. In a **mesh network**, every node can both originate traffic and relay traffic on behalf of others, and there is no single node whose failure partitions the network. Two properties follow directly from that:
+
+- **Redundant paths.** If one link or node disappears, traffic reroutes through whichever neighbors are still reachable.
+- **Dynamic routing.** Because the topology can change—a node moves, a link degrades, a device joins or leaves—the network can't rely on a fixed routing table. Nodes have to continuously discover their neighbors and recompute routes.
+
+This is the same problem the internet's core routers solve with protocols like OSPF and BGP, just at a smaller scale and often with much less stable links (think: mobile ad-hoc networks, IoT sensor meshes, or municipal mesh Wi-Fi).
+
+## Distance-Vector vs. Link-State, Briefly
+
+Real mesh routing protocols (AODV, OLSR, B.A.T.M.A.N.) are variations on two classic strategies you likely met in Part 1 of this book:
+
+- **Distance-vector**: each node tells its neighbors "here's my best-known cost to reach every destination I know about." Neighbors use that to update their own tables (a Bellman-Ford-style relaxation). Simple to implement, can be slow to converge after a topology change.
+- **Link-state**: each node floods the entire network with "here are my direct neighbors and link costs," and every node independently computes shortest paths from the full picture (Dijkstra). Converges faster, costs more bandwidth and memory per node.
+
+For a mesh of modest size, a simplified distance-vector scheme is straightforward to build and a good way to internalize how these protocols behave—so that's what we'll implement.
+
+## Go Implementation: A Minimal Distance-Vector Mesh Node
+
+Each node periodically advertises its routing table over UDP to its neighbors, and merges incoming advertisements using the standard distance-vector rule: adopt a route if it's cheaper than what you already have, or if it comes from the neighbor you're already routing through (so cost increases propagate too, not just decreases).
+
+### The Routing Table
+
+```go
+package main
+
+import (
+	"sync"
+	"time"
+)
+
+type Route struct {
+	NextHop string
+	Cost    int
+	Updated time.Time
+}
+
+type RoutingTable struct {
+	mu     sync.Mutex
+	routes map[string]Route // destination -> best known route
+}
+
+func NewRoutingTable() *RoutingTable {
+	return &RoutingTable{routes: make(map[string]Route)}
+}
+
+// Update applies one advertised route and reports whether it changed anything.
+func (rt *RoutingTable) Update(dest, viaNeighbor string, advertisedCost int) bool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	newCost := advertisedCost + 1 // one more hop to reach the neighbor itself
+	current, exists := rt.routes[dest]
+
+	// Adopt the route if it's better, new, or a refresh from our current next hop
+	// (so that a neighbor's own cost increases correctly propagate to us too).
+	if !exists || newCost < current.Cost || current.NextHop == viaNeighbor {
+		if exists && current.NextHop == viaNeighbor && newCost == current.Cost {
+			rt.routes[dest] = Route{NextHop: viaNeighbor, Cost: newCost, Updated: time.Now()}
+			return false // refreshed, but no meaningful change
+		}
+		rt.routes[dest] = Route{NextHop: viaNeighbor, Cost: newCost, Updated: time.Now()}
+		return true
+	}
+	return false
+}
+
+func (rt *RoutingTable) Snapshot() map[string]Route {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	out := make(map[string]Route, len(rt.routes))
+	for k, v := range rt.routes {
+		out[k] = v
+	}
+	return out
+}
+```
+
+### Advertising Over UDP
+
+Each node broadcasts its current table to known neighbors on a fixed interval. Using UDP is deliberate: mesh links are often lossy, and a missed advertisement is corrected by the next one a few seconds later—paying TCP's retransmission and ordering overhead for a message that will be superseded shortly buys nothing.
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"time"
+)
+
+type Advertisement struct {
+	From   string
+	Routes map[string]int // destination -> this node's cost to reach it
+}
+
+func advertiseLoop(nodeName string, rt *RoutingTable, neighbors []string, interval time.Duration) {
+	conn, err := net.ListenPacket("udp", ":0")
+	if err != nil {
+		fmt.Println("advertise listen error:", err)
+		return
+	}
+	defer conn.Close()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		snap := rt.Snapshot()
+		ad := Advertisement{From: nodeName, Routes: map[string]int{nodeName: 0}}
+		for dest, r := range snap {
+			ad.Routes[dest] = r.Cost
+		}
+
+		payload, err := json.Marshal(ad)
+		if err != nil {
+			continue
+		}
+		for _, neighbor := range neighbors {
+			addr, err := net.ResolveUDPAddr("udp", neighbor)
+			if err != nil {
+				continue
+			}
+			conn.WriteTo(payload, addr)
+		}
+	}
+}
+```
+
+### Receiving and Forwarding
+
+The receive loop merges incoming advertisements into the local table. A real forwarding path (relaying an actual data packet, not a routing advertisement) also needs a hop-count or TTL check to prevent loops during the brief windows where the table hasn't converged yet:
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"net"
+)
+
+func listenLoop(nodeName string, rt *RoutingTable, listenAddr string) error {
+	conn, err := net.ListenPacket("udp", listenAddr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	buf := make([]byte, 4096)
+	for {
+		n, from, err := conn.ReadFrom(buf)
+		if err != nil {
+			continue
+		}
+
+		var ad Advertisement
+		if err := json.Unmarshal(buf[:n], &ad); err != nil {
+			continue
+		}
+		if ad.From == nodeName {
+			continue // ignore our own advertisement bounced back
+		}
+
+		for dest, cost := range ad.Routes {
+			if dest == nodeName {
+				continue // no need to route to ourselves
+			}
+			rt.Update(dest, from.String(), cost)
+		}
+	}
+}
+```
+
+<Warning title="Loop prevention needs more than this sketch">
+This simplified example omits split-horizon and hop-limit handling, both of which real distance-vector protocols need to avoid routing loops and "count-to-infinity" problems when a route disappears. Production implementations (like RIP's split-horizon-with-poison-reverse) add these explicitly; don't deploy the sketch above unmodified.
+</Warning>
+
+## Real-World Go Mesh Networking
+
+You don't need to build mesh routing from scratch to use it in production—two real, widely deployed Go projects are worth knowing:
+
+- **Tailscale**, written largely in Go, builds a mesh VPN on top of WireGuard, handling peer discovery and NAT traversal so that every device gets a direct (or relayed, when necessary) encrypted path to every other device.
+- **Yggdrasil Network**, also written in Go, implements a name-independent, globally routable mesh using a distributed spanning-tree-based routing scheme, designed to scale to internet-sized numbers of nodes without central coordination.
+
+Both are worth reading as source code once the fundamentals above feel solid—they solve the same distance-vector-style problems this chapter covers, at a scale and robustness level worth aspiring to.
+
+## Key Takeaways
+
+- Mesh networks trade a central point of failure for redundant paths and continuously recomputed routes.
+- Distance-vector routing—every node telling neighbors its best-known costs—is simple to implement and a good learning vehicle, though it needs loop-prevention machinery for production use.
+- UDP is the right transport for periodic routing advertisements: lossy by design, but self-correcting on the next interval.
+- Tailscale and Yggdrasil are real, production Go codebases solving this exact problem at scale.

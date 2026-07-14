@@ -5,4 +5,114 @@ title: "Advanced API Gateway and Service Mesh"
 
 # Advanced API Gateway and Service Mesh
 
-// Ejemplo: Kong, Ambassador, Istio, Linkerd, Envoy
+Once an API stops being "one server answering requests" and becomes a dozen services calling each other, two new problems show up. First, clients need a single, stable front door instead of having to know about every internal service. Second, the services themselves need consistent rules for retries, timeouts, encryption, and observability without every team reinventing them. The first problem is solved by an **API gateway**. The second is solved by a **service mesh**. They look similar from a distance — both sit "in front of" traffic and both talk about routing, TLS, and rate limiting — but they operate at different layers of your architecture, and understanding the difference will save you from reaching for the wrong tool.
+
+## The gateway: one door, many rooms
+
+An API gateway sits at the edge of your system, between the public internet and your internal services. Every external request enters through it. The gateway's job is to look at the request and decide: which backend service handles this, does the caller have a valid token, has this client exceeded its rate limit, and what should the response look like once it comes back.
+
+Popular gateways like Kong, Ambassador, and Envoy (used standalone) all do roughly the same thing: match incoming requests to routes, apply a chain of policies (auth, rate limiting, transformation), and proxy to an upstream. You can build a serviceable version of this yourself in Go using nothing but the standard library's `net/http/httputil`:
+
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+)
+
+func newProxy(target string) *httputil.ReverseProxy {
+	u, err := url.Parse(target)
+	if err != nil {
+		log.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(u)
+	originalDirector := proxy.Director
+	proxy.Director = func(r *http.Request) {
+		originalDirector(r)
+		r.Header.Set("X-Forwarded-Gateway", "go-gateway")
+	}
+	return proxy
+}
+
+func main() {
+	mux := http.NewServeMux()
+	mux.Handle("/users/", newProxy("http://users-service:8081"))
+	mux.Handle("/orders/", newProxy("http://orders-service:8082"))
+
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+```
+
+This is a real, working reverse proxy: `httputil.ReverseProxy` rewrites the request's scheme and host, forwards it, and streams the response back — including chunked and streamed bodies. Production gateways add far more (dynamic route discovery, plugin pipelines, gRPC support), but the core mechanism is exactly this.
+
+### Cross-cutting policies at the edge
+
+Because every request passes through the gateway, it is the natural place to enforce policies that would otherwise be duplicated across every service: authentication, request/response logging, and circuit breaking. For circuit breaking, don't write your own state machine — use a well-tested one like `sony/gobreaker`:
+
+```go
+import "github.com/sony/gobreaker"
+
+var cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+	Name:        "orders-service",
+	MaxRequests: 5,
+	Timeout:     10 * time.Second,
+})
+
+func callOrders(req *http.Request) (*http.Response, error) {
+	result, err := cb.Execute(func() (interface{}, error) {
+		return http.DefaultClient.Do(req)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*http.Response), nil
+}
+```
+
+`gobreaker` trips open after enough consecutive failures, rejects calls immediately while open, and probes with a limited number of requests when it moves to half-open — exactly the behavior you want when a downstream service starts timing out, so the gateway stops piling more load onto an already struggling service.
+
+## The mesh: every service gets a bodyguard
+
+A service mesh solves a different problem: traffic *between* your internal services, not traffic from the outside world. In a mesh like Istio or Linkerd, every service instance gets a **sidecar proxy** (usually Envoy) injected next to it. Your Go service talks to `localhost`, the sidecar intercepts that traffic, and the sidecar handles mutual TLS, retries, load balancing, and telemetry — all without your application code knowing anything happened.
+
+<DeepDive title="Why not just put this logic in the gateway?">
+Because gateway policies apply to north-south traffic (client to system), while a mesh applies to east-west traffic (service to service) which never touches the gateway at all. A payments service calling an inventory service internally never passes through the edge gateway — if you want mTLS or retry policy on that call, the mesh (or your own code) has to provide it.
+</DeepDive>
+
+The appeal of the sidecar model is that your Go code stays simple. You don't import a mesh SDK; you just make a normal HTTP or gRPC call to another service's address, and the sidecar intercepts it transparently at the network layer (via iptables rules in the pod, in Kubernetes-based meshes). This is a deliberate architectural trade-off: it moves cross-cutting network concerns out of application code and into infrastructure, at the cost of an extra network hop and additional operational complexity (certificate rotation, sidecar upgrades, mesh control-plane failures).
+
+### When you don't have a mesh yet
+
+Not every team runs Istio or Linkerd — plenty of Go services implement mesh-like behavior directly in a shared HTTP client. A lightweight version of "retries plus timeouts" without any external dependency:
+
+```go
+func resilientGet(ctx context.Context, url string) (*http.Response, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		resp, err := client.Do(req)
+		if err == nil && resp.StatusCode < 500 {
+			return resp, nil
+		}
+		lastErr = err
+		time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+	}
+	return nil, lastErr
+}
+```
+
+This is a reasonable starting point for a small system. Once you have dozens of services and multiple teams, the operational cost of every team writing (and forgetting to update) this same logic usually justifies moving to a real mesh.
+
+## Choosing between them
+
+<Axiom>A gateway answers "who gets in and how do we treat external traffic"; a mesh answers "how do our own services talk to each other safely and reliably."</Axiom>
+
+Most systems that operate at meaningful scale end up with both: a gateway (or several, per API surface) at the edge, and a mesh handling internal service-to-service traffic. As a Go developer, the practical takeaway is that neither one requires you to embed a vendor SDK into your business logic. Gateways are usually configured declaratively (routes, plugins) outside your service; meshes are usually transparent at the network layer. Your Go code's job is to expose a clean HTTP or gRPC interface, respect context cancellation and deadlines passed down to it, and emit the metrics and trace headers that let the surrounding infrastructure do its job well.
+
+<Warning title="Don't duplicate mesh policy in application code">
+If your platform team already enforces retries and mTLS via a mesh, don't also hardcode a competing retry loop with different timeouts in your service — the two policies can interact badly (retries stacking on retries) and turn a minor blip into a self-inflicted overload. Ask what the mesh already guarantees before adding your own resilience layer on top.
+</Warning>

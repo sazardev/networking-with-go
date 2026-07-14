@@ -5,4 +5,122 @@ title: "APIs for Serverless and FaaS"
 
 # APIs for Serverless and FaaS
 
-// Ejemplo: AWS Lambda, Google Cloud Functions, patrones serverless en Go
+Everything so far in this book has assumed a long-running process: a Go binary that starts, listens on a port, and handles requests until it's stopped. Function-as-a-Service (FaaS) platforms — AWS Lambda, Google Cloud Functions, Azure Functions — invert that: your code runs only when invoked, for the duration of one request, and then the platform tears the environment down (or freezes it for reuse). This chapter covers writing Go handlers for AWS Lambda, the platform with the most mature Go support, and the specific design adjustments serverless demands.
+
+## The shape of a Lambda handler
+
+`github.com/aws/aws-lambda-go` is AWS's official Go runtime library. Instead of `http.ListenAndServe`, your entry point is `lambda.Start`, which hands control to AWS's invocation loop:
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+)
+
+type OrderRequest struct {
+	ProductID string `json:"product_id"`
+	Quantity  int    `json:"quantity"`
+}
+
+func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	var order OrderRequest
+	if err := json.Unmarshal([]byte(req.Body), &order); err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       `{"error":"invalid request body"}`,
+		}, nil
+	}
+
+	result, err := processOrder(ctx, order)
+	if err != nil {
+		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError}, nil
+	}
+
+	body, _ := json.Marshal(result)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       string(body),
+	}, nil
+}
+
+func main() {
+	lambda.Start(handler)
+}
+```
+
+`events.APIGatewayProxyRequest` and `events.APIGatewayProxyResponse` are the shapes API Gateway uses to invoke a Lambda as an HTTP backend — the request comes in as a struct with `Body`, `Headers`, `QueryStringParameters`, and so on, already parsed out of the underlying HTTP request by API Gateway, and your response is a struct rather than writes to an `http.ResponseWriter`. Notice the handler returns a nil error alongside a `4xx`/`5xx` status code for expected failures — a non-nil error from the handler itself signals an unhandled platform-level failure (Lambda will log it and, depending on configuration, retry the invocation), which is a different thing from an application error you want the client to see as a normal HTTP response.
+
+## Reusing net/http handlers instead of rewriting them
+
+Rewriting every handler against `events.APIGatewayProxyRequest` throws away the ordinary `net/http` code you'd write for a normal server. `github.com/awslabs/aws-lambda-go-api-proxy` bridges the two, letting you keep a standard `http.Handler` (built with the standard library, Gin, or any router) and adapt it to Lambda's invocation model:
+
+```go
+import (
+	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
+)
+
+var ginLambda *httpadapter.HandlerAdapter
+
+func init() {
+	router := setupGinRouter() // your normal *gin.Engine, unchanged
+	ginLambda = httpadapter.New(router)
+}
+
+func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	return ginLambda.ProxyWithContext(ctx, req)
+}
+
+func main() {
+	lambda.Start(handler)
+}
+```
+
+This is the practical path most teams take: build the API the same way you would for a normal deployment (this book's chapters on Gin, Fiber, or plain `net/http` all still apply), and adapt it to Lambda at the very edge rather than designing two different codebases for "runs on a server" and "runs on Lambda."
+
+## What actually changes about your design
+
+**Cold starts.** The first invocation after a period of inactivity has to initialize your process from scratch, which is slower than a warm invocation reusing an already-running one. Keep `init()` work minimal, and initialize expensive resources (database connections, HTTP clients) once at the package level rather than inside the handler, so a warm invocation reuses them instead of recreating them on every call.
+
+**No long-lived state.** A goroutine started in one invocation is not guaranteed to survive to the next — the platform may freeze or terminate the execution environment between invocations. Anything that needs to persist (a cache, a queue) has to live in an external service (Redis, DynamoDB, SQS), not in the Lambda process's own memory.
+
+**Execution time limits.** Lambda functions have a hard maximum duration (commonly configured well under 15 minutes). Long-running work — the background jobs from an earlier chapter — belongs in a queue-driven worker running on a different Lambda invocation (or a container), not inline in the same function that answered the original API request.
+
+<Warning title="A database connection per invocation doesn't behave like a connection pool">
+If your Lambda function opens a new database connection on every cold start and thousands of concurrent invocations spin up under load, you can exhaust your database's connection limit almost immediately — a failure mode that simply doesn't exist with a single long-running server holding one pool. Use a proxy (like AWS RDS Proxy) or a connection-light data store, and keep connection setup in package-level initialization so warm invocations reuse it.
+</Warning>
+
+## When serverless is, and isn't, the right fit
+
+FaaS is a strong fit for spiky, unpredictable traffic (you pay per invocation, not for idle capacity), for event-driven glue code (resizing an image when one lands in S3), and for endpoints that are hit rarely enough that a warm always-on server is wasteful. It's a weaker fit for latency-sensitive APIs that can't tolerate occasional cold-start delays, and for workloads that need long-lived in-memory state or very high, sustained throughput where a pool of always-warm servers is simply cheaper and more predictable.
+
+<DeepDive title="Provisioned concurrency trades cost for cold-start elimination">
+AWS Lambda's provisioned concurrency keeps a set number of execution environments pre-initialized and warm, effectively buying back the cold-start latency at the cost of paying for that idle capacity — a middle ground between a fully "pay only when invoked" function and a permanently running server. It's worth reaching for on latency-sensitive endpoints once cold starts show up as a real problem in your metrics, not as a default.
+</DeepDive>
+
+## Local development and testing
+
+Deploying to Lambda just to test a one-line change is slow enough to break your development flow, so local testing matters more here than for a normal server. Because the Lambda handler is a plain Go function taking a context and an event struct, it's directly unit-testable without any AWS infrastructure at all:
+
+```go
+func TestHandler(t *testing.T) {
+	req := events.APIGatewayProxyRequest{
+		Body: `{"product_id":"sku-1","quantity":2}`,
+	}
+	resp, err := handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+```
+
+For end-to-end testing that includes API Gateway's own routing and request transformation, tools like AWS SAM's local invoke or `localstack` emulate the surrounding platform on your own machine, closing the gap between "works in my unit test" and "works when actually deployed" without needing a real AWS account for every iteration.

@@ -1,15 +1,15 @@
 ---
 id: "[2.10.0]"
-title: "HTTP: Protocol Theory and Go Implementation 🌐"
+title: "HTTP: Protocol Theory and Go Implementation"
 ---
 
-# HTTP: Protocol Theory and Go Implementation 🌐
+# HTTP: Protocol Theory and Go Implementation
 
 > "Imagine a postal service: you write a letter (request), send it to an address (server), and wait for a reply (response). HTTP is the protocol that defines how these letters are formatted, sent, and received over the internet."
 
 ---
 
-## 🚦 What is HTTP?
+## What is HTTP?
 - **HTTP (Hypertext Transfer Protocol)** is the foundation of data communication on the web.
 - **Request/Response Model:** Clients (like browsers or Go programs) send requests; servers respond with data.
 - **Stateless:** Each request is independent—servers don’t remember previous requests by default.
@@ -17,7 +17,7 @@ title: "HTTP: Protocol Theory and Go Implementation 🌐"
 
 ---
 
-## 🧩 HTTP Request/Response Lifecycle
+## HTTP Request/Response Lifecycle
 
 ```mermaid
 sequenceDiagram
@@ -29,7 +29,7 @@ sequenceDiagram
 
 ---
 
-## 🛠️ Go in Action: Basic HTTP Server
+## Go in Action: Basic HTTP Server
 
 Let’s build a simple HTTP server in Go that responds with a greeting.
 
@@ -55,7 +55,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Basic HTTP Client
+## Go in Action: Basic HTTP Client
 
 Let’s write a Go program that fetches a web page.
 
@@ -83,7 +83,7 @@ func main() {
 
 ---
 
-## 🛣️ Go in Action: Routing and Concurrent Servers
+## Go in Action: Routing and Concurrent Servers
 
 - **Routing:** Direct different URLs to different handlers.
 - **Concurrency:** Go’s HTTP server handles each request in its own goroutine.
@@ -143,7 +143,7 @@ func main() {
 
 ---
 
-## ⏹️ Go in Action: HTTP with Context and Cancellation
+## Go in Action: HTTP with Context and Cancellation
 
 - **Context:** Allows canceling long-running requests if the client disconnects.
 
@@ -178,7 +178,7 @@ func main() {
 
 ---
 
-## 🧠 Key Takeaways
+## Key Takeaways
 - HTTP is the backbone of web communication: request/response, stateless, text-based.
 - Go’s `net/http` package makes building servers and clients easy and concurrent.
 - Use handlers for routing, and context for cancellation.
@@ -186,7 +186,7 @@ func main() {
 
 ---
 
-## 🧪 Exercises
+## Exercises
 - [Basic HTTP Server](../../exercises/part2/10-http-server-basic/main.go)
 - [Basic HTTP Client](../../exercises/part2/10-http-client-basic/main.go)
 - [HTTP Server Routing](../../exercises/part2/10-http-server-routing/main.go)

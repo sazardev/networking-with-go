@@ -5,4 +5,162 @@ title: "APIs for Feature Flags and Dynamic Config"
 
 # APIs for Feature Flags and Dynamic Config
 
-// Ejemplo: LaunchDarkly, Unleash, patrones DIY
+Every deploy used to mean "this code is now live for everyone." Feature flags decouple those two things: the code can be deployed dark, and turned on for 1% of users, then 50%, then everyone — or turned back off instantly if something looks wrong, without a rollback deploy. This chapter covers both ends of that spectrum: a minimal do-it-yourself flag system you can build in an afternoon, and integrating with a dedicated flag service (Unleash) once your needs outgrow that.
+
+## The simplest thing that works
+
+At its core, a feature flag is a named boolean (or, more usefully, a named boolean evaluated per-user) that your code checks before branching. A DIY version backed by a shared map and refreshed periodically from a database is often all a small team needs:
+
+```go
+package main
+
+import (
+	"sync"
+	"time"
+)
+
+type FlagStore struct {
+	mu    sync.RWMutex
+	flags map[string]bool
+}
+
+func (s *FlagStore) IsEnabled(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.flags[name]
+}
+
+func (s *FlagStore) refresh(db *sql.DB) {
+	rows, err := db.Query(`SELECT name, enabled FROM feature_flags`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	next := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		var enabled bool
+		rows.Scan(&name, &enabled)
+		next[name] = enabled
+	}
+
+	s.mu.Lock()
+	s.flags = next
+	s.mu.Unlock()
+}
+
+func (s *FlagStore) startPolling(db *sql.DB, interval time.Duration) {
+	go func() {
+		for range time.Tick(interval) {
+			s.refresh(db)
+		}
+	}()
+}
+```
+
+The `sync.RWMutex` matters here: `IsEnabled` is called on every request that touches a flagged code path, potentially thousands of times a second, while `refresh` only runs every few seconds — an `RWMutex` lets all those reads proceed concurrently and only blocks briefly during the periodic swap. Handlers check flags inline:
+
+```go
+func checkoutHandler(w http.ResponseWriter, r *http.Request) {
+	if flags.IsEnabled("new-checkout-flow") {
+		newCheckout(w, r)
+		return
+	}
+	legacyCheckout(w, r)
+}
+```
+
+## Per-user rollout, not just on/off
+
+A flat on/off switch is rarely enough — you usually want "10% of users" or "users in the beta cohort," which means the decision has to be a deterministic function of the user, not a coin flip re-evaluated on every request (otherwise the same user flips between old and new behavior on every page load). Hashing the user ID with the flag name gives a stable, evenly distributed answer:
+
+```go
+import (
+	"crypto/sha256"
+	"encoding/binary"
+)
+
+func isEnabledForUser(flagName, userID string, rolloutPercent int) bool {
+	h := sha256.Sum256([]byte(flagName + ":" + userID))
+	bucket := binary.BigEndian.Uint32(h[:4]) % 100
+	return int(bucket) < rolloutPercent
+}
+```
+
+Because the hash is deterministic, `alice` always lands in the same bucket for `new-checkout-flow` regardless of which server handles her request or how many times she reloads — the rollout percentage can climb over days without any single user's experience flickering back and forth.
+
+<Warning title="A flag left on forever is just dead code with extra steps">
+Flags accumulate fast, and an `if` branch nobody ever flips back becomes permanent complexity nobody dares delete. Treat every flag as having an expected lifetime — once a rollout reaches 100% and stays there for a sprint or two, remove the flag and the old code path in the same change.
+</Warning>
+
+## Reaching for a dedicated service
+
+Once you need audit logs of who changed a flag and when, scheduling changes, or targeting rules more complex than a percentage rollout (users in a specific region, on a specific plan), a dedicated flag service pays for itself. Unleash is open-source, self-hostable, and has an official Go client, `github.com/Unleash/unleash-client-go`:
+
+```go
+import "github.com/Unleash/unleash-client-go/v4"
+
+func initUnleash() error {
+	return unleash.Initialize(
+		unleash.WithAppName("my-api"),
+		unleash.WithUrl("https://unleash.internal/api"),
+		unleash.WithListener(&unleash.DebugListener{}),
+	)
+}
+
+func checkoutHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := unleash.Context{UserId: currentUserID(r)}
+	if unleash.IsEnabled("new-checkout-flow", unleash.WithContext(ctx)) {
+		newCheckout(w, r)
+		return
+	}
+	legacyCheckout(w, r)
+}
+```
+
+The client polls Unleash's server periodically and caches the flag definitions locally, so `IsEnabled` calls are fast, in-memory checks — the network round trip to Unleash happens in the background, not on the request's critical path, which is the same design as the DIY polling version above, just with a much richer rule engine (region, plan, percentage, and combinations of all three) behind it.
+
+## Dynamic configuration beyond booleans
+
+The same infrastructure that flips features on and off is a natural home for other values that need to change without a deploy — a third-party API's timeout, a retry count, a maximum page size. Model these the same way: a typed config struct refreshed on the same polling loop, read through an accessor rather than scattered `os.Getenv` calls that only get evaluated once at process startup:
+
+```go
+type RuntimeConfig struct {
+	MaxPageSize     int
+	DownstreamTimeout time.Duration
+}
+
+func (s *FlagStore) Config() RuntimeConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config
+}
+```
+
+## Exposing flag state through your own API
+
+Frontend clients and mobile apps often need to know which flags apply to the current user before rendering anything, which means your flag system needs its own read endpoint rather than requiring every client to embed a polling library:
+
+```go
+func flagsHandler(w http.ResponseWriter, r *http.Request) {
+	userID := currentUserID(r)
+	active := map[string]bool{
+		"new-checkout-flow": isEnabledForUser("new-checkout-flow", userID, 25),
+		"dark-mode-default":  isEnabledForUser("dark-mode-default", userID, 100),
+	}
+	writeJSON(w, http.StatusOK, active)
+}
+```
+
+A mobile client that fetches this once at app launch and caches it for the session avoids checking flags on every screen render, while still picking up changes on the next launch or a periodic refresh — a reasonable trade-off between freshness and not hammering the flags endpoint on every navigation.
+
+<DeepDive title="Server-side and client-side flag checks need to agree">
+If a checkout page renders differently based on a flag evaluated client-side, but the checkout API endpoint evaluates the same flag independently, a user can end up with a UI for the new flow submitting to an API still running the old one. Evaluate the flag once per request, as close to the start of the request as possible, and pass the resolved decision down rather than re-checking it in multiple places that could disagree.
+</DeepDive>
+
+## Testing with flags in the codebase
+
+Flags multiply the number of code paths your tests need to cover — a checkout handler with one flag has two behaviors to verify, and a handler with three independent flags has up to eight. Keep this tractable by testing the flag-dependent logic in isolation from flag evaluation itself: extract `newCheckout` and `legacyCheckout` as functions that take no dependency on `FlagStore` at all, and test each directly, reserving a much smaller set of tests for `IsEnabled` and the routing `if` statement that chooses between them.
+
+<Axiom>A feature flag is a config value with exactly two states; once you build the machinery to change one value safely without a deploy, you've built the machinery for all of them.</Axiom>

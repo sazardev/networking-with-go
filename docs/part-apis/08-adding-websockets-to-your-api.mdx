@@ -5,4 +5,224 @@ title: "Adding WebSockets to Your API"
 
 # Adding WebSockets to Your API
 
-// ...contenido y ejemplos...
+REST is built around request-response: the client always speaks first. Some features — chat, live dashboards, multiplayer state, collaborative editing — need the server to push data the moment it happens, in both directions, over one long-lived connection. That's what WebSockets are for. This chapter uses `github.com/gorilla/websocket`, the de facto standard WebSocket library in the Go ecosystem, to add a real-time channel to an API.
+
+---
+
+## HTTP vs WebSocket
+
+A WebSocket connection starts life as a normal HTTP request with an `Upgrade: websocket` header. The server accepts the upgrade, and from that point on, the TCP connection is repurposed to carry WebSocket frames instead of further HTTP requests — a single persistent, full-duplex channel that stays open until either side closes it.
+
+---
+
+## Installing gorilla/websocket
+
+```sh
+go get github.com/gorilla/websocket
+```
+
+---
+
+## Upgrading a Connection
+
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+
+	"github.com/gorilla/websocket"
+)
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return r.Header.Get("Origin") == "https://app.example.com"
+	},
+}
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("upgrade failed:", err)
+		return
+	}
+	defer conn.Close()
+
+	for {
+		msgType, msg, err := conn.ReadMessage()
+		if err != nil {
+			log.Println("read error:", err)
+			return
+		}
+		if err := conn.WriteMessage(msgType, msg); err != nil {
+			log.Println("write error:", err)
+			return
+		}
+	}
+}
+```
+
+This is a plain echo server: it upgrades the connection, then loops reading a message and writing it straight back. `CheckOrigin` matters in production — the default policy rejects cross-origin upgrade requests, and you should replace it with an explicit allow-list rather than a function that always returns `true`.
+
+<Warning title="One writer at a time per connection">
+`gorilla/websocket` explicitly documents that a connection supports only one concurrent reader and one concurrent writer. If multiple goroutines might write to the same connection — common once you add broadcasting — you must serialize writes yourself, typically with a mutex or by funneling all writes through a single goroutine reading from a channel.
+</Warning>
+
+---
+
+## A Broadcast Hub
+
+Most real-time features aren't one-to-one echo; they're one-to-many broadcast — a chat room, a live scoreboard, a shared cursor position. The common pattern is a central hub that owns the set of connected clients and serializes all writes through one goroutine:
+
+```go
+type Hub struct {
+	clients    map[*websocket.Conn]bool
+	broadcast  chan []byte
+	register   chan *websocket.Conn
+	unregister chan *websocket.Conn
+	mu         sync.Mutex
+}
+
+func newHub() *Hub {
+	return &Hub{
+		clients:    make(map[*websocket.Conn]bool),
+		broadcast:  make(chan []byte),
+		register:   make(chan *websocket.Conn),
+		unregister: make(chan *websocket.Conn),
+	}
+}
+
+func (h *Hub) run() {
+	for {
+		select {
+		case conn := <-h.register:
+			h.mu.Lock()
+			h.clients[conn] = true
+			h.mu.Unlock()
+
+		case conn := <-h.unregister:
+			h.mu.Lock()
+			if _, ok := h.clients[conn]; ok {
+				delete(h.clients, conn)
+				conn.Close()
+			}
+			h.mu.Unlock()
+
+		case msg := <-h.broadcast:
+			h.mu.Lock()
+			for conn := range h.clients {
+				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					conn.Close()
+					delete(h.clients, conn)
+				}
+			}
+			h.mu.Unlock()
+		}
+	}
+}
+
+func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	h.register <- conn
+
+	go func() {
+		defer func() { h.unregister <- conn }()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			h.broadcast <- msg
+		}
+	}()
+}
+```
+
+Because `run()` is the only goroutine that ever writes to `h.clients` or calls `WriteMessage` on a broadcast, there's no data race and no need for per-connection write locking beyond what the hub already guarantees.
+
+---
+
+## Keeping Connections Alive
+
+Idle WebSocket connections can be silently dropped by proxies and load balancers. The standard fix is a ping/pong heartbeat:
+
+```go
+conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+conn.SetPongHandler(func(string) error {
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	return nil
+})
+
+ticker := time.NewTicker(30 * time.Second)
+defer ticker.Stop()
+for range ticker.C {
+	if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+		return
+	}
+}
+```
+
+The server pings every 30 seconds; the client's WebSocket implementation replies with a pong automatically, resetting the read deadline and proving the connection is still alive.
+
+---
+
+## Authenticating a WebSocket Connection
+
+The `Upgrade: websocket` handshake is still a normal HTTP request before the protocol switch, so it can carry the same bearer token used elsewhere in the API — either as an `Authorization` header, if the client library supports setting one on the upgrade request, or as a query parameter when it doesn't (browsers' native `WebSocket` API cannot set custom headers):
+
+```go
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	claims, err := parseToken(token)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	// claims.UserID is now available for the lifetime of this connection
+}
+```
+
+Validating the token *before* calling `upgrader.Upgrade` matters: once the upgrade succeeds, you're committed to the WebSocket protocol on that connection and can no longer send a normal HTTP error response.
+
+---
+
+## Real-World Example: A Chat Message
+
+**Client sends (as a text frame):**
+
+```json
+{"user": "ada", "text": "hello, room"}
+```
+
+**Server broadcasts the same frame to every other connected client**, unchanged — the hub in this example doesn't need to parse the message at all; it just relays bytes. A more advanced hub would decode the JSON to add a server-generated timestamp or filter by room ID before rebroadcasting.
+
+---
+
+## Closing Connections Cleanly
+
+The WebSocket protocol has a proper close handshake — don't just let the TCP connection drop:
+
+```go
+conn.WriteMessage(websocket.CloseMessage,
+	websocket.FormatCloseMessage(websocket.CloseNormalClosure, "server shutting down"))
+```
+
+Sending a close frame lets the client distinguish a graceful shutdown from a network failure, which matters for reconnection logic on the client side.
+
+---
+
+## When WebSockets Are the Right Tool
+
+WebSockets earn their complexity when you need low-latency, bidirectional, high-frequency updates — live collaboration, gaming, trading dashboards. If the server only ever needs to push updates to the client, and the client never needs to send data back over the same channel, the next chapter's topic — Server-Sent Events — is a simpler protocol that solves that narrower problem with plain HTTP.

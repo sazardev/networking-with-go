@@ -5,4 +5,146 @@ title: "APIs for Webhooks and Event-Driven Design"
 
 # APIs for Webhooks and Event-Driven Design
 
-// Diseño, seguridad, patrones, reintentos, idempotencia
+Most of this book so far has been about APIs where the client asks and the server answers. A webhook flips that around: the server calls the client, unprompted, when something happens. Stripe tells your server a payment succeeded; GitHub tells your server a pull request was opened; your own system might tell a partner's server that an order shipped. Webhooks are how services notify each other about events instead of making everyone poll for changes, and they come with a specific set of design problems: how does the receiver know the request really came from you, what happens when the receiver is briefly down, and what happens if the same event arrives twice.
+
+## Sending a webhook: signing the payload
+
+If your API sends webhooks to third parties, the receiving server needs a way to verify the request actually came from you and wasn't forged or tampered with in transit. The standard approach is an HMAC signature over the raw request body, sent in a header, computed with a secret both sides share:
+
+```go
+package main
+
+import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+)
+
+func sendWebhook(url, secret string, event any) error {
+	body, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Webhook-Signature", "sha256="+signature)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("webhook rejected with status %d", resp.StatusCode)
+	}
+	return nil
+}
+```
+
+The signature covers the exact bytes sent, which is why it's computed from the marshaled JSON, not from the original struct — if the receiver re-serializes the payload differently before checking the signature, the check will fail even for a legitimate request.
+
+## Receiving a webhook: verifying before trusting
+
+On the receiving side, the same HMAC computation runs against the raw body, and the comparison must use a constant-time function to avoid leaking timing information about how much of the signature matched:
+
+```go
+func webhookHandler(secret string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(body)
+		expected := hex.EncodeToString(mac.Sum(nil))
+		received := strings.TrimPrefix(r.Header.Get("X-Webhook-Signature"), "sha256=")
+
+		if !hmac.Equal([]byte(expected), []byte(received)) {
+			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			return
+		}
+
+		var event OrderShippedEvent
+		if err := json.Unmarshal(body, &event); err != nil {
+			http.Error(w, "malformed event", http.StatusBadRequest)
+			return
+		}
+
+		if alreadyProcessed(event.EventID) {
+			w.WriteHeader(http.StatusOK) // acknowledge, don't reprocess
+			return
+		}
+
+		handleOrderShipped(event)
+		markProcessed(event.EventID)
+		w.WriteHeader(http.StatusOK)
+	}
+}
+```
+
+`hmac.Equal` is doing more work than a plain `==` comparison would — it compares byte slices in constant time regardless of where they first differ, which prevents an attacker from timing repeated guesses to reconstruct a valid signature byte by byte.
+
+## Idempotency: the same event can arrive more than once
+
+Networks fail in the middle of things. If the sender doesn't get a `200 OK` in time — because of a timeout, not necessarily because processing actually failed — it will typically retry the same event. That means your receiver must treat delivery as "at least once," never "exactly once," and handle duplicates gracefully. The `alreadyProcessed` / `markProcessed` pair above is the minimum viable version: every event carries a unique `EventID`, and the receiver records which IDs it has already handled (in Redis, or a dedicated table with a unique constraint) before doing anything with side effects, such as charging a card or shipping an order twice.
+
+<Axiom>A webhook receiver that isn't idempotent isn't really a webhook receiver — it's a bug waiting for the sender to retry.</Axiom>
+
+## Retrying on the sender side
+
+Symmetrically, the sender needs a retry policy for when the receiver is down or slow, with exponential backoff so a struggling receiver isn't hammered further:
+
+```go
+func sendWithRetry(url, secret string, event any) error {
+	backoff := 1 * time.Second
+	for attempt := 0; attempt < 5; attempt++ {
+		err := sendWebhook(url, secret, event)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(backoff)
+		backoff *= 2
+	}
+	return fmt.Errorf("webhook delivery failed after retries")
+}
+```
+
+Most production webhook senders queue this retry logic through the background job system from the previous chapter rather than blocking the original request — the event that triggers the webhook (an order shipping) shouldn't be delayed by a slow or unreachable receiver.
+
+<DeepDive title="Give receivers a way to replay history">
+However good your retry logic is, receivers will occasionally miss events — a deploy during the retry window, a misconfigured endpoint fixed a day later. A `GET /events?since=...` endpoint, or a dashboard listing recent webhook deliveries with a manual "resend" button, turns an unrecoverable gap into a two-minute fix, and every mature webhook provider (Stripe, GitHub) offers exactly this.
+</DeepDive>
+
+## Event-driven design beyond webhooks
+
+Webhooks are the simplest form of event-driven architecture: one HTTP call per event, no broker in between. For higher volume or when you need ordering guarantees and replay across many consumers, teams typically move to a message broker (Kafka, NATS, or a cloud pub/sub service) instead of point-to-point HTTP calls. The design principles carry over unchanged, though: every message needs a stable identifier for deduplication, consumers must be idempotent, and producers need a retry strategy for when a consumer is temporarily unavailable. Webhooks are event-driven design's smallest, most approachable form — understanding them well is what makes the broker-based version make sense later.
+
+## Versioning webhook payloads
+
+Webhook consumers, unlike your own frontend, are code you don't control and often can't force to redeploy on your schedule. Adding a field to an event payload is safe for well-behaved consumers, but removing or renaming one silently breaks anyone still relying on it. Include an explicit event schema version in every payload, and treat changing that version as seriously as any other public API versioning decision:
+
+```go
+type OrderShippedEvent struct {
+	SchemaVersion int       `json:"schema_version"`
+	EventID       string    `json:"event_id"`
+	OrderID       string    `json:"order_id"`
+	ShippedAt     time.Time `json:"shipped_at"`
+}
+```
+
+<DeepDive title="Let consumers subscribe to only the events they need">
+A webhook system that sends every consumer every event type forces each receiver to filter events it doesn't care about, and increases the blast radius when one event type's payload changes. A subscription model, where each registered endpoint declares which event types it wants, keeps payloads relevant and makes it possible to evolve one event type's schema without touching consumers who never subscribed to it.
+</DeepDive>

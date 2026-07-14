@@ -1,4 +1,4 @@
-# Part APIs: Building Modern APIs & Backends with Go 🚦
+# Part APIs: Building Modern APIs & Backends with Go
 
 Esta sección cubre el diseño, implementación y despliegue de APIs modernas y backends en Go, incluyendo REST, GraphQL, WebSockets, seguridad, patrones avanzados y más. Cada capítulo incluye teoría, ejemplos y soluciones prácticas.
 
@@ -24,7 +24,7 @@ Esta sección cubre el diseño, implementación y despliegue de APIs modernas y 
 16. [API Performance, Monitoring, and Observability](16-api-performance-monitoring-and-observability.mdx)
 17. [Deploying and Scaling Go APIs](17-deploying-and-scaling-go-apis.mdx)
 
-### 🧩 Advanced API Topics
+### Advanced API Topics
 18. [Advanced API Rate Limiting and Anti-Abuse](18-advanced-api-rate-limiting-and-anti-abuse.mdx)
 19. [Advanced API Gateway and Service Mesh](19-advanced-api-gateway-and-service-mesh.mdx)
 20. [APIs for Graph Databases and NoSQL](20-apis-for-graph-databases-and-nosql.mdx)

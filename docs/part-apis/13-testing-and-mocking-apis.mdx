@@ -5,4 +5,222 @@ title: "Testing and Mocking APIs"
 
 # Testing and Mocking APIs
 
-// ...contenido y ejemplos...
+An API without tests is a promise you can't verify. Go's standard library makes HTTP handler testing unusually pleasant: `net/http/httptest` lets you exercise a handler directly, in-process, without binding a real port or making a real network call. This chapter covers testing handlers, table-driven test patterns, and mocking dependencies like a database or an external API client.
+
+---
+
+## Testing a Handler with httptest
+
+`httptest.NewRequest` builds an `*http.Request` without touching the network, and `httptest.NewRecorder` captures whatever a handler writes to it, so you can call the handler function directly like any other Go function:
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestGetTask_Found(t *testing.T) {
+	store := NewStore()
+	store.Create("write tests")
+	api := &API{store: store}
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks/1", nil)
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+
+	api.getTask(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var task Task
+	if err := json.NewDecoder(rec.Body).Decode(&task); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if task.Text != "write tests" {
+		t.Errorf("expected text %q, got %q", "write tests", task.Text)
+	}
+}
+```
+
+`req.SetPathValue` (available since Go 1.22, matching the `{id}`-style patterns from earlier chapters) lets you set the path parameter a real `ServeMux` would have extracted, without spinning up the mux at all.
+
+---
+
+## Table-Driven Tests
+
+Go's idiomatic pattern for testing several inputs against the same logic is a table of cases run in a loop, each as its own subtest:
+
+```go
+func TestGetTask(t *testing.T) {
+	store := NewStore()
+	store.Create("first task")
+	api := &API{store: store}
+
+	cases := []struct {
+		name       string
+		id         string
+		wantStatus int
+	}{
+		{"existing task", "1", http.StatusOK},
+		{"missing task", "999", http.StatusNotFound},
+		{"invalid id", "abc", http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/tasks/"+tc.id, nil)
+			req.SetPathValue("id", tc.id)
+			rec := httptest.NewRecorder()
+
+			api.getTask(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("id=%s: expected status %d, got %d", tc.id, tc.wantStatus, rec.Code)
+			}
+		})
+	}
+}
+```
+
+`t.Run` gives each case its own name in test output, so a failure immediately tells you which case broke — `--- FAIL: TestGetTask/missing_task` — instead of a single opaque failure for the whole function.
+
+---
+
+## Testing a Full Router with httptest.NewServer
+
+Handler-level tests are fast and don't need real networking, but sometimes you want to exercise the actual routing — method matching, middleware order, real HTTP round trips. `httptest.NewServer` spins up a real listener on a random local port for the duration of the test:
+
+```go
+func TestServer_CreateTask(t *testing.T) {
+	mux := http.NewServeMux()
+	api := &API{store: NewStore()}
+	mux.HandleFunc("POST /tasks", api.createTask)
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/tasks", "application/json",
+		strings.NewReader(`{"text":"integration test"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+}
+```
+
+Reach for `httptest.NewServer` when you specifically need to test something that only shows up at the transport level — redirect following, timeouts, or a real client library talking to your API — and prefer the lighter, in-process `httptest.NewRecorder` approach for everything else.
+
+---
+
+## Mocking Dependencies
+
+Handlers that depend on a database, an external HTTP API, or another service should depend on an interface, not a concrete type, so tests can substitute a fake:
+
+```go
+type TaskStore interface {
+	Create(text string) Task
+	Get(id int) (Task, error)
+}
+
+type fakeStore struct {
+	tasks map[int]Task
+}
+
+func (f *fakeStore) Create(text string) Task {
+	return Task{ID: 1, Text: text}
+}
+
+func (f *fakeStore) Get(id int) (Task, error) {
+	t, ok := f.tasks[id]
+	if !ok {
+		return Task{}, errors.New("not found")
+	}
+	return t, nil
+}
+```
+
+The production `Store` type from chapter 4 and this `fakeStore` both satisfy `TaskStore`; the handler code only ever calls through the interface, so a test can inject `&fakeStore{tasks: map[int]Task{1: {ID: 1, Text: "seed"}}}` and control exactly what the "database" returns without touching a real one.
+
+<DeepDive title="Do you need a mocking library?">
+For simple interfaces with one or two methods, a small hand-written fake struct like the one above is usually clearer than a generated mock. Libraries like `github.com/stretchr/testify/mock` or code-generated mocks from `go.uber.org/mock/mockgen` earn their keep once an interface has many methods, or you need to assert call counts and argument values precisely — reach for them when hand-writing fakes becomes repetitive, not by default.
+</DeepDive>
+
+---
+
+## Mocking an Outbound HTTP Call
+
+When your API itself calls another service — a payment provider, a geocoding API — inject an `*http.Client` (or an interface wrapping it) so tests can point it at a local `httptest.Server` instead of the real internet:
+
+```go
+func TestPaymentClient_Charge(t *testing.T) {
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"succeeded"}`))
+	}))
+	defer fake.Close()
+
+	client := NewPaymentClient(fake.URL, fake.Client())
+	status, err := client.Charge(100)
+	if err != nil || status != "succeeded" {
+		t.Fatalf("unexpected result: %v, %v", status, err)
+	}
+}
+```
+
+This pattern — a real `httptest.Server` standing in for a third-party API — gives you confidence that your HTTP client code (headers, serialization, error handling) actually works, not just that your mock's assumptions about the third party are self-consistent.
+
+---
+
+## Benchmarking a Handler
+
+Go's testing package also supports benchmarks out of the box, useful for catching a performance regression in a hot-path handler before it ships:
+
+```go
+func BenchmarkListTasks(b *testing.B) {
+	store := NewStore()
+	for i := 0; i < 1000; i++ {
+		store.Create(fmt.Sprintf("task %d", i))
+	}
+	api := &API{store: store}
+	req := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		api.listTasks(rec, req)
+	}
+}
+```
+
+`go test -bench=. -benchmem` runs it and reports allocations per operation alongside timing, which is often the more actionable number for an HTTP handler — a handler that allocates less garbage per request handles more concurrent traffic before GC pressure becomes the bottleneck.
+
+---
+
+## Real-World Example: Running the Suite
+
+```http
+$ go test ./... -v
+=== RUN   TestGetTask
+=== RUN   TestGetTask/existing_task
+=== RUN   TestGetTask/missing_task
+=== RUN   TestGetTask/invalid_id
+--- PASS: TestGetTask (0.00s)
+    --- PASS: TestGetTask/existing_task (0.00s)
+    --- PASS: TestGetTask/missing_task (0.00s)
+    --- PASS: TestGetTask/invalid_id (0.00s)
+PASS
+```
+
+Testing handlers directly with `httptest`, keeping dependencies behind small interfaces, and reserving `httptest.NewServer` for genuine transport-level concerns keeps a Go API's test suite fast — most of these tests run in milliseconds, with no real network or database involved.
+
+Next, we'll look at how an API's contract evolves safely over time: versioning, deprecation, and long-term maintenance.

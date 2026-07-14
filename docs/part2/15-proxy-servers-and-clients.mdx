@@ -1,10 +1,207 @@
 ---
 id: "[2.15.0]"
-title: "Proxy Servers and Clients: Concepts and Go Implementation 🕵️"
+title: "Proxy Servers and Clients: Concepts and Go Implementation"
 ---
 
-# Proxy Servers and Clients: Concepts and Go Implementation 🕵️
+# Proxy Servers and Clients: Concepts and Go Implementation
 
-Theory and Go code for building proxy servers and clients.
+> "A proxy is like the receptionist at a busy office: visitors don't walk straight to an employee's desk — they talk to the receptionist, who decides who to route them to, checks their badge, and sometimes just answers the question herself from a note on the desk. Neither side needs to know exactly what happens on the other."
+
+---
+
+## What Is a Proxy?
+
+A proxy is an intermediary that sits between a client and a server, forwarding traffic on someone's behalf. You've already built the two halves it needs — a TCP client and a TCP server — in earlier chapters. A proxy is simply a program that is both at once, wired together.
+
+Two shapes come up constantly:
+
+- **Forward proxy:** Sits in front of clients, forwarding their requests out to arbitrary destinations. Corporate proxies, VPN-like traffic filters, and anonymizing proxies are forward proxies — the client explicitly configures it as their gateway to the internet.
+- **Reverse proxy:** Sits in front of servers, accepting inbound requests and forwarding them to one of several backend servers. Load balancers, API gateways, and CDN edge nodes are reverse proxies — clients don't even know the backend exists.
+
+The difference is whose identity the proxy hides: a forward proxy hides the client from the destination; a reverse proxy hides the backend from the client.
+
+---
+
+## Why Proxies Exist
+
+- **Caching:** Store responses so repeated requests don't hit the origin server.
+- **Filtering and security:** Block malicious requests, enforce access policies, terminate TLS in one place.
+- **Load balancing:** Spread requests across multiple backend instances.
+- **Anonymity and privacy:** Hide the client's real address from the destination.
+- **Protocol translation:** Accept one protocol and speak another to the backend (e.g., terminate HTTPS and forward plain HTTP internally).
+
+---
+
+## A Byte-Level TCP Proxy
+
+The simplest possible proxy doesn't understand HTTP, DNS, or any application protocol at all — it just shuffles bytes between two connections. This works for any TCP-based protocol, because a proxy at this level never has to parse the payload.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net"
+	"os/signal"
+	"syscall"
+)
+
+func proxyConn(ctx context.Context, client net.Conn, upstreamAddr string) {
+	defer client.Close()
+
+	var dialer net.Dialer
+	upstream, err := dialer.DialContext(ctx, "tcp", upstreamAddr)
+	if err != nil {
+		fmt.Println("failed to reach upstream:", err)
+		return
+	}
+	defer upstream.Close()
+
+	// Copy in both directions concurrently. When either side closes,
+	// both io.Copy calls return and the connections are torn down.
+	done := make(chan struct{}, 2)
+	go func() {
+		io.Copy(upstream, client)
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(client, upstream)
+		done <- struct{}{}
+	}()
+	<-done
+}
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	ln, err := net.Listen("tcp", ":9200")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("TCP proxy listening on :9200, forwarding to :9000")
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				continue
+			}
+		}
+		go proxyConn(ctx, conn, "localhost:9000")
+	}
+}
+```
+
+[Exercise: TCP Byte Proxy](../../exercises/part2/15-tcp-proxy/main.go)
+
+Notice how this reuses the same `context.Context` cancellation pattern from the context chapter: `signal.NotifyContext` ties the proxy's shutdown to `SIGINT`/`SIGTERM`, and `DialContext` respects that same cancellation when opening new upstream connections.
+
+<DeepDive title="Why two goroutines instead of one?">
+TCP is full-duplex — a client can be sending while the server is also sending. A single goroutine reading and writing in a loop can only move data in one direction at a time. Running one `io.Copy` per direction means both directions flow independently, exactly the way a real network conversation does.
+</DeepDive>
+
+---
+
+## HTTP Reverse Proxy with `net/http/httputil`
+
+For HTTP traffic specifically, the standard library already ships a production-grade reverse proxy: `httputil.ReverseProxy`. It handles header rewriting, streaming request/response bodies, and connection reuse for you.
+
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+)
+
+func main() {
+	backend, err := url.Parse("http://localhost:8080")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(backend)
+
+	// Wrap the proxy to add a custom header on every forwarded request,
+	// a common pattern for injecting tracing or identifying the proxy hop.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Forwarded-By", "go-reverse-proxy")
+		proxy.ServeHTTP(w, r)
+	}
+
+	log.Println("reverse proxy listening on :9300, forwarding to :8080")
+	log.Fatal(http.ListenAndServe(":9300", http.HandlerFunc(handler)))
+}
+```
+
+[Exercise: HTTP Reverse Proxy](../../exercises/part2/15-http-reverse-proxy/main.go)
+
+`NewSingleHostReverseProxy` rewrites the request's scheme, host, and path prefix to point at the backend, then streams the response back to the original client — the same request/response model you saw in the HTTP chapter, just with an extra hop in the middle.
+
+---
+
+## A Minimal Forward Proxy (HTTP `CONNECT`)
+
+A forward proxy for plain HTTP just needs to read the target host from the request and forward it — similar to the reverse proxy above. Forwarding HTTPS is trickier, because the client wants an encrypted tunnel straight through to the destination, not a proxy that can read the traffic. HTTP defines the `CONNECT` method exactly for this: the client asks the proxy to open a raw TCP tunnel to `host:port`, and from that point on the proxy just relays encrypted bytes without ever decrypting them — the same byte-shuffling pattern as the TCP proxy above.
+
+```go
+func handleConnect(w http.ResponseWriter, r *http.Request) {
+	destConn, err := net.Dial("tcp", r.Host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
+		return
+	}
+	clientConn, _, err := hijacker.Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+
+	go io.Copy(destConn, clientConn)
+	io.Copy(clientConn, destConn)
+}
+```
+
+`http.Hijacker` is the key piece here: it lets a handler take over the raw TCP connection underneath an `http.ResponseWriter`, stepping outside the request/response model entirely so the proxy can relay opaque bytes for the rest of the connection's life.
+
+---
+
+## Hop-by-Hop Headers and Timeouts
+
+Two details matter for any real proxy:
+
+- **Hop-by-hop headers** (`Connection`, `Keep-Alive`, `Transfer-Encoding`, `Proxy-Authenticate`) describe the connection between one pair of endpoints and should be stripped before forwarding — passing them through unmodified can confuse the next hop.
+- **Timeouts** prevent one slow or hung backend from exhausting the proxy's connections. Use `http.Transport`'s `ResponseHeaderTimeout` and `DialContext` with a bounded context, or set deadlines with `conn.SetDeadline` on raw TCP proxies.
+
+<Warning title="An open proxy is a liability">
+A forward proxy that accepts connections from anyone and forwards them anywhere can be abused to launder malicious traffic or scan other networks. Always authenticate clients and restrict destinations in anything beyond a local development tool.
+</Warning>
+
+---
+
+## Key Takeaways
+
+- Forward proxies represent clients; reverse proxies represent servers. Same mechanics, opposite direction of trust.
+- At the TCP level, a proxy is just two `io.Copy` calls wired back to back — the same primitive you used for file transfer.
+- `httputil.ReverseProxy` gives you a correct, header-aware HTTP reverse proxy without reimplementing HTTP semantics.
+- `http.Hijacker` and the `CONNECT` method let a proxy tunnel encrypted traffic (like HTTPS) without ever decrypting it.
+
+---
 
 [Previous: File Transfer Applications](14-file-transfer-applications.md) | [Next: DNS: Theory and Go Implementation](16-dns-theory-and-go-implementation.md)

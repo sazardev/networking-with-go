@@ -5,4 +5,144 @@ title: "APIs for Internationalization (i18n) and Localization (l10n)"
 
 # APIs for Internationalization (i18n) and Localization (l10n)
 
-// Soporte de idiomas, zonas horarias, formatos
+Internationalization (i18n — eighteen letters between the "i" and the "n") is the work of designing your API so it *can* support multiple languages, currencies, and regional formats. Localization (l10n) is actually producing that content for a specific locale. An API that returns `"error": "Invalid email address"` as a hardcoded string has done neither; the moment a French or Japanese client needs a translated message, that string has to move somewhere the API can select from, based on what the client asked for.
+
+## Negotiating the locale
+
+The client tells your API what language it wants via the standard `Accept-Language` header, and the server's job is to match that against the locales it actually supports — not just take the first tag the client sent, since a client asking for `fr-CA` should still get French even if you only ship a generic `fr`. Go's `golang.org/x/text/language` package (from the Go team, the standard tool for this in Go) implements exactly this matching logic:
+
+```go
+package main
+
+import (
+	"golang.org/x/text/language"
+)
+
+var supported = []language.Tag{
+	language.English,
+	language.French,
+	language.Spanish,
+	language.Japanese,
+}
+
+var matcher = language.NewMatcher(supported)
+
+func resolveLocale(acceptLanguage string) language.Tag {
+	tags, _, err := language.ParseAcceptLanguage(acceptLanguage)
+	if err != nil || len(tags) == 0 {
+		return supported[0] // fall back to your default locale
+	}
+	tag, _, _ := matcher.Match(tags...)
+	return tag
+}
+```
+
+`matcher.Match` does real fallback matching — `fr-CA` matches your registered `fr`, `zh-Hant` falls back sensibly rather than erroring, and an unsupported language falls through to the confidence-ranked best match rather than a hard failure. This is meaningfully more correct than manually splitting the header string and doing an exact string comparison, which breaks the moment a client sends a regional variant you didn't anticipate.
+
+## Translating response content
+
+Once you have a resolved locale, `golang.org/x/text/message` provides a printer that selects the right translated string and handles locale-specific formatting (plurals, number grouping) in the same call:
+
+```go
+import (
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
+)
+
+func init() {
+	message.SetString(language.French, "item_count", "%d article(s) dans le panier")
+	message.SetString(language.English, "item_count", "%d item(s) in cart")
+}
+
+func cartSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	locale := resolveLocale(r.Header.Get("Accept-Language"))
+	p := message.NewPrinter(locale)
+
+	count := getCartItemCount(r)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"summary": p.Sprintf("item_count", count),
+	})
+}
+```
+
+For anything beyond a handful of strings, `message.SetString` calls scattered through `init()` functions become unmanageable — real projects extract translatable strings into `.gotext.json` catalog files (using the `gotext` command-line tool that ships alongside this package) and load them per locale at startup, keeping the translation content out of the Go source entirely so translators can work in it without touching code.
+
+<DeepDive title="Don't localize error codes, only their messages">
+An API consumed by other programs, not just humans in a browser, should still return a stable machine-readable error code (`"code": "invalid_email"`) alongside the localized message (`"message": "Adresse e-mail invalide"`). Client code should branch on the code, never on the translated text — otherwise a translation update silently breaks every client that was pattern-matching against the English string.
+</DeepDive>
+
+## Formatting numbers, dates, and currency
+
+Locale affects far more than word choice: `1,234.56` in the US is `1.234,56` in Germany, and dates ordered month-day-year in the US are day-month-year almost everywhere else. `golang.org/x/text/number` and `golang.org/x/text/currency` handle this formatting correctly per locale:
+
+```go
+import "golang.org/x/text/currency"
+
+func formatPrice(amount float64, locale language.Tag) string {
+	p := message.NewPrinter(locale)
+	return p.Sprintf("%v", currency.NarrowSymbol(currency.USD.Amount(amount)))
+}
+```
+
+For dates, prefer sending machine-parseable timestamps (RFC 3339, always in UTC) from your API and letting the client format them for display in the user's locale and timezone, rather than trying to pre-format dates server-side for every possible client locale. This keeps your API's data contract simple and pushes presentation concerns to the layer that actually knows the user's timezone.
+
+<Warning title="Timezones are a data problem, not a display problem">
+Storing and transmitting local time without a timezone offset (`2026-07-14 15:00:00` with no `Z` or offset) is a bug waiting to surface the first time a client in a different timezone reads it. Store and transmit UTC with an explicit offset (`2026-07-14T15:00:00Z`) always, and localize only at the final rendering step.
+</Warning>
+
+## Structuring the API around locale from the start
+
+The cheapest time to design for i18n is before you've shipped a single hardcoded English string into a JSON response. Route locale resolution through one shared piece of middleware (mirroring the tenant-resolution pattern from the previous chapter), attach the resolved `language.Tag` to the request context, and have every handler that produces user-facing text read it from there rather than re-parsing headers itself:
+
+```go
+func localeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		locale := resolveLocale(r.Header.Get("Accept-Language"))
+		ctx := context.WithValue(r.Context(), localeContextKey, locale)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+```
+
+## Pluralization is harder than "add an s"
+
+English has exactly two plural forms, which makes it easy to forget that most languages don't work that way. Arabic has six grammatical number categories; Polish has three depending on the count's last digit; Japanese has none at all, so "1 item" and "5 items" are worded identically. A naive `count == 1 ? "item" : "items"` check hardcodes English grammar into your API and produces wrong output the moment a translated string needs different pluralization rules. `golang.org/x/text/message` handles this correctly through its plural-aware `Plural` catalog entries rather than a single format string:
+
+```go
+import "golang.org/x/text/feature/plural"
+
+func init() {
+	message.Set(language.English, "cart_items",
+		plural.Selectf(1, "%d",
+			plural.One, "%d item in cart",
+			plural.Other, "%d items in cart"),
+	)
+	message.Set(language.Polish, "cart_items",
+		plural.Selectf(1, "%d",
+			plural.One, "%d przedmiot w koszyku",
+			plural.Few, "%d przedmioty w koszyku",
+			plural.Many, "%d przedmiotów w koszyku",
+		),
+	)
+}
+```
+
+`plural.Selectf` picks the right category (`One`, `Few`, `Many`, `Other`) for the given count according to each language's own CLDR pluralization rules, not according to whatever rule the developer happened to know — the same catalog entry produces grammatically correct output in English, Polish, or Arabic without your handler code branching on language at all.
+
+## Right-to-left content and structured responses
+
+Arabic, Hebrew, and a handful of other languages read right-to-left, which is purely a rendering concern for the client — your API's job is limited to telling the client which direction applies, not attempting to reformat text server-side. Include the resolved locale's directionality alongside translated content rather than leaving the client to guess from the language code:
+
+```go
+func directionForLocale(tag language.Tag) string {
+	base, _ := tag.Base()
+	if base.String() == "ar" || base.String() == "he" {
+		return "rtl"
+	}
+	return "ltr"
+}
+```
+
+This small, explicit signal (`"direction": "rtl"` in a JSON response) is far more reliable for a client than deriving it from a hardcoded list of language codes scattered through frontend code — centralizing it in the API means every client consuming your API gets it consistently.
+
+<Axiom>i18n is an architectural decision made once, early; l10n is content work that never really finishes — get the first one right and the second one stays tractable.</Axiom>

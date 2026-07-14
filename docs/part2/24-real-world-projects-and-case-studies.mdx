@@ -1,10 +1,122 @@
 ---
 id: "[2.24.0]"
-title: "Real-World Projects and Case Studies 🏆"
+title: "Real-World Projects and Case Studies"
 ---
 
-# Real-World Projects and Case Studies 🏆
+# Real-World Projects and Case Studies
 
-Explore real-world Go networking projects and case studies.
+> "An architect who has only ever looked at blueprints eventually needs to walk through a finished building. This chapter is that walkthrough: stepping back from individual techniques to see how the pieces built across Part 2 combine into the systems you actually run into in production."
+
+---
+
+## The Toolbox So Far
+
+Across this part of the book, a consistent set of building blocks has come up again and again: TCP and UDP sockets, goroutines and channels for concurrency, context for cancellation, HTTP and JSON for structured communication, WebSockets for real-time bidirectional messaging, framing for file transfer, byte-shuffling for proxies, DNS resolution, hole punching for peer-to-peer connections, authentication and TLS for security, and logging, testing, and deployment practices to make all of it operable. Real systems are rarely a novel technique — they're these same primitives, combined and layered for a specific purpose.
+
+A few case studies make that concrete.
+
+---
+
+## Case Study: A Chat Server Is a Simplified Slack
+
+The chat application from earlier in this part — a WebSocket server broadcasting messages to connected clients — is architecturally the same shape as a production chat platform. What separates the toy version from something like Slack isn't a different networking model; it's more of the same primitives applied at scale and layered with additional concerns:
+
+- **Persistence:** Messages get written to a database so history survives a server restart, rather than living only in an in-memory slice.
+- **Horizontal scaling:** A single process can only hold so many open WebSocket connections. Production systems shard users across many instances and use a message bus (like Redis pub/sub or Kafka) to fan messages out between instances — the same broadcast-to-many-receivers pattern from the concurrency chapter, just with a message broker standing in for the in-process channel.
+- **Authentication:** Every connection is tied to an authenticated user, using the token patterns from the authentication chapter, typically verified during the WebSocket handshake before the connection is upgraded.
+- **Observability:** Structured logs and connection-count metrics (from the logging and monitoring chapter) tell operators when the system is under stress before users start complaining.
+
+Nothing here required new networking concepts — it required combining the ones already covered with a data layer and an operational mindset.
+
+---
+
+## Case Study: A Reverse Proxy Load Balancer
+
+The reverse proxy chapter built a single-backend `httputil.ReverseProxy`. Extending it into a load balancer is a matter of choosing *which* backend to forward to on each request, and tracking backend health so a failing instance stops receiving traffic:
+
+```go
+type backend struct {
+	url     *url.URL
+	healthy atomic.Bool
+}
+
+type loadBalancer struct {
+	backends []*backend
+	next     atomic.Uint64
+}
+
+func (lb *loadBalancer) pick() *backend {
+	// Simple round robin, skipping backends currently marked unhealthy.
+	for i := 0; i < len(lb.backends); i++ {
+		idx := lb.next.Add(1) % uint64(len(lb.backends))
+		b := lb.backends[idx]
+		if b.healthy.Load() {
+			return b
+		}
+	}
+	return nil
+}
+
+func (lb *loadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	b := lb.pick()
+	if b == nil {
+		http.Error(w, "no healthy backends", http.StatusServiceUnavailable)
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(b.url)
+	proxy.ServeHTTP(w, r)
+}
+```
+
+A background goroutine periodically hits each backend's `/health` endpoint — the same health check pattern from the deployment chapter — and flips `healthy` accordingly:
+
+```go
+func (lb *loadBalancer) healthCheckLoop() {
+	for {
+		for _, b := range lb.backends {
+			resp, err := http.Get(b.url.String() + "/health")
+			b.healthy.Store(err == nil && resp.StatusCode == http.StatusOK)
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+```
+
+[Exercise: Round-Robin Load Balancer](../../exercises/part2/24-load-balancer/main.go)
+
+This is the reverse proxy chapter, the deployment chapter's health checks, and the concurrency chapter's background-goroutine pattern, combined into one small but genuinely useful piece of infrastructure — the same architecture, simplified, behind tools like NGINX or a cloud load balancer's backend pool.
+
+---
+
+## Case Study: A File Sync Tool
+
+Combine the file transfer chapter's framing protocol with the DNS and NAT traversal chapters, and you have the outline of a peer-to-peer file sync tool: peers register with a rendezvous server, punch through NAT to reach each other directly, then exchange files using the length-prefixed framing protocol, with a checksum (as in the integrity section of the file transfer chapter) confirming each file arrived intact. Layer in TLS for the actual transfer and token-based authentication so only paired devices can sync with each other, and the shape is recognizably similar to consumer file-sync tools that avoid routing every transfer through a central server.
+
+---
+
+## Case Study: A Monitoring Agent
+
+A small agent that runs on many machines, collects metrics (CPU, memory, open connections), and reports them to a central collector touches nearly every chapter in this part at once: a UDP or HTTP client sending data on a timer, `context.WithTimeout` bounding each send so a slow collector doesn't back up the agent, structured logging for its own operational events, and graceful shutdown so a restart doesn't lose the last batch of pending metrics. This is, in miniature, what tools like node_exporter or a cloud provider's monitoring agent actually do.
+
+---
+
+## What These Case Studies Have in Common
+
+None of them introduced a fundamentally new networking concept beyond what earlier chapters already covered. What changed was composition: taking a proxy and adding backend selection, taking a file transfer protocol and adding peer discovery, taking an HTTP client and adding scheduling and resilience. This is the honest picture of most real-world network software — a small set of well-understood primitives, combined deliberately, with the operational concerns (logging, testing, deployment, security) treated as first-class parts of the design rather than an afterthought.
+
+---
+
+## Key Takeaways
+
+- Production network systems are rarely built from exotic new techniques — they compose the same primitives covered throughout this part.
+- A load balancer is a reverse proxy plus backend selection plus health checks.
+- A peer-to-peer sync tool is a file transfer protocol plus NAT traversal plus authentication and TLS.
+- A monitoring agent is an HTTP or UDP client plus scheduling, timeouts, and graceful shutdown.
+- Reading real systems this way — as combinations of familiar pieces — makes them far less intimidating to study or build yourself.
+
+---
 
 [Previous: Deploying Go Network Applications](23-deploying-go-network-applications.md) | [Next: Further Resources and Next Steps](25-further-resources-and-next-steps.md)

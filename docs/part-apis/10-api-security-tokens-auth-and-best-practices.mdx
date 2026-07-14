@@ -5,4 +5,176 @@ title: "API Security: Tokens, Auth, and Best Practices"
 
 # API Security: Tokens, Auth, and Best Practices
 
-// ...contenido y ejemplos...
+An API without authentication is an API anyone can call — including people you didn't intend to let in. This chapter covers the common authentication schemes you'll actually implement, a working JWT setup using `golang-jwt/jwt/v5`, password hashing with `bcrypt`, and a checklist of practices that matter more than which specific scheme you pick.
+
+---
+
+## The Authentication Landscape
+
+- **Basic Auth**: username and password sent base64-encoded in the `Authorization` header on every request. Simple, but only safe over HTTPS, and it doesn't support scopes, expiry, or revocation without extra machinery.
+- **API keys**: a static, opaque string identifying a client (`Authorization: Bearer sk_live_...` or a custom header). Common for server-to-server and third-party integrations; easy to revoke by looking the key up in a database, but the key itself never expires on its own.
+- **JWT (JSON Web Tokens)**: a signed, self-contained token carrying claims (user ID, roles, expiry) that the server can verify without a database lookup. Widely used for session tokens issued after login.
+- **OAuth2 / OpenID Connect**: a full delegation protocol for letting a third party (Google, GitHub, your own auth service) authenticate a user on your API's behalf. Covered in depth in a later chapter — this chapter focuses on the token mechanics you'd use once a session is established.
+
+---
+
+## Hashing Passwords with bcrypt
+
+Never store a plaintext password, and never roll your own hashing scheme. `golang.org/x/crypto/bcrypt` is the standard choice in Go:
+
+```go
+import "golang.org/x/crypto/bcrypt"
+
+func hashPassword(plain string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
+func checkPassword(plain, hash string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain)) == nil
+}
+```
+
+`bcrypt.DefaultCost` (currently 10) balances hashing time against brute-force resistance; raising the cost factor makes each guess more expensive for an attacker at the cost of slightly slower logins for legitimate users.
+
+---
+
+## Issuing a JWT
+
+```sh
+go get github.com/golang-jwt/jwt/v5
+```
+
+```go
+import (
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type Claims struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+var signingKey = []byte("replace-with-a-real-secret-from-config")
+
+func issueToken(userID, role string) (string, error) {
+	claims := Claims{
+		UserID: userID,
+		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "api.example.com",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(signingKey)
+}
+```
+
+Embedding your own fields (`UserID`, `Role`) alongside `jwt.RegisteredClaims` gives you the standard claims (`exp`, `iat`, `iss`) plus whatever custom data your API needs, in one struct.
+
+---
+
+## Verifying a JWT
+
+```go
+func parseToken(tokenString string) (*Claims, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return signingKey, nil
+	})
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+	return claims, nil
+}
+```
+
+<Warning title="Always check the signing method">
+`jwt.ParseWithClaims` calls back into your code specifically so you can verify `t.Method` before trusting the key. Without that check, a well-known JWT vulnerability lets an attacker submit a token with `alg: none` or swap the algorithm to trick a naive verifier into skipping signature validation entirely. Always assert the expected algorithm inside the key function, as shown above.
+</Warning>
+
+---
+
+## Middleware to Require a Valid Token
+
+```go
+func requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := r.Header.Get("Authorization")
+		token, found := strings.CutPrefix(header, "Bearer ")
+		if !found || token == "" {
+			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			return
+		}
+
+		claims, err := parseToken(token)
+		if err != nil {
+			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), userContextKey, claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+```
+
+Storing the parsed claims on the request context lets downstream handlers read `r.Context().Value(userContextKey)` without re-parsing the token.
+
+---
+
+## Real-World Example: Login and Authenticated Request
+
+**Login request:**
+
+```http
+POST /login HTTP/1.1
+Content-Type: application/json
+
+{"email": "ada@example.com", "password": "correct-horse-battery-staple"}
+```
+
+**Login response:**
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"access_token": "eyJhbGciOiJIUzI1NiIs...", "expires_in": 900}
+```
+
+**Authenticated request using that token:**
+
+```http
+GET /me HTTP/1.1
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+---
+
+## Access Tokens and Refresh Tokens
+
+Short-lived access tokens (minutes, not days) limit how long a stolen token stays useful, but forcing a full re-login every 15 minutes is a poor user experience. The standard fix is a pair of tokens: a short-lived access token used on every request, and a long-lived refresh token, stored more carefully (often as an HTTP-only cookie), used only to obtain a new access token from a dedicated `/token/refresh` endpoint. Refresh tokens should be revocable server-side — store them (or their hash) in a database so a logout or compromise can invalidate them immediately, something a self-contained JWT alone cannot do.
+
+---
+
+## A Security Checklist
+
+- **HTTPS everywhere**: tokens sent over plain HTTP are trivially intercepted; never make an exception for internal traffic without a strong reason.
+- **Short-lived access tokens** paired with revocable refresh tokens.
+- **Store secrets in configuration, never in source control** — load the JWT signing key from an environment variable or secrets manager.
+- **Rate-limit authentication endpoints** specifically (covered next chapter) — login and token-refresh endpoints are the highest-value brute-force targets.
+- **Use `HttpOnly`, `Secure`, and `SameSite` cookie flags** if you store tokens in cookies, to reduce exposure to XSS and CSRF.
+- **Principle of least privilege**: encode only the role or scope a client needs, and check it on every request — don't assume "has a valid token" means "authorized for this action."
+
+<Axiom>A valid token answers "who is this?" — authorization, checked separately on every request, answers "are they allowed to do this?" Never let the first question stand in for the second.</Axiom>
+
+Next, we'll look at defending these same endpoints against abuse at the traffic level: rate limiting, CORS, and the role of an API gateway.

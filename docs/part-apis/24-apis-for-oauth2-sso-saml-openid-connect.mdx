@@ -5,4 +5,125 @@ title: "APIs for OAuth2, SSO, SAML, OpenID Connect"
 
 # APIs for OAuth2, SSO, SAML, OpenID Connect
 
-// Ejemplo: Google, GitHub, Auth0, Okta
+"Sign in with Google" buttons, corporate single sign-on portals, and API access tokens all rest on a small set of standards that are frequently confused with each other. OAuth2 is an **authorization** framework — it lets a user grant a third-party app limited access to their data without handing over their password. OpenID Connect is a thin **authentication** layer built on top of OAuth2 — it answers "who is this user," not just "what can this app access." SAML is an older, XML-based single sign-on standard still common in enterprise environments. This chapter builds working Go code against the two you'll meet most often — OAuth2 and OpenID Connect — and explains where SAML fits without drowning in its XML.
+
+## OAuth2: delegated authorization
+
+The core OAuth2 flow your API will implement most often is the **authorization code flow**: your app redirects the user to a provider (Google, GitHub), the user approves access, the provider redirects back with a short-lived code, and your server exchanges that code for an access token. Go's `golang.org/x/oauth2` package (maintained by the Go team) handles the token exchange mechanics:
+
+```go
+package main
+
+import (
+	"context"
+	"net/http"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+)
+
+var oauthConfig = &oauth2.Config{
+	ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+	ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+	RedirectURL:  "https://myapp.com/auth/callback",
+	Scopes:       []string{"openid", "email", "profile"},
+	Endpoint:     google.Endpoint,
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	state := generateRandomState()
+	setStateCookie(w, state)
+	url := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	http.Redirect(w, r, url, http.StatusFound)
+}
+
+func callbackHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("state") != readStateCookie(r) {
+		http.Error(w, "state mismatch", http.StatusBadRequest)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	token, err := oauthConfig.Exchange(context.Background(), code)
+	if err != nil {
+		http.Error(w, "token exchange failed", http.StatusBadGateway)
+		return
+	}
+
+	client := oauthConfig.Client(context.Background(), token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
+	// ... read the profile, create or find a local user, set your own session
+}
+```
+
+The `state` parameter is not optional decoration — it's what prevents a cross-site request forgery attack where an attacker tricks a victim into completing an OAuth flow the attacker initiated. Always generate it randomly per login attempt, store it (a short-lived cookie is fine), and reject the callback if it doesn't match.
+
+<Warning title="An access token is not proof of identity">
+OAuth2 on its own only proves the app was granted some scope of access — the userinfo endpoint call above is what tells you who the user is, and it's a convention some providers support, not part of the OAuth2 spec itself. If identity matters (and it usually does for login), reach for OpenID Connect instead of trying to bolt identity onto plain OAuth2 yourself.
+</Warning>
+
+## OpenID Connect: identity, formally
+
+OpenID Connect (OIDC) adds a standardized **ID token** — a signed JWT containing the user's identity claims — plus a discovery document and a defined way to verify the token's signature. The `github.com/coreos/go-oidc/v3/oidc` package (widely used, despite the CoreOS name predating its current maintenance) wraps this verification:
+
+```go
+import "github.com/coreos/go-oidc/v3/oidc"
+
+func setupOIDC(ctx context.Context) (*oidc.IDTokenVerifier, error) {
+	provider, err := oidc.NewProvider(ctx, "https://accounts.google.com")
+	if err != nil {
+		return nil, err
+	}
+	return provider.Verifier(&oidc.Config{ClientID: oauthConfig.ClientID}), nil
+}
+
+func verifyIDToken(ctx context.Context, verifier *oidc.IDTokenVerifier, rawIDToken string) (*oidc.IDToken, error) {
+	return verifier.Verify(ctx, rawIDToken)
+}
+```
+
+`oidc.NewProvider` fetches the provider's `.well-known/openid-configuration` document, which points to the JSON Web Key Set (JWKS) used to verify token signatures — you never hardcode the provider's public key, because it rotates. `verifier.Verify` checks the signature, the issuer, the audience (your client ID), and the expiry all in one call. Once verified, `idToken.Claims(&myStruct)` decodes the payload — typically `sub` (a stable user identifier), `email`, and `email_verified`.
+
+<DeepDive title="sub, not email, is the identifier to store">
+Email addresses can be reused or changed by the identity provider; the `sub` claim is a stable, provider-scoped identifier meant precisely for linking to your local user record. Store `sub` (and which provider it came from) as your foreign key, and treat `email` as a display value you refresh on each login.
+</DeepDive>
+
+## SAML: enterprise single sign-on
+
+SAML predates OAuth2 and OIDC and is still the default in many enterprise identity providers (Okta, Azure AD, OneLogin) for internal application single sign-on. It exchanges signed XML assertions instead of JWTs, over a browser redirect (or POST) rather than a token endpoint. Implementing the protocol by hand is not something you want to attempt — the `github.com/crewjam/saml/samlsp` package is the standard choice in Go and handles the metadata exchange, assertion signature verification, and session middleware for you:
+
+```go
+import "github.com/crewjam/saml/samlsp"
+
+middleware, err := samlsp.New(samlsp.Options{
+	URL:            *rootURL,
+	Key:            privateKey,
+	Certificate:    cert,
+	IDPMetadata:    idpMetadata,
+})
+mux.Handle("/saml/", middleware)
+mux.Handle("/secure/", middleware.RequireAccount(secureHandler))
+```
+
+For a typical Go API, SAML is usually something you integrate at the edge (via `samlsp`'s middleware) rather than something you implement from scratch — the value it adds over OIDC in most modern stacks is compatibility with legacy enterprise identity providers, not any technical advantage.
+
+## Choosing between them
+
+If you're building "sign in with X" for consumer-facing users, use OIDC — it's simpler, JSON-based, and what every modern identity provider supports as a first-class citizen. If you're integrating with an enterprise customer's existing identity provider and they hand you SAML metadata instead of an OIDC discovery URL, reach for `samlsp` rather than trying to convince their IT department to support something else. Plain OAuth2 without an identity layer is appropriate when you genuinely only need delegated API access (posting to a user's Twitter account on their behalf) and don't need to know who they are beyond that access being granted.
+
+## Refresh tokens and long-lived sessions
+
+Access tokens are deliberately short-lived, which means a real integration needs a plan for renewing them without forcing the user through the login screen again every fifteen minutes. `oauth2.Config.TokenSource` wraps a stored refresh token and handles renewal transparently:
+
+```go
+func clientFromStoredToken(ctx context.Context, stored *oauth2.Token) *http.Client {
+	tokenSource := oauthConfig.TokenSource(ctx, stored)
+	return oauth2.NewClient(ctx, tokenSource)
+}
+```
+
+Every call made through the returned client checks whether the current access token has expired and, if so, uses the refresh token to fetch a new one automatically before the request goes out — your application code never has to check expiry itself. The one operational responsibility this pushes onto you is persisting the refreshed token: `tokenSource.Token()` returns the current token including any renewal, and if your storage doesn't get updated when that happens, the next process restart falls back to the stale one.
+
+<Warning title="A refresh token is more sensitive than the access token it renews">
+An access token expires in minutes and its blast radius is limited by that short window; a refresh token can mint new access tokens indefinitely and is exactly what an attacker wants if your storage is compromised. Encrypt refresh tokens at rest and treat their storage with the same care you'd give a password hash, not the same casualness you might give a short-lived session token.
+</Warning>

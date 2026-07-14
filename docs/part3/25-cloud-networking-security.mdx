@@ -5,4 +5,43 @@ title: "Cloud Networking Security"
 
 # Cloud Networking Security
 
-// ...contenido y ejemplos de seguridad en redes cloud...
+> Renting an apartment in a large building means the landlord secures the front doors, the elevators, and the foundation, but you're still the one who has to lock your own apartment door and not tape the spare key under the doormat. Cloud security works the same way, and forgetting who is responsible for which lock is one of the most common causes of cloud breaches on record.
+
+## The Shared Responsibility Model
+
+Every major cloud provider frames security as a shared responsibility: the provider secures the underlying physical infrastructure, hypervisor, and (for managed services) the platform itself, while the customer remains responsible for configuring identity, network access controls, data encryption, and the workloads they deploy correctly. The exact dividing line shifts depending on the service model - infrastructure-as-a-service pushes more responsibility onto the customer than a fully managed platform-as-a-service does - but the customer's share never reaches zero. A remarkable number of publicly reported cloud incidents trace back not to a provider failure but to a customer-side misconfiguration on the customer's side of that line.
+
+## Network Segmentation in the Cloud
+
+**Virtual Private Clouds (VPCs)** give each customer an isolated virtual network within the provider's infrastructure, further divisible into subnets - typically a public subnet for internet-facing resources and private subnets for backend systems with no direct internet route, mirroring the on-premises segmentation principles from earlier in this part.
+
+**Security groups** act as stateful, instance-level virtual firewalls: define which ports and source addresses are allowed inbound and outbound for a specific resource, and return traffic for an allowed connection is automatically permitted without a matching explicit rule.
+
+**Network ACLs** operate at the subnet level and are stateless, meaning inbound and outbound rules must both be defined explicitly for a connection to complete in both directions. Security groups and NACLs are complementary layers, not substitutes for each other - a common real-world pattern is a broad NACL as a subnet-wide baseline with tighter, resource-specific security groups layered on top.
+
+<DeepDive title="The Most Common Cloud Breach Pattern">
+An enormous share of publicly disclosed cloud incidents share the same root cause: a storage bucket, database, or management interface left reachable from the public internet due to a misconfigured access policy, rather than any sophisticated exploit. Object storage services in particular default to private in most providers today specifically because so many earlier incidents involved buckets accidentally made public. The lesson generalizes past object storage: default-deny, explicit-allow is a safer starting posture for any cloud resource than default-allow with exceptions carved out later.
+</DeepDive>
+
+## Identity and Access as a Network Control
+
+In cloud environments, Identity and Access Management (IAM) is a network security control every bit as much as a firewall rule. A management API reachable from anywhere on the internet is only as secure as the credentials and permissions guarding it - a leaked access key with broad, unscoped permissions can grant an attacker the ability to open network paths, spin up resources, or read data directly through the provider's own control plane, without needing to breach a single VPC boundary. Least-privilege IAM policies, short-lived credentials, and mandatory multi-factor authentication for privileged accounts are as central to cloud network security as any security group configuration.
+
+## Cloud-Native Firewalls and Web Application Firewalls
+
+Beyond security groups and NACLs, most providers offer managed firewall and WAF services that inspect application-layer traffic for common attack patterns - SQL injection attempts, cross-site scripting payloads, known bad request signatures - before it reaches an application. These sit conceptually alongside the IDS/IPS concepts covered earlier in this part, applied specifically to HTTP/HTTPS traffic at the edge of a cloud deployment, often integrated with a content delivery network for both performance and an additional layer of filtering.
+
+## Secrets and Logging
+
+Hardcoded credentials in source code or container images remain a persistent source of cloud breaches; dedicated secrets management services (rotating database credentials, API keys, and certificates automatically) close much of that gap. Equally important is comprehensive audit logging of control-plane activity - every API call that creates, modifies, or deletes a resource - which feeds directly into the SIEM correlation practices from earlier in this part and is frequently the only record available after an incident of exactly what an attacker did with compromised credentials.
+
+## Zero Trust in a Cloud Context
+
+The zero trust principles covered earlier in this book apply naturally to cloud networking: rather than trusting traffic because it originates inside a VPC, each request is authenticated and authorized on its own merits, typically through short-lived service identities and mutual TLS between internal services rather than implicit trust based on network location alone. This matters more in cloud environments than traditional data centers precisely because the traditional network perimeter is far less meaningful when workloads span multiple regions, providers, and third-party services.
+
+## Summary
+
+- The shared responsibility model means the provider secures the infrastructure, but the customer is always responsible for configuring their own network, identity, and data controls correctly.
+- VPCs, subnets, security groups, and NACLs together form layered network segmentation, mirroring on-premises defense-in-depth principles.
+- Misconfigured public exposure of storage, databases, and management interfaces is the single most common root cause behind publicly disclosed cloud incidents.
+- IAM, secrets management, and control-plane audit logging are network security controls in the cloud, not separate concerns from firewalls and segmentation.

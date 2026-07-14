@@ -5,4 +5,117 @@ title: "APIs for Edge Computing and CDN"
 
 # APIs for Edge Computing and CDN
 
-// Patrones, integración con Cloudflare Workers, Fastly, Akamai
+A traditional API runs in one region (or a handful) and every client, no matter where they are in the world, pays the network latency of reaching it. Edge computing flips that: your code runs in dozens or hundreds of points of presence spread across the globe, physically close to the user making the request, and a content delivery network's routing layer sends each request to the nearest one. This chapter looks at what changes when your Go code runs at the edge instead of in a single data center, using Fastly's Compute platform — which runs WebAssembly and has an official Go SDK — as the concrete example.
+
+## Why the edge is a different execution model
+
+A CDN edge node isn't a smaller version of your regular server; it's a fundamentally different runtime, usually a WebAssembly sandbox with strict limits on execution time (single-digit milliseconds to low seconds, not the open-ended lifetime of a normal HTTP handler) and no persistent local disk. Fastly's Compute platform compiles Go to WebAssembly via TinyGo and executes it in exactly this kind of sandboxed, short-lived environment, using the `github.com/fastly/compute-sdk-go` package instead of `net/http` directly:
+
+```go
+package main
+
+import (
+	"io"
+
+	"github.com/fastly/compute-sdk-go/fsthttp"
+)
+
+func main() {
+	fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(fsthttp.StatusOK)
+			io.WriteString(w, "ok")
+			return
+		}
+
+		backendResp, err := r.Send(ctx, "origin")
+		if err != nil {
+			w.WriteHeader(fsthttp.StatusBadGateway)
+			return
+		}
+		defer backendResp.Body.Close()
+
+		w.Header().Set("X-Served-By", "edge")
+		w.WriteHeader(backendResp.StatusCode)
+		io.Copy(w, backendResp.Body)
+	})
+}
+```
+
+`fsthttp.ServeFunc` replaces `http.ListenAndServe` entirely — there's no port to bind, no listener, because the platform itself is the server and invokes your compiled function per request. `r.Send(ctx, "origin")` forwards the request to a named backend configured outside your code (in Fastly's service configuration), which is how edge code typically talks to your actual origin server when it needs data it can't answer itself.
+
+<Warning title="This is not a drop-in replacement for net/http">
+`fsthttp` mirrors `net/http`'s shape closely enough to be readable, but the underlying execution model (WebAssembly, no goroutine scheduler in the usual sense, strict CPU-time budgets) means code that spawns background goroutines or expects to run past the response being sent will not behave the way it does on a normal server. Edge functions should do one focused thing per request and return.
+</Warning>
+
+## What edge code is actually good for
+
+Edge functions excel at request/response transformations that don't need your full application: rewriting a URL before it reaches origin, adding security headers, serving a cached response entirely from the edge without a round trip to origin at all, running A/B test bucket assignment based on a cookie, or rejecting obviously malicious requests before they cost your origin anything. All of these share a property: they need little or no state beyond what's in the request itself, and they benefit enormously from running physically close to the user rather than in one central region.
+
+```go
+fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {
+	bucket := abTestBucket(r.Header.Get("Cookie"))
+	r.Header.Set("X-AB-Bucket", bucket)
+
+	resp, err := r.Send(ctx, "origin")
+	if err != nil {
+		w.WriteHeader(fsthttp.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Set-Cookie", "ab_bucket="+bucket)
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+})
+```
+
+This assigns and persists an A/B test bucket entirely at the edge, without your origin server ever needing to know the mechanism exists — origin just receives a header telling it which variant to render.
+
+## Caching at the edge
+
+CDNs have always cached static assets; edge compute lets you cache dynamic API responses intelligently, using standard HTTP caching headers your Go origin already emits:
+
+```go
+func productHandler(w http.ResponseWriter, r *http.Request) {
+	product := fetchProduct(r.PathValue("id"))
+	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+	writeJSON(w, http.StatusOK, product)
+}
+```
+
+`stale-while-revalidate` tells the CDN it can serve a slightly stale cached response immediately while it revalidates against origin in the background — a meaningful latency win for data that doesn't need to be perfectly fresh on every single request, like a product listing that changes rarely. The edge layer honors these headers without your edge function needing custom caching logic at all, as long as your origin sets them correctly.
+
+<DeepDive title="Cache keys need to match your actual variance, not less and not more">
+If your API returns different content per user (personalized recommendations) but caches on the URL alone, you'll serve one user's personalized data to another. If it returns identical content for everyone but includes `Vary: Cookie` unnecessarily, you fragment the cache into one entry per session and get almost no cache hit rate at all. Get the `Vary` header (or the CDN's equivalent cache-key configuration) to match exactly what actually varies in the response.
+</DeepDive>
+
+## Where the origin still matters
+
+Edge computing doesn't replace your Go API running in a data center — it sits in front of it, handling the requests that don't need your full application logic and forwarding everything else to origin exactly as this chapter's first example does. The design skill is deciding which slice of your traffic genuinely benefits from running at the edge (cacheable reads, header rewriting, request validation, A/B assignment) versus what still needs the full context only your origin server has (a database transaction, complex business logic, anything requiring strong consistency).
+
+## Rejecting bad requests before they reach origin
+
+Edge functions are also the cheapest place to reject traffic your origin should never have to process at all — malformed requests, obviously abusive patterns, or requests missing a required header your API always needs. Doing this at the edge means the rejection happens close to the attacker or misbehaving client, not after a round trip across the globe to your origin and back:
+
+```go
+fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {
+	if r.Header.Get("X-Api-Key") == "" {
+		w.WriteHeader(fsthttp.StatusUnauthorized)
+		io.WriteString(w, `{"error":"missing api key"}`)
+		return
+	}
+
+	resp, err := r.Send(ctx, "origin")
+	if err != nil {
+		w.WriteHeader(fsthttp.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+})
+```
+
+This is a small example of a broader principle: any check that doesn't require your origin's database or business logic — authentication header presence, basic input shape validation, geographic restrictions — is a candidate for pushing to the edge, freeing your origin's capacity for the requests that genuinely need it.
+
+<Axiom>The edge is not a faster version of your server — it's a different, more limited place to run a small, well-chosen slice of your logic closer to the user, with everything else still deferring to origin.</Axiom>

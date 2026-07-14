@@ -1,15 +1,15 @@
 ---
 id: "[2.6.0]"
-title: "UDP in Depth: Protocol Theory and Go Implementation 📡"
+title: "UDP in Depth: Protocol Theory and Go Implementation"
 ---
 
-# UDP in Depth: Protocol Theory and Go Implementation 📡
+# UDP in Depth: Protocol Theory and Go Implementation
 
 > "Imagine sending postcards—fast, simple, and direct. Sometimes they get lost, sometimes they arrive out of order, but they’re perfect for quick messages! UDP is the postcard protocol, and Go lets you send and receive them with ease."
 
 ---
 
-## 📚 What is UDP?
+## What is UDP?
 
 **UDP (User Datagram Protocol)** is the speedster of the networking world. It’s like tossing paper airplanes—no guarantee they’ll arrive, but they’re fast and don’t wait for a reply.
 
@@ -23,7 +23,7 @@ title: "UDP in Depth: Protocol Theory and Go Implementation 📡"
 
 ---
 
-## 🧬 How UDP Works (Theory)
+## How UDP Works (Theory)
 
 1. **No Handshake:**
    - Just send data—no setup required.
@@ -42,7 +42,7 @@ title: "UDP in Depth: Protocol Theory and Go Implementation 📡"
 
 ---
 
-## 🛠️ Go in Action: Simple UDP Client (Paso a Paso)
+## Go in Action: Simple UDP Client (Paso a Paso)
 
 Este ejemplo muestra cómo enviar un mensaje UDP a un servidor y recibir una respuesta.
 
@@ -81,7 +81,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Simple UDP Server (Explicado)
+## Go in Action: Simple UDP Server (Explicado)
 
 Este servidor UDP escucha en el puerto 9001 y responde a cada mensaje recibido.
 
@@ -124,7 +124,7 @@ func main() {
 
 ---
 
-## 📝 Real-World Example: UDP Broadcast (Comentado)
+## Real-World Example: UDP Broadcast (Comentado)
 
 UDP permite enviar mensajes a todos los dispositivos de una red local usando broadcast.
 
@@ -150,7 +150,7 @@ func main() {
 
 ---
 
-## 🧠 ¿Qué hace Go detrás de cámaras?
+## ¿Qué hace Go detrás de cámaras?
 
 - UDP no requiere handshake ni mantiene estado: Go simplemente envía y recibe datagramas.
 - `net.ListenPacket` y `net.Dial` usan llamadas al sistema operativo para abrir sockets UDP.
@@ -159,7 +159,7 @@ func main() {
 
 ---
 
-## 🎨 Visual Summary
+## Visual Summary
 
 ```
 [Cliente] --UDP--> [Servidor]
@@ -171,7 +171,7 @@ func main() {
 
 ---
 
-## 🤩 Fun Facts & Go Memes
+## Fun Facts & Go Memes
 - UDP es el favorito para juegos en línea, streaming y VoIP por su velocidad.
 - Si pierdes un paquete UDP, ¡nadie llora! (pero tu video puede saltar un frame).
 - Puedes construir tu propio protocolo confiable sobre UDP (¡pero es trabajo extra!).

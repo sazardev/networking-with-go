@@ -1,15 +1,15 @@
 ---
 id: "[2.11.0]"
-title: "Handling JSON and XML over HTTP: Concepts and Go Implementation 📄"
+title: "Handling JSON and XML over HTTP: Concepts and Go Implementation"
 ---
 
-# Handling JSON and XML over HTTP: Concepts and Go Implementation 📄
+# Handling JSON and XML over HTTP: Concepts and Go Implementation
 
 > "Imagine you’re sending a package (data) through the mail (HTTP). JSON and XML are like the forms you fill out to describe what’s inside—structured, standardized, and understood by everyone."
 
 ---
 
-## 🚦 Why Use JSON and XML in HTTP?
+## Why Use JSON and XML in HTTP?
 - **Data Interchange:** JSON and XML are the most common formats for exchanging data between clients and servers.
 - **Human-Readable:** Both formats are text-based and easy to debug.
 - **Widely Supported:** Every major programming language can read and write JSON and XML.
@@ -17,18 +17,18 @@ title: "Handling JSON and XML over HTTP: Concepts and Go Implementation 📄"
 
 ---
 
-## 🧩 JSON vs XML: Quick Comparison
-| Feature         | JSON                | XML                 |
+## JSON vs XML: Quick Comparison
+| Feature | JSON | XML |
 |----------------|---------------------|---------------------|
-| Syntax         | { "key": "value" } | <key>value</key>    |
-| Readability    | Very high           | Medium              |
-| Verbosity      | Low                 | High                |
-| Data Types     | Native (numbers, etc.) | All as text      |
-| Go Support     | encoding/json       | encoding/xml        |
+| Syntax | { "key": "value" } | <key>value</key> |
+| Readability | Very high | Medium |
+| Verbosity | Low | High |
+| Data Types | Native (numbers, etc.) | All as text |
+| Go Support | encoding/json | encoding/xml |
 
 ---
 
-## 🛠️ Go in Action: Serving and Consuming JSON (with Nested Data)
+## Go in Action: Serving and Consuming JSON (with Nested Data)
 
 Let’s build a server that returns a list of users (with nested fields) as JSON, and a client that fetches and posts users.
 
@@ -60,7 +60,7 @@ See: [`json_client.go`](../../exercises/part2/11-json-xml-examples/json_client.g
 
 ---
 
-## 🛠️ Go in Action: Serving and Consuming XML (with Nested Elements)
+## Go in Action: Serving and Consuming XML (with Nested Elements)
 
 Let’s build a server that returns a list of products (with nested tags) as XML, and a client that fetches and posts products.
 
@@ -92,7 +92,7 @@ See: [`xml_client.go`](../../exercises/part2/11-json-xml-examples/xml_client.go)
 
 ---
 
-## 🧪 Practical Exercise Files
+## Practical Exercise Files
 - [JSON Server Example](../../exercises/part2/11-json-xml-examples/json_server.go)
 - [JSON Client Example](../../exercises/part2/11-json-xml-examples/json_client.go)
 - [XML Server Example](../../exercises/part2/11-json-xml-examples/xml_server.go)
@@ -100,7 +100,7 @@ See: [`xml_client.go`](../../exercises/part2/11-json-xml-examples/xml_client.go)
 
 ---
 
-## 🧠 Key Takeaways
+## Key Takeaways
 - Use JSON for most web APIs—compact, fast, and easy in Go.
 - Use XML when you need to interoperate with older systems or standards.
 - Always set the correct `Content-Type` header.

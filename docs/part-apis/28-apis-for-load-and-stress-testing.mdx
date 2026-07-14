@@ -5,4 +5,141 @@ title: "APIs for Load and Stress Testing"
 
 # APIs for Load and Stress Testing
 
-// Herramientas, benchmarks, patrones de resiliencia
+Unit tests tell you your API behaves correctly for one request at a time. They tell you nothing about what happens when a thousand requests arrive per second, or what breaks first when traffic keeps climbing past what you tested. Load testing answers "does this hold up at expected traffic," while stress testing answers "where does this fall over, and how does it fail." Both are things you should measure deliberately, in a controlled environment, rather than discovering for the first time in production.
+
+## Writing a load generator in Go
+
+Go's goroutines and channels make it a genuinely good language for writing your own load generator when you need something more tailored than a generic CLI tool. A worker-pool pattern that fires a fixed number of concurrent requests and collects latency and status statistics:
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+type result struct {
+	status   int
+	duration time.Duration
+	err      error
+}
+
+func loadTest(url string, concurrency int, totalRequests int) []result {
+	results := make(chan result, totalRequests)
+	jobs := make(chan struct{}, totalRequests)
+	for i := 0; i < totalRequests; i++ {
+		jobs <- struct{}{}
+	}
+	close(jobs)
+
+	var wg sync.WaitGroup
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range jobs {
+				start := time.Now()
+				resp, err := client.Get(url)
+				elapsed := time.Since(start)
+				if err != nil {
+					results <- result{duration: elapsed, err: err}
+					continue
+				}
+				resp.Body.Close()
+				results <- result{status: resp.StatusCode, duration: elapsed}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(results)
+
+	var all []result
+	for r := range results {
+		all = append(all, r)
+	}
+	return all
+}
+```
+
+`concurrency` here caps the number of in-flight requests, which matters more than the total request count for understanding real-world behavior — a service that handles 1,000 sequential requests fine can still fall over at 50 concurrent ones if it has a small connection pool or a lock contention problem that only shows up under parallelism.
+
+<Warning title="A custom load generator on the same machine as your test client shares its network stack">
+If your Go load generator and the service under test run on the same box, you're measuring loopback performance, not real network behavior, and you can exhaust the client machine's own ephemeral port range or CPU before the server even notices load. For anything beyond quick local sanity checks, run the generator from a separate machine (or several).
+</Warning>
+
+## Reaching for a purpose-built tool: vegeta
+
+For anything beyond a quick sanity check, `tsenart/vegeta` is a mature, widely used Go load testing tool available both as a CLI and as a library you can embed directly in your own test code:
+
+```go
+import (
+	"time"
+
+	vegeta "github.com/tsenart/vegeta/v12/lib"
+)
+
+func runVegetaAttack(targetURL string) {
+	rate := vegeta.Rate{Freq: 100, Per: time.Second} // 100 requests/sec
+	duration := 30 * time.Second
+	targeter := vegeta.NewStaticTargeter(vegeta.Target{
+		Method: "GET",
+		URL:    targetURL,
+	})
+
+	attacker := vegeta.NewAttacker()
+	var metrics vegeta.Metrics
+	for res := range attacker.Attack(targeter, rate, duration, "load-test") {
+		metrics.Add(res)
+	}
+	metrics.Close()
+
+	fmt.Printf("success ratio: %.2f%%\n", metrics.Success*100)
+	fmt.Printf("p95 latency: %s\n", metrics.Latencies.P95)
+	fmt.Printf("throughput: %.2f req/s\n", metrics.Throughput)
+}
+```
+
+`vegeta.Rate` is the key parameter that separates a proper load test from just "hammer it as fast as possible" — it fixes the request rate independent of how fast responses come back, which is what actually models real user traffic. Ramping `Freq` up across successive runs (100, then 500, then 1000) and watching where `metrics.Success` starts dropping or `P95` latency spikes is how you find your API's actual capacity rather than guessing at it.
+
+## What to measure, not just how
+
+A load test that only reports "it survived" tells you little. The metrics worth tracking on every run:
+
+- **Latency percentiles**, not averages — a p50 of 20ms with a p99 of 4 seconds means one in a hundred users is having a terrible time, and an average would hide that completely.
+- **Error rate under load** — does the error rate stay near zero as concurrency rises, or does it climb sharply past some threshold (a strong signal you've found a resource limit — a connection pool, a goroutine limit, a downstream dependency).
+- **Resource usage on the server**, gathered alongside the client-side metrics — CPU, memory, open file descriptors, database connection pool utilization. The load test tool tells you what the client experienced; your service's own metrics (see the observability chapters ahead) tell you why.
+
+<DeepDive title="Stress testing means testing past the breaking point on purpose">
+Load testing validates you meet a target (say, 500 requests/second at acceptable latency). Stress testing deliberately exceeds that target to find where and how the system fails — does it degrade gracefully (slower responses, rejecting new requests with `429`) or does it fail catastrophically (crash, cascade failures to dependent services)? Run stress tests against a staging environment that mirrors production's resource limits, never against production itself, since the entire point is to find the breaking point.
+</DeepDive>
+
+## Load testing your own client code, not just the server
+
+The same worker-pool pattern is useful in reverse: if your Go service calls a downstream API, load-test your own client against a mock server that introduces latency and occasional errors, to verify your timeouts, retries, and circuit breakers (from the API gateway chapter) actually behave correctly under load rather than only in the happy-path unit tests.
+
+## Making load tests part of the deploy pipeline
+
+A load test run manually once a quarter tells you about the system as it existed a quarter ago. Running a smaller, fast version of the same test automatically against every release candidate — a two-minute run at a fixed moderate rate, checked against a latency and error-rate budget — catches performance regressions at the same point in the pipeline where you'd catch a failing unit test:
+
+```go
+func TestPerformanceRegression(t *testing.T) {
+	metrics := runVegetaAttackForTest(testServerURL, 50, 20*time.Second)
+	if metrics.Latencies.P95 > 200*time.Millisecond {
+		t.Fatalf("p95 latency regressed: got %s, budget 200ms", metrics.Latencies.P95)
+	}
+	if metrics.Success < 0.99 {
+		t.Fatalf("success ratio regressed: got %.2f%%, budget 99%%", metrics.Success*100)
+	}
+}
+```
+
+This doesn't replace a full stress test against production-like infrastructure before a major release, but it catches the common case — a new database query added without an index, a synchronous call added where an asynchronous one used to be — before it ships, rather than after an on-call engineer notices latency creeping up in production metrics.
+
+<Axiom>A system's real capacity is not what it does on your laptop with one client — it's the point where latency and error rate both start climbing, and you only find that point by deliberately looking for it.</Axiom>

@@ -5,4 +5,125 @@ title: "Implementing TLS/SSL in Go"
 
 # Implementing TLS/SSL in Go
 
-// ...contenido y ejemplos de TLS/SSL en Go...
+> "Every letter you've sent so far in this book traveled in a clear envelope anyone along the route could open and read. TLS is the sealed, tamper-evident envelope — and Go makes using one almost as easy as not bothering."
+
+---
+
+## What TLS Actually Buys You
+
+**TLS (Transport Layer Security)** — the modern successor to the now-obsolete SSL, though the name "SSL" persists in casual use — sits between the transport layer (TCP) and the application protocol (HTTP, SMTP, or your own custom protocol), providing three guarantees that map directly onto the CIA triad from Chapter 4.1:
+
+- **Confidentiality** — the connection is encrypted, so a passive observer on the path (Chapter 4.5's sniffer, for instance) sees ciphertext, not your data.
+- **Integrity** — TLS records include authentication, so tampering in transit is detectable.
+- **Authentication** — the client can verify the server is actually who it claims to be, via a certificate chain (Chapter 4.13), which is what closes the man-in-the-middle door from Chapter 4.3.
+
+Go's `crypto/tls` package implements the protocol directly in the standard library — no external dependency required, and it's actively maintained as part of Go's security process (Chapter 4.11 mentions the Go vulnerability database that tracks issues here).
+
+---
+
+## The Handshake, Briefly
+
+Before any application data flows, client and server perform a handshake: they agree on a TLS version and cipher suite, the server presents its certificate chain, the client verifies it against trusted root certificates, and both sides derive a shared symmetric key used to encrypt everything that follows. TLS 1.3 (the current version you should target) simplified this considerably compared to 1.2, cutting a round trip and removing several legacy, weaker options entirely.
+
+---
+
+## Go Implementation: A Minimal TLS Server
+
+```go
+package main
+
+import (
+	"crypto/tls"
+	"log"
+	"net/http"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello over TLS\n"))
+	})
+
+	server := &http.Server{
+		Addr:    ":8443",
+		Handler: mux,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12, // reject anything older than TLS 1.2
+		},
+	}
+
+	// cert.pem/key.pem here would be a real certificate in production
+	// (Chapter 4.13) or a self-signed pair for local testing.
+	log.Fatal(server.ListenAndServeTLS("cert.pem", "key.pem"))
+}
+```
+
+`ListenAndServeTLS` handles the handshake, record encryption, and connection lifecycle entirely — the handler code above is identical to a plain HTTP handler, which is one of the strongest arguments for using it: there's essentially no excuse for serving anything sensitive over plaintext HTTP when the encrypted version is this close to free.
+
+Setting `MinVersion: tls.VersionTLS12` explicitly is worth doing even though Go's defaults are already reasonable — it documents the intent in the code and protects against a future misconfiguration accidentally lowering it.
+
+---
+
+## Go Implementation: A TLS Client That Actually Verifies
+
+```go
+package main
+
+import (
+	"crypto/tls"
+	"fmt"
+	"io"
+	"log"
+	"os"
+)
+
+func main() {
+	// tls.Dial performs the TCP connection and the TLS handshake together,
+	// verifying the server's certificate chain against the system trust store.
+	conn, err := tls.Dial("tcp", "example.com:443", &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: "example.com", // used for SNI and certificate hostname verification
+	})
+	if err != nil {
+		log.Fatalf("tls dial: %v", err)
+	}
+	defer conn.Close()
+
+	state := conn.ConnectionState()
+	fmt.Printf("negotiated TLS version: %x, cipher suite: %x\n",
+		state.Version, state.CipherSuite)
+
+	fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+	if _, err := io.Copy(os.Stdout, conn); err != nil {
+		log.Fatalf("read response: %v", err)
+	}
+}
+```
+
+Note what's *not* in this code: `InsecureSkipVerify`. That field exists on `tls.Config` and disables certificate verification entirely — useful only for narrow, controlled testing scenarios, and one of the most common serious mistakes in Go TLS code. Setting it to `true` in anything reaching a real network makes the client accept a certificate from literally anyone, silently reintroducing the exact man-in-the-middle risk TLS exists to prevent.
+
+<Warning title="Never ship InsecureSkipVerify: true">
+Code with `tls.Config{InsecureSkipVerify: true}` will work perfectly in testing and then silently accept a forged certificate in production. If you need to trust a private or self-signed CA, add it to a custom `RootCAs` certificate pool (Chapter 4.13) instead of disabling verification altogether.
+</Warning>
+
+---
+
+## Choosing Cipher Suites and Versions
+
+For TLS 1.3, Go doesn't allow configuring cipher suites at all — the small, modern, carefully chosen set built into the protocol is used automatically, which removes an entire historical category of misconfiguration (accidentally allowing a weak cipher). For TLS 1.2 compatibility, `tls.Config.CipherSuites` lets you restrict the set explicitly if you need to support older clients while still excluding legacy weak options — though for most new services, simply setting `MinVersion: tls.VersionTLS13` and moving on is the safer, simpler default when your clients support it.
+
+---
+
+## Mutual TLS, in One Field
+
+Setting `ClientAuth: tls.RequireAndVerifyClientCert` on a server's `tls.Config` flips the authentication around: the client must also present a valid certificate, verified by the server, before the handshake completes. This pattern — **mutual TLS (mTLS)** — is a cornerstone of zero trust network design, covered fully in Chapter 4.15.
+
+---
+
+## Testing Your Own TLS Configuration
+
+Once a service is serving TLS, it's worth routinely checking what it actually negotiates, not just what you intended to configure — a dependency upgrade or a copy-pasted config can quietly change behavior. The `ConnectionState()` call used in the client example above is one way to do this from Go directly; the header-auditing tool from Chapter 4.7 could just as easily be extended to record the negotiated TLS version and certificate expiry (Chapter 4.13) for every service in a fleet, turning "we think everything is on TLS 1.3" into something you actually verify on a schedule rather than assume.
+
+---
+
+[Previous: Further Cybersecurity Resources](11-further-cybersecurity-resources.md) | [Next: Certificate Management and PKI](13-certificate-management-and-pki.md)

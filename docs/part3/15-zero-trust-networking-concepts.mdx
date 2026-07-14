@@ -5,4 +5,74 @@ title: "Zero Trust Networking Concepts"
 
 # Zero Trust Networking Concepts
 
-// ...contenido y ejemplos de Zero Trust Networking...
+> "The old model of network security was a castle: thick walls, one gate, and anyone inside the walls was assumed friendly. Zero trust assumes the castle has already been infiltrated, and checks everyone's badge at every single door, every single time — including people already inside."
+
+---
+
+## The Problem With Trusting the Perimeter
+
+Traditional network security draws a hard line between "inside" (trusted) and "outside" (untrusted), enforced by a firewall at the boundary. Once a device or user is inside that boundary — on the corporate VPN, on the office network — it's often granted broad access on the assumption that getting inside was itself the hard part.
+
+That assumption breaks down constantly in practice: a phished employee's laptop, a compromised internal server, a misconfigured VPN — any of these put an attacker *inside* the perimeter, and a purely perimeter-based model has very little left to stop them once they're there. Chapter 4.9's incident-response material exists largely because this exact scenario happens.
+
+**Zero trust** is the architectural response: stop trusting *location* (being on the internal network) as a proxy for trust, and instead verify every request, from every source, every time, based on identity and context rather than which side of a firewall it originated from.
+
+---
+
+## Core Principles
+
+<DeepDive title="What zero trust actually requires">
+**Verify explicitly** — every request is authenticated and authorized based on all available signals (identity, device health, location), not granted implicitly because of network position. **Least privilege access** — grant exactly the access a given identity needs for a specific task, scoped tightly and often just-in-time rather than standing broad access. **Assume breach** — design as though an attacker is already present somewhere in the environment, and minimize what they could reach from any single foothold — the same mindset introduced in Chapter 4.1. **Microsegmentation** — divide the network into small, tightly controlled zones so that compromising one segment doesn't grant access to the rest (the full subject of Chapter 4.16).
+</DeepDive>
+
+None of these principles require a single specific vendor product — zero trust is an architectural philosophy, described in vendor-neutral terms in publications like NIST SP 800-207, and it can be approached incrementally rather than as an all-or-nothing rewrite.
+
+---
+
+## Identity Replaces Location
+
+In a zero trust model, the question a service asks is never "did this request come from inside the network?" — it's "who, or what, is making this request, and are they authorized for this specific action?" That shift has concrete implications for how Go services are built:
+
+- **Every service-to-service call authenticates**, typically via mutual TLS (Chapter 4.12) or short-lived tokens, even between services on the same internal subnet.
+- **Authorization is checked per request**, not assumed from network placement — a service behind three layers of internal firewalls still validates the caller's identity and permissions on every call.
+- **Device and workload identity matters as much as user identity** — a request from a legitimate user's compromised laptop should be distinguishable from a request from that user's known-healthy device where possible.
+
+---
+
+## Mutual TLS as a Zero Trust Building Block
+
+Chapter 4.12 showed `ClientAuth: tls.RequireAndVerifyClientCert` as a single field enabling mutual TLS. In a zero trust architecture, this pattern is often applied uniformly, service to service, so that network position alone never grants a connection:
+
+```go
+config := &tls.Config{
+	ClientAuth: tls.RequireAndVerifyClientCert,
+	ClientCAs:  internalCAPool, // only certificates issued by your internal CA are accepted
+	MinVersion: tls.VersionTLS13,
+}
+```
+
+With this configuration, a connection succeeds only if the caller presents a valid certificate issued by a CA the service explicitly trusts — reachability on the network is no longer sufficient on its own. This is exactly the kind of internal PKI Chapter 4.13 covers issuing and rotating certificates for.
+
+---
+
+## The Policy Engine and Enforcement Point
+
+Zero trust architectures typically separate two concerns: a **policy decision point** that evaluates whether a given request should be allowed (based on identity, device posture, requested resource, and context), and one or more **policy enforcement points** that actually allow or block traffic based on that decision — conceptually similar to how an authentication service and a reverse proxy might divide responsibility in a web architecture. The enforcement point doesn't need to know *why* a request is allowed, only that the decision point said yes.
+
+---
+
+## Zero Trust Is a Journey, Not a Switch
+
+<Axiom>You don't "turn on" zero trust. You reduce, service by service and connection by connection, how much any single network position is trusted by default — until location has stopped being a security control at all.</Axiom>
+
+Most organizations adopt zero trust incrementally: starting with the most sensitive systems (require mTLS and strong authentication there first), then expanding the pattern outward. A perimeter firewall doesn't disappear in this model — it's simply no longer the *only* control, and increasingly not even the primary one.
+
+---
+
+## Where This Leads
+
+Zero trust and network segmentation are two sides of the same coin: zero trust is the *policy* philosophy (verify everyone, trust no default position), and segmentation, covered next in Chapter 4.16, is the *structural* tool that makes enforcing that policy practical at scale — by making sure there are fewer, smaller, more controllable boundaries to enforce it at in the first place.
+
+---
+
+[Previous: Secure Coding Practices in Go](14-secure-coding-practices-in-go.md) | [Next: Network Segmentation and Microsegmentation](16-network-segmentation-and-microsegmentation.md)

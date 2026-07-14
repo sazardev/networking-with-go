@@ -5,4 +5,84 @@ title: "Social Engineering in Networking"
 
 # Social Engineering in Networking
 
-// ...contenido y ejemplos de ingeniería social en redes...
+> You can harden every firewall rule, patch every server, and encrypt every packet, and an attacker can still walk through the front door simply by asking politely and sounding like they belong. The strongest technical controls in this book are irrelevant if a person can be convinced to hand over a password or click the wrong link.
+
+## The Human Firewall
+
+Social engineering is the manipulation of people, rather than systems, into taking an action that helps an attacker: revealing credentials, granting access, transferring funds, or installing something they shouldn't. It works because it exploits normal, healthy human behavior - trust, helpfulness, deference to authority, fear of consequences, urgency - rather than any software flaw. That's precisely why it remains effective against organizations with excellent technical security: no patch fixes a person's instinct to help a colleague who seems to be in a hurry.
+
+## Common Techniques
+
+- **Phishing**: mass or semi-targeted emails impersonating a trusted sender, aiming to harvest credentials or deliver malware through a malicious link or attachment.
+- **Spear phishing**: the same idea, but researched and tailored to a specific individual or role, making it far more convincing and far harder to filter automatically.
+- **Vishing** (voice phishing): a phone call impersonating IT support, a vendor, or an executive, often paired with a sense of urgency ("your account will be locked in ten minutes").
+- **Smishing**: the same pattern delivered over SMS, frequently abusing the fact that phone numbers feel more "personal" and trustworthy than email addresses.
+- **Pretexting**: inventing a plausible scenario (a fake audit, a new hire needing access, a fabricated vendor relationship) to justify a request that would otherwise raise suspicion.
+- **Baiting**: leaving a malware-laden USB drive somewhere it's likely to be found and plugged in out of curiosity.
+- **Tailgating**: following an authorized person through a physical access-controlled door without badging in yourself, relying on politeness (nobody wants to be the person who slams a door on a coworker's face).
+- **Business Email Compromise (BEC)**: impersonating an executive or vendor, usually through a look-alike domain or a compromised real account, to convince finance staff to redirect a payment.
+
+## Where This Intersects the Network
+
+Social engineering and network attacks frequently combine rather than standing apart. A convincing captive portal on a rogue Wi-Fi access point (an "evil twin" of a legitimate network, covered in the wireless security chapter) can harvest credentials purely through a familiar-looking login page, no exploit required. A phishing email's malicious link often leads to infrastructure that itself depends on network-level tricks - typosquatted domains, homograph attacks using look-alike Unicode characters, or DNS records set up minutes before the campaign launches specifically to dodge reputation-based blocklists.
+
+Email authentication is one of the more effective network-layer defenses against domain impersonation specifically. **SPF** (Sender Policy Framework) publishes which mail servers are allowed to send for a domain; **DKIM** (DomainKeys Identified Mail) cryptographically signs outgoing messages; **DMARC** ties the two together and tells receiving servers what to do with mail that fails both checks. None of this stops a look-alike domain from sending mail, but it does stop an attacker from directly forging mail *from* your actual domain, which is one of the more damaging variants of BEC.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+// checkEmailAuthRecords looks up the SPF and DMARC TXT records for a
+// domain - the same first check a mail security review would run.
+func checkEmailAuthRecords(domain string) {
+	spfFound := false
+	txtRecords, err := net.LookupTXT(domain)
+	if err != nil {
+		fmt.Println("TXT lookup failed:", err)
+		return
+	}
+	for _, record := range txtRecords {
+		if len(record) >= 6 && record[:6] == "v=spf1" {
+			spfFound = true
+			fmt.Println("SPF record:", record)
+		}
+	}
+	if !spfFound {
+		fmt.Println("no SPF record found - domain may be spoofable")
+	}
+
+	dmarcRecords, err := net.LookupTXT("_dmarc." + domain)
+	if err != nil || len(dmarcRecords) == 0 {
+		fmt.Println("no DMARC record found - failed SPF/DKIM mail has no defined handling")
+		return
+	}
+	for _, record := range dmarcRecords {
+		fmt.Println("DMARC record:", record)
+	}
+}
+
+func main() {
+	checkEmailAuthRecords("example.com")
+}
+```
+
+This is exactly the kind of quick automated check a security team runs across its own domains, and sometimes across a partner or vendor's domain during due diligence, to spot an easy impersonation vector before an attacker does.
+
+## Defenses That Actually Move the Needle
+
+Awareness training has a mixed reputation, largely because badly run programs (an annual slideshow nobody remembers by lunch) accomplish little. Programs that work tend to share a few traits: frequent, low-stakes simulated phishing campaigns with immediate, blame-free feedback when someone clicks; clear, simple reporting paths so a suspicious email takes seconds to flag; and technical backstops (SPF/DKIM/DMARC enforcement, email gateway filtering, link rewriting/sandboxing, and multi-factor authentication so a stolen password alone isn't enough) that reduce how much damage a single successful social engineering attempt can do.
+
+<Warning title="Running Phishing Simulations Requires the Same Care as Any Other Test">
+An internal phishing simulation campaign should have explicit sign-off from leadership and HR, a clear non-punitive policy for anyone who clicks, and legal review if any simulated pretext resembles a sensitive real-world scenario (fake layoffs, fake medical information) closely enough to cause real distress. The goal is measuring and improving detection behavior, not creating a culture of fear.
+</Warning>
+
+## Summary
+
+- Social engineering targets people, not systems, and remains effective regardless of how strong the technical controls around it are.
+- Phishing, vishing, smishing, pretexting, baiting, tailgating, and BEC are variations on the same trust-exploitation theme.
+- SPF, DKIM, and DMARC are the primary network-layer defenses against domain impersonation, and are worth verifying for any domain you're responsible for.
+- Effective awareness programs combine frequent, low-stakes practice with technical backstops - neither alone is sufficient.

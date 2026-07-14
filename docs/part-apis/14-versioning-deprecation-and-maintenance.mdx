@@ -5,4 +5,135 @@ title: "Versioning, Deprecation, and Maintenance"
 
 # Versioning, Deprecation, and Maintenance
 
-// ...contenido y ejemplos...
+Once an API has real clients, it can't just change shape overnight — every field renamed or endpoint removed is a broken integration somewhere. Versioning is how you evolve an API without breaking the clients depending on its current behavior, and deprecation is how you retire old versions responsibly instead of abruptly.
+
+---
+
+## What Counts as a Breaking Change
+
+Not every change requires a new version. A useful rule of thumb:
+
+- **Non-breaking (safe to ship in place)**: adding a new optional field to a response, adding a new endpoint, adding a new optional query parameter, relaxing a validation rule.
+- **Breaking (requires a new version)**: removing or renaming a field, changing a field's type or meaning, removing an endpoint, tightening validation on existing input, changing the default value of something clients already rely on.
+
+<Axiom>If an existing, well-behaved client would need to change its code for your update to keep working, it's a breaking change — no exceptions for changes that "should" be fine.</Axiom>
+
+---
+
+## Versioning Strategies
+
+### Path-based versioning
+
+The most common and most visible approach: embed the version directly in the URL.
+
+```
+GET /v1/products/42
+GET /v2/products/42
+```
+
+Simple to route (a version prefix maps to a different set of handlers or even a different service entirely), easy for clients to see which version they're on just by reading a log line, and trivially cacheable per version. The downside is that a "resource" now technically has multiple URLs across versions, which some REST purists dislike — in practice, this rarely causes real problems.
+
+### Header-based versioning
+
+Encode the version in a custom header or via content negotiation on the `Accept` header:
+
+```http
+GET /products/42 HTTP/1.1
+Accept: application/vnd.example.v2+json
+```
+
+This keeps the URL itself stable across versions, which some API designers prefer philosophically, but it's less visible in logs and harder for a developer to test manually in a browser or with a quick `curl` command without remembering the right header.
+
+### Which to choose
+
+Path-based versioning is the pragmatic default for most public APIs — it's what clients expect, it's trivial to route in Go (a `/v1` vs `/v2` prefix on the mux, or even a separate `http.ServeMux` per version mounted under a shared root), and its visibility is a feature, not a bug, when debugging.
+
+```go
+v1 := http.NewServeMux()
+v1.HandleFunc("GET /products/{id}", v1GetProduct)
+
+v2 := http.NewServeMux()
+v2.HandleFunc("GET /products/{id}", v2GetProduct)
+
+root := http.NewServeMux()
+root.Handle("/v1/", http.StripPrefix("/v1", v1))
+root.Handle("/v2/", http.StripPrefix("/v2", v2))
+```
+
+---
+
+## Deprecating a Version
+
+When `/v1` needs to go away eventually, tell clients before you turn it off, using standard, machine-readable signals rather than only a changelog entry someone might miss:
+
+```go
+func deprecated(sunset time.Time, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Deprecation", "true")
+		w.Header().Set("Sunset", sunset.Format(http.TimeFormat))
+		w.Header().Set("Link", `</v2/products>; rel="successor-version"`)
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+- **`Deprecation: true`** (from the IETF draft of the same name) signals that this endpoint is on its way out.
+- **`Sunset`** (RFC 8594) gives the exact date the endpoint will stop working.
+- **`Link` with `rel="successor-version"`** points automated tooling — and curious developers — straight at the replacement.
+
+Wrapping the entire `v1` mux with this middleware means every request against the old version carries these headers automatically, without touching individual handlers.
+
+**Request:**
+
+```http
+GET /v1/products/42 HTTP/1.1
+```
+
+**Response:**
+
+```http
+HTTP/1.1 200 OK
+Deprecation: true
+Sunset: Wed, 01 Oct 2026 00:00:00 GMT
+Link: </v2/products>; rel="successor-version"
+Content-Type: application/json
+
+{"id":42,"name":"Keyboard","price":49.99}
+```
+
+The endpoint still works — deprecation is a warning, not an immediate removal — but every response now tells the caller exactly when that stops being true.
+
+---
+
+## Semantic Versioning for the API Contract
+
+Even without a `/v1`/`/v2` URL split, it helps to think about API changes the way you'd think about a library's semver: a **major** version bump for breaking changes, **minor** for backward-compatible additions, **patch** for bug fixes that don't change the contract at all. This vocabulary is useful in changelogs and release notes even if the URL itself only ever shows the major version (`/v1`) — clients rarely care about the difference between a minor and patch release, but they care a great deal about majors.
+
+---
+
+## A Practical Deprecation Timeline
+
+A reasonable default policy, adjusted to your API's actual usage patterns:
+
+1. **Announce**: publish the new version, document the differences, and start sending `Deprecation`/`Sunset` headers on the old one — give this stage weeks to months depending on how many integrators depend on you.
+2. **Warn actively**: for high-value clients you can identify (via API keys), reach out directly, not just via headers nobody parses.
+3. **Sunset**: after the announced date, the old version returns `410 Gone` instead of serving real data — never silently change behavior or remove the endpoint without a clear terminal response.
+
+```go
+func sunset(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "this API version has been retired; see /v2", http.StatusGone)
+	})
+}
+```
+
+---
+
+## Maintenance Practices That Prevent Surprises
+
+- **Keep a changelog** that's actually read — link it from your OpenAPI docs (previous chapter) so it's discoverable from the same place developers already look.
+- **Contract tests against real client expectations** — a test suite that asserts response shapes stay stable catches accidental breaking changes before release, not after a client files a bug report.
+- **Feature-flag risky changes** where possible, so a change can roll out to a subset of traffic and roll back instantly if something's wrong (covered in more depth in a later chapter on feature flags).
+- **Never reuse a version number** — once `/v2` has shipped and been used, don't redefine what `/v2` means later; cut a `/v3` instead, even if `/v2` had a short lifetime.
+
+Versioning and deprecation are ultimately about trust: an API that changes without warning teaches its integrators to distrust every future release. Predictable, well-signaled change is what lets an API keep evolving for years without accumulating clients too afraid to upgrade. Next, we'll look at prebuilt solutions and boilerplates that can jump-start a new Go API project from day one.

@@ -1,15 +1,15 @@
 ---
 id: "[2.7.0]"
-title: "Error Handling and Debugging: Concepts and Go Implementation 🐞"
+title: "Error Handling and Debugging: Concepts and Go Implementation"
 ---
 
-# Error Handling and Debugging: Concepts and Go Implementation 🐞
+# Error Handling and Debugging: Concepts and Go Implementation
 
 > "Imagine you’re a detective in the digital world—errors are your clues, and Go gives you the magnifying glass and notebook to solve every mystery!"
 
 ---
 
-## 🧩 Why Error Handling Matters in Networking
+## Why Error Handling Matters in Networking
 
 Networking is unpredictable: cables unplug, servers crash, packets vanish. Good error handling is your safety net—it keeps your app from crashing and helps you understand what went wrong.
 
@@ -18,7 +18,7 @@ Networking is unpredictable: cables unplug, servers crash, packets vanish. Good 
 
 ---
 
-## 🤔 Why is Error Handling in Go So Unique?
+## Why is Error Handling in Go So Unique?
 
 - **No Exceptions:** Go does not use exceptions for error handling. Instead, errors are values—just like any other variable.
 - **Explicitness:** Every function that can fail returns an error as its last return value. You must check it!
@@ -32,7 +32,7 @@ Networking is unpredictable: cables unplug, servers crash, packets vanish. Good 
 
 ---
 
-## 🛠️ Go in Action: Basic Error Handling (Paso a Paso)
+## Go in Action: Basic Error Handling (Paso a Paso)
 
 ```go
 package main
@@ -61,7 +61,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Custom Error Messages
+## Go in Action: Custom Error Messages
 
 ```go
 package main
@@ -88,7 +88,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Wrapping and Propagating Errors
+## Go in Action: Wrapping and Propagating Errors
 
 Go 1.13+ introduced error wrapping, so you can add context to errors:
 
@@ -126,7 +126,7 @@ func main() {
 
 ---
 
-## 🐞 Debugging Go Network Applications
+## Debugging Go Network Applications
 
 - **Print Everything:** Use `fmt.Println` to print variables, errors, and data flows.
 - **Log Package:** Use `log.Printf` for more detailed messages with timestamps.
@@ -142,7 +142,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Logging and Debugging
+## Go in Action: Logging and Debugging
 
 ```go
 package main
@@ -173,7 +173,7 @@ func main() {
 
 ---
 
-## 🧠 What Happens Under the Hood in Go?
+## What Happens Under the Hood in Go?
 
 - Every error in Go is just a value of type `error` (an interface). You can create your own error types!
 - Go’s runtime does not hide errors—if you don’t check them, you might miss important clues.
@@ -182,7 +182,7 @@ func main() {
 
 ---
 
-## 🤩 Fun Facts & Go Memes
+## Fun Facts & Go Memes
 - The Go mascot (the gopher) is often shown with a magnifying glass—always hunting for bugs!
 - The phrase "Don’t just check errors, handle them!" is a Go proverb.
 - Go’s error handling is so explicit, some developers write tools to auto-check for ignored errors.

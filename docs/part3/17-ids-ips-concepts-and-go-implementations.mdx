@@ -5,4 +5,149 @@ title: "IDS/IPS: Concepts and Go Implementations"
 
 # IDS/IPS: Concepts and Go Implementations
 
-// ...contenido y ejemplos de IDS/IPS en Go...
+> A burglar alarm only tells you a window broke. A guard who slams the door shut before the intruder gets inside is a different job entirely. Intrusion Detection Systems watch and report; Intrusion Prevention Systems watch and act. Most real deployments need both.
+
+## What IDS and IPS Actually Do
+
+An **Intrusion Detection System (IDS)** inspects network traffic or host activity, compares it against known-bad patterns or statistical baselines, and raises an alert when something looks wrong. It is passive by design: it never touches the traffic it inspects, which keeps it safe to deploy but means a human (or downstream automation) has to act on what it finds.
+
+An **Intrusion Prevention System (IPS)** does the same analysis but sits inline, in the direct path of traffic, so it can drop a packet, reset a connection, or block a source address before damage occurs. That power comes with risk: a false positive in an IDS produces a noisy alert, but a false positive in an IPS can take down a legitimate customer's connection.
+
+Most production security stacks run both roles side by side, often on the same underlying detection engine (Suricata and Snort can operate in either IDS or IPS mode depending on how they're wired into the network).
+
+## Detection Approaches
+
+**Signature-based detection** matches traffic against a database of known attack patterns, exploit byte sequences, or malicious domain names. It is precise and fast but blind to anything novel until a signature is written.
+
+**Anomaly-based detection** builds a statistical baseline of "normal" behavior (connection rates, packet sizes, protocol mixes) and flags deviations. It can catch zero-day attacks and never-before-seen tools, but it also produces more false positives, since "unusual" isn't always "malicious."
+
+**Heuristic and behavioral detection** sits between the two: rules that encode expert knowledge about attack behavior rather than exact byte patterns, such as "more than N connection attempts from one host in T seconds looks like a scan."
+
+<DeepDive title="Where IDS/IPS Sits in the Stack">
+Network-based IDS/IPS (NIDS/NIPS) inspects traffic at chokepoints like a gateway or span port and sees everything crossing that link, but nothing that stays local to a host. Host-based IDS/IPS (HIDS/HIPS) runs on the endpoint itself, watching system calls, file integrity, and local logs, and catches activity that never touches the wire. The two are complementary, not competing, layers of the same defense-in-depth strategy discussed earlier in the book.
+</DeepDive>
+
+## Placement and Failure Modes
+
+Inline (IPS) placement means every packet must pass through the device, so it becomes both a security control and a potential single point of failure or bottleneck. Out-of-band (IDS) placement, usually fed by a mirrored switch port or network tap, adds zero latency and zero availability risk, at the cost of only being able to alert, never block, in real time.
+
+<Warning title="Tuning Before Trusting">
+A freshly deployed IPS in blocking mode, with default signatures and no tuning for your environment's actual traffic, is a common cause of self-inflicted outages. Standard practice is to run new rule sets in detection-only mode first, review the alert volume against real traffic for days or weeks, and only promote well-understood, low-noise rules to active blocking.
+</Warning>
+
+## Go Implementation
+
+Go's `net` package gives you everything needed to build the core mechanism behind a simple anomaly-based IDS/IPS: track connection attempts per source address inside a sliding time window, and once a source crosses a threshold, treat it as a probable scanner and refuse further connections. This is exactly the kind of rate-based heuristic that commercial products use to catch port scans and brute-force attempts before diving into deeper packet inspection.
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net"
+	"os"
+	"sync"
+	"time"
+)
+
+// ConnectionMonitor tracks recent connection attempts per source IP and
+// decides whether a new attempt should be allowed. This is the core
+// building block of a rate-based, anomaly-driven IDS/IPS.
+type ConnectionMonitor struct {
+	mu       sync.Mutex
+	attempts map[string][]time.Time
+	blocked  map[string]bool
+	window   time.Duration
+	maxConns int
+}
+
+func NewConnectionMonitor(window time.Duration, maxConns int) *ConnectionMonitor {
+	return &ConnectionMonitor{
+		attempts: make(map[string][]time.Time),
+		blocked:  make(map[string]bool),
+		window:   window,
+		maxConns: maxConns,
+	}
+}
+
+// Alert is the structured event emitted when a source crosses the
+// threshold - the kind of record a SIEM would ingest downstream.
+type Alert struct {
+	SourceIP  string    `json:"source_ip"`
+	Attempts  int       `json:"attempts"`
+	Window    string    `json:"window"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// Allow records a new attempt from ip and reports whether it should be
+// permitted. Once an IP crosses maxConns attempts inside window, it is
+// blocked outright - the "prevention" half of the design.
+func (m *ConnectionMonitor) Allow(ip string, logger *slog.Logger) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.blocked[ip] {
+		return false
+	}
+
+	now := time.Now()
+	cutoff := now.Add(-m.window)
+	kept := m.attempts[ip][:0]
+	for _, t := range m.attempts[ip] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	kept = append(kept, now)
+	m.attempts[ip] = kept
+
+	if len(kept) > m.maxConns {
+		m.blocked[ip] = true
+		alert := Alert{SourceIP: ip, Attempts: len(kept), Window: m.window.String(), Timestamp: now}
+		payload, _ := json.Marshal(alert)
+		logger.Warn("possible scan detected, blocking source", "alert", string(payload))
+		return false
+	}
+	return true
+}
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	monitor := NewConnectionMonitor(10*time.Second, 5)
+
+	ln, err := net.Listen("tcp", ":9000")
+	if err != nil {
+		logger.Error("listen failed", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("IDS/IPS demo listening", "addr", ln.Addr().String())
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+		if !monitor.Allow(host, logger) {
+			conn.Close()
+			continue
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			c.Write([]byte("connection accepted\n"))
+		}(conn)
+	}
+}
+```
+
+Every accepted connection first passes through `monitor.Allow`. Under normal load, one or two connections from any given address stay well under the threshold and flow through untouched. A scanner hammering the listener with dozens of attempts in the same window crosses `maxConns`, gets logged as a structured JSON alert via `log/slog`, and every subsequent attempt from that address is closed immediately without ever reaching the handler - a minimal but functioning IPS.
+
+Real products layer far more on top of this idea: deep packet inspection against signature databases, protocol-aware parsers that understand HTTP or DNS well enough to spot malformed requests, and correlation across many sensors. But the sliding-window rate limiter above is the same fundamental primitive, and it is often the first line of defense before any of that heavier analysis runs.
+
+## Summary
+
+- IDS detects and alerts; IPS detects and blocks inline. Choose (or combine) based on how much risk of false-positive disruption you can tolerate.
+- Signature-based detection is precise but reactive; anomaly-based detection generalizes but needs tuning.
+- Network placement (inline vs. out-of-band) and host placement (NIDS vs. HIDS) are complementary decisions, not either/or.
+- A sliding-window connection-rate tracker, easily built with Go's standard library, captures the essence of how many real-world IPS heuristics work.

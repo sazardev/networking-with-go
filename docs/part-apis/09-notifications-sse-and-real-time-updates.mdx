@@ -5,4 +5,179 @@ title: "Notifications, SSE, and Real-Time Updates"
 
 # Notifications, SSE, and Real-Time Updates
 
-// ...contenido y ejemplos...
+Not every real-time feature needs a full duplex WebSocket connection. Notification feeds, live scoreboards, progress bars, and status updates are all one-directional: the server pushes, the client just listens. Server-Sent Events (SSE) solve exactly that case using plain HTTP — no upgrade handshake, no extra protocol, and it works through the same proxies, load balancers, and firewalls that already handle regular HTTP traffic.
+
+---
+
+## What SSE Actually Is
+
+An SSE endpoint is a normal HTTP response with `Content-Type: text/event-stream` that never ends — the server keeps the connection open and writes new `data:` lines as events occur. The browser's built-in `EventSource` API (or any HTTP client that can stream a response) reads those lines as they arrive.
+
+A raw SSE event on the wire looks like this:
+
+```
+data: {"type":"order.shipped","orderId":42}
+
+```
+
+Each event is terminated by a blank line. Optional fields extend this: `event: <name>` names the event type, `id: <id>` lets the client resume from where it left off after a reconnect, and `retry: <ms>` tells the client how long to wait before reconnecting.
+
+---
+
+## An SSE Handler in net/http
+
+The key requirement on the server side is an `http.Flusher` — without explicitly flushing, the underlying transport may buffer the response and the client would never see events arrive incrementally:
+
+```go
+func notificationsHandler(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	notify := subscribe() // returns a <-chan Notification, unique per client
+	defer unsubscribe(notify)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			// client disconnected
+			return
+		case n := <-notify:
+			payload, _ := json.Marshal(n)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", n.Type, payload)
+			flusher.Flush()
+		}
+	}
+}
+```
+
+Two details matter here: `r.Context().Done()` fires the moment the client disconnects, so the handler's goroutine exits instead of leaking forever; and every write is followed by `flusher.Flush()`, forcing the bytes out onto the wire immediately.
+
+<DeepDive title="Why r.Context() matters for streaming handlers">
+For a normal, short-lived handler, request context cancellation rarely comes up — the handler finishes before anyone would cancel it. Streaming handlers are different: they can run for minutes, and the client closing the tab is the only signal you get that the goroutine should stop. Always select on `r.Context().Done()` in any handler that holds the connection open indefinitely.
+</DeepDive>
+
+---
+
+## A Minimal Notification Broker
+
+To fan events out to multiple connected clients, a simple broker keeps a set of channels, one per subscriber:
+
+```go
+type Notification struct {
+	Type string `json:"type"`
+	Data any    `json:"data"`
+}
+
+type Broker struct {
+	mu   sync.Mutex
+	subs map[chan Notification]bool
+}
+
+func NewBroker() *Broker {
+	return &Broker{subs: make(map[chan Notification]bool)}
+}
+
+func (b *Broker) Subscribe() chan Notification {
+	ch := make(chan Notification, 8)
+	b.mu.Lock()
+	b.subs[ch] = true
+	b.mu.Unlock()
+	return ch
+}
+
+func (b *Broker) Unsubscribe(ch chan Notification) {
+	b.mu.Lock()
+	delete(b.subs, ch)
+	b.mu.Unlock()
+	close(ch)
+}
+
+func (b *Broker) Publish(n Notification) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for ch := range b.subs {
+		select {
+		case ch <- n:
+		default:
+			// subscriber too slow; drop the event rather than block Publish
+		}
+	}
+}
+```
+
+The buffered channel plus `default` case in `Publish` is a deliberate trade-off: a slow or stuck client loses events instead of blocking every other subscriber's delivery. For most notification use cases (an event that's still true a moment later, like "3 unread messages") that's the right choice over blocking or unbounded buffering.
+
+---
+
+## Client-Side Reconnection
+
+`EventSource` in the browser reconnects automatically if the connection drops, using the `retry:` value (or a browser default) as the delay, and it resumes with a `Last-Event-ID` header if the server sent `id:` fields. On the server, honor that header to replay any events the client missed:
+
+```go
+lastID := r.Header.Get("Last-Event-ID")
+```
+
+Using this to backfill from a durable event log (rather than only the live broker) turns SSE from "best effort" into a reliable delivery channel.
+
+---
+
+## Real-World Example: Order Status Updates
+
+**Request:**
+
+```http
+GET /orders/42/events HTTP/1.1
+Accept: text/event-stream
+```
+
+**Response (streamed over one open connection):**
+
+```
+event: order.confirmed
+data: {"orderId":42,"status":"confirmed"}
+
+event: order.shipped
+data: {"orderId":42,"status":"shipped","carrier":"UPS"}
+
+event: order.delivered
+data: {"orderId":42,"status":"delivered"}
+
+```
+
+Each event arrives the moment the corresponding status change happens on the server — no polling required.
+
+---
+
+## Scaling SSE Across Multiple Instances
+
+The in-memory `Broker` above only knows about clients connected to that one process. Once an API runs multiple instances behind a load balancer, an event published on instance A needs to reach a client connected to instance B. The usual fix is to route publishes through a shared pub/sub layer — Redis's `PUBLISH`/`SUBSCRIBE` commands are a common, simple choice — so every instance subscribes to the same channel and re-broadcasts to its own locally connected clients:
+
+```go
+sub := redisClient.Subscribe(ctx, "notifications")
+for msg := range sub.Channel() {
+	var n Notification
+	json.Unmarshal([]byte(msg.Payload), &n)
+	broker.Publish(n) // fan out to this instance's local subscribers only
+}
+```
+
+Any part of the system that wants to notify a client publishes to Redis instead of calling the broker directly; every instance's subscriber goroutine picks it up and delivers it to whichever of its own connections care.
+
+---
+
+## SSE vs WebSockets vs Polling
+
+- **Polling** (the client repeatedly calls `GET /notifications`) is the simplest option and fine for low-frequency updates, but wastes requests and adds latency equal to the poll interval.
+- **SSE** is unidirectional (server to client only), works over plain HTTP/1.1 and HTTP/2, reconnects automatically, and requires no special server upgrade handling — the right default whenever the client only needs to receive.
+- **WebSockets** are bidirectional and lower-latency for high-frequency, two-way traffic, at the cost of a more complex protocol and connection lifecycle, as covered in the previous chapter.
+
+<Axiom>Choose the simplest transport that satisfies the direction of your data flow — SSE for one-way pushes, WebSockets only when the client genuinely needs to talk back over the same connection.</Axiom>
+
+With real-time delivery covered from both directions, the next chapter turns to protecting these endpoints: authentication, tokens, and API security best practices.

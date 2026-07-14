@@ -5,4 +5,145 @@ title: "APIs for Advanced Security"
 
 # APIs for Advanced Security
 
-// JWT rotation, mTLS, HMAC, API key management, secrets management
+Basic API security — hashing passwords, checking a bearer token — gets you through the first year of a project. This chapter covers what shows up once an API has real operational maturity behind it: rotating signing keys without breaking already-issued tokens, mutual TLS for service-to-service trust, HMAC request signing for machine clients, and treating secrets as something that's managed, not just configured.
+
+## JWT signing key rotation
+
+A JWT signed with a single, permanent key has a quiet failure mode: the moment that key needs to change (a suspected leak, a scheduled rotation policy), every token in circulation becomes invalid at once, unless you plan for rotation from the start. The fix is a **key ID** (`kid`) embedded in the token header, pointing at which key signed it, so multiple keys can be valid simultaneously during a rotation window:
+
+```go
+package main
+
+import (
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var signingKeys = map[string]*rsa.PrivateKey{
+	"2026-07": currentKey,
+	"2026-04": previousKey, // still valid for tokens issued before rotation
+}
+
+func issueToken(userID, activeKeyID string) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub": userID,
+		"exp": time.Now().Add(15 * time.Minute).Unix(),
+	})
+	token.Header["kid"] = activeKeyID
+	return token.SignedString(signingKeys[activeKeyID])
+}
+
+func verifyToken(tokenString string) (*jwt.Token, error) {
+	return jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+		kid, ok := t.Header["kid"].(string)
+		if !ok {
+			return nil, fmt.Errorf("missing kid")
+		}
+		key, ok := signingKeys[kid]
+		if !ok {
+			return nil, fmt.Errorf("unknown key: %s", kid)
+		}
+		return &key.PublicKey, nil
+	})
+}
+```
+
+Keeping the previous key around lets tokens issued right before a rotation keep verifying until they naturally expire, while all new tokens use the new key — you retire the old key entirely only once you're confident nothing valid still references it. In systems with external consumers, this same set of public keys is what you'd expose at a `/.well-known/jwks.json` endpoint, in the JSON Web Key Set format, so other services can verify your tokens without you distributing keys out of band.
+
+<Warning title="Rotating a symmetric HMAC key is much harder to do gracefully than an asymmetric one">
+With RSA or ECDSA, you can publish new public keys freely since they don't need to stay secret. With a shared HMAC secret, every party that verifies tokens needs the new secret distributed to them before rotation completes, and there's no way to publish it safely for third-party verification — this is one of the strongest practical arguments for preferring asymmetric signing (`RS256`/`ES256`) over `HS256` for tokens verified outside your own service.
+</Warning>
+
+## Mutual TLS between services
+
+Ordinary TLS proves the server's identity to the client. Mutual TLS (mTLS) adds the reverse: the server also verifies a certificate presented by the client, which is the standard way internal services authenticate each other without passing bearer tokens around. Go's `crypto/tls` supports this natively on both ends:
+
+```go
+func newMTLSServer(certFile, keyFile, clientCAFile string) *http.Server {
+	clientCAPool := x509.NewCertPool()
+	caCert, _ := os.ReadFile(clientCAFile)
+	clientCAPool.AppendCertsFromPEM(caCert)
+
+	tlsConfig := &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		ClientCAs:  clientCAPool,
+	}
+
+	server := &http.Server{
+		Addr:      ":8443",
+		Handler:   setupRouter(),
+		TLSConfig: tlsConfig,
+	}
+	return server // caller runs server.ListenAndServeTLS(certFile, keyFile)
+}
+```
+
+`tls.RequireAndVerifyClientCert` rejects any connection where the client doesn't present a certificate signed by a CA in `ClientCAs` — the TLS handshake itself fails before your handler code ever runs, which is a meaningfully stronger guarantee than checking a header after the fact. Extracting the verified client identity inside a handler is just as direct:
+
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+	if len(r.TLS.PeerCertificates) == 0 {
+		http.Error(w, "no client certificate", http.StatusUnauthorized)
+		return
+	}
+	clientCN := r.TLS.PeerCertificates[0].Subject.CommonName
+	// clientCN now identifies which service is calling, cryptographically verified
+}
+```
+
+## HMAC request signing for machine clients
+
+For API clients that are other services or third-party integrations rather than end users, HMAC request signing (the same primitive from the webhooks chapter, applied to outbound API calls instead of inbound events) avoids handing out long-lived bearer tokens that can leak in logs:
+
+```go
+func signRequest(req *http.Request, secret, body []byte) {
+	timestamp := fmt.Sprintf("%d", time.Now().Unix())
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(timestamp))
+	mac.Write(body)
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", signature)
+}
+```
+
+Including the timestamp in the signed payload lets the receiver reject requests outside a short acceptable window (say, five minutes), which closes off replay attacks where a captured request is resent verbatim later — a bare HMAC signature over the body alone doesn't protect against that.
+
+## Secrets management
+
+None of the above matters if the private keys and HMAC secrets themselves live in a `.env` file committed to source control. Production systems fetch secrets at startup from a dedicated store — HashiCorp Vault, AWS Secrets Manager, or a cloud provider's equivalent — rather than reading them from environment variables set by a deploy script:
+
+```go
+func loadSigningKey(ctx context.Context, client *secretsmanager.Client, secretID string) (*rsa.PrivateKey, error) {
+	out, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(secretID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return jwt.ParseRSAPrivateKeyFromPEM([]byte(*out.SecretString))
+}
+```
+
+<DeepDive title="Environment variables are a transport, not a vault">
+Environment variables are a reasonable way to *deliver* a secret into a running process, but they aren't a substitute for a system that controls who can read the secret, rotates it, and logs access to it. A secrets manager gives you all three; a `.env` file typically gives you none of them, and it's far too easy for it to end up in a container image, a log line, or a support ticket screenshot.
+</DeepDive>
+
+## Revocation: the problem signing keys alone don't solve
+
+Rotating a signing key stops new tokens from being forged with a compromised one, but it does nothing about tokens already issued and still within their expiry window — if a token is stolen, key rotation alone won't invalidate it before it naturally expires. For access that needs to be revocable immediately (a user reports a stolen session, an employee is offboarded), keep short expiries on the token itself and maintain a denylist checked on verification for the rare case that a specific token needs killing before it would otherwise expire:
+
+```go
+func isRevoked(ctx context.Context, rdb *redis.Client, tokenID string) bool {
+	exists, _ := rdb.Exists(ctx, "revoked:"+tokenID).Result()
+	return exists > 0
+}
+
+func revokeToken(ctx context.Context, rdb *redis.Client, tokenID string, ttl time.Duration) error {
+	return rdb.Set(ctx, "revoked:"+tokenID, "1", ttl).Err()
+}
+```
+
+Setting the denylist entry's TTL to match the token's remaining lifetime keeps the denylist small — there's no reason to remember a revoked token past the point it would have expired anyway.
+
+<Axiom>Advanced API security is rarely about a cleverer algorithm — it's about making the boring parts (rotation, expiry, revocation, and where the secret actually lives) impossible to skip.</Axiom>

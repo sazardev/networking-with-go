@@ -1,10 +1,170 @@
 ---
 id: "[2.19.0]"
-title: "Security in Go Networking: TLS, Encryption, and Best Practices 🔒"
+title: "Security in Go Networking: TLS, Encryption, and Best Practices"
 ---
 
-# Security in Go Networking: TLS, Encryption, and Best Practices 🔒
+# Security in Go Networking: TLS, Encryption, and Best Practices
 
-Learn about securing Go network applications.
+> "Sending data over plain TCP is like shouting across a crowded room — anyone standing between you and the listener can hear every word, and nothing stops them from shouting back pretending to be the person you meant to talk to. TLS is the sealed, tamper-evident envelope that turns that shout into a private conversation with a verified recipient."
+
+---
+
+## What TLS Actually Buys You
+
+Every TCP connection you've built so far has sent bytes in the clear. TLS (Transport Layer Security) wraps that connection with three guarantees:
+
+- **Confidentiality:** Data is encrypted, so an eavesdropper on the network sees ciphertext, not your bytes.
+- **Integrity:** Any tampering with the data in transit is detectable.
+- **Authentication:** The client can verify the server is who it claims to be (and, with mutual TLS, the server can verify the client too), using certificates signed by a trusted authority.
+
+Under the hood, the TLS handshake uses asymmetric cryptography (public/private key pairs) to safely agree on a shared symmetric key, then switches to fast symmetric encryption for the actual data — asymmetric crypto is too slow to encrypt an entire stream, but it's exactly what's needed to establish trust and exchange a key in the first place.
+
+---
+
+## Certificates in Brief
+
+A certificate binds a public key to an identity (like a domain name) and is signed by a Certificate Authority (CA) that both parties already trust. When a client connects, it checks that the server's certificate is signed by a CA in its trust store and that the certificate's name matches the host it dialed — the same reason browsers warn about self-signed certificates: there's no trusted third party vouching for them.
+
+For local development, a self-signed certificate is enough to exercise TLS code, as long as your client is explicitly configured to trust it (never with a blanket "skip verification").
+
+---
+
+## Go Implementation: A TLS Server
+
+`crypto/tls` builds directly on the `net` package you already know — `tls.Listen` behaves exactly like `net.Listen`, just wrapping every accepted connection in a TLS handshake first:
+
+```go
+package main
+
+import (
+	"crypto/tls"
+	"fmt"
+	"net"
+)
+
+func main() {
+	cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
+	if err != nil {
+		panic(err)
+	}
+
+	config := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	ln, err := tls.Listen("tcp", ":9500", config)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("TLS server listening on :9500")
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			fmt.Fprintln(c, "hello over an encrypted channel")
+		}(conn)
+	}
+}
+```
+
+[Exercise: TLS Server](../../exercises/part2/19-tls-server/main.go)
+
+For an HTTP server, `http.ListenAndServeTLS(addr, certFile, keyFile, handler)` does the same thing at the HTTP layer, and is the standard way to serve HTTPS with the `net/http` server you built in the HTTP chapter.
+
+For local testing, you can generate a self-signed certificate and key with the OpenSSL CLI:
+
+```
+openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -days 365 -subj "/CN=localhost"
+```
+
+---
+
+## Go Implementation: A TLS Client
+
+```go
+package main
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"os"
+)
+
+func main() {
+	caCert, err := os.ReadFile("server.crt")
+	if err != nil {
+		panic(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(caCert)
+
+	config := &tls.Config{
+		RootCAs:    pool,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	conn, err := tls.Dial("tcp", "localhost:9500", config)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+
+	buf := make([]byte, 256)
+	n, _ := conn.Read(buf)
+	fmt.Println(string(buf[:n]))
+}
+```
+
+[Exercise: TLS Client](../../exercises/part2/19-tls-client/main.go)
+
+`RootCAs` tells the client exactly which CA certificates to trust — here, the self-signed certificate itself, since it's acting as its own CA for this local example. In production, `tls.Config{}` with no `RootCAs` set falls back to the operating system's trust store, which is what you want when connecting to a server with a certificate from a public CA.
+
+<Warning title="InsecureSkipVerify is not a shortcut">
+Setting `tls.Config{InsecureSkipVerify: true}` disables certificate verification entirely, which means the client can no longer tell a real server from an attacker impersonating it — defeating the authentication guarantee TLS exists to provide. It has legitimate uses in isolated test harnesses, but it should never reach a production build.
+</Warning>
+
+---
+
+## Mutual TLS (mTLS)
+
+Regular TLS authenticates the server to the client. Mutual TLS goes further and authenticates the client to the server too, using a client certificate presented during the same handshake — useful for service-to-service communication where both ends need strong identity, tying directly back into the authentication concepts from the previous chapter.
+
+```go
+config := &tls.Config{
+	Certificates: []tls.Certificate{serverCert},
+	ClientAuth:   tls.RequireAndVerifyClientCert,
+	ClientCAs:    clientCAPool, // pool of CAs allowed to sign client certs
+	MinVersion:   tls.VersionTLS12,
+}
+```
+
+With `ClientAuth: tls.RequireAndVerifyClientCert`, the handshake fails outright unless the client presents a certificate signed by a CA in `ClientCAs` — authentication is enforced at the transport layer, before a single byte of application data is exchanged.
+
+---
+
+## Best Practices
+
+- **Pin a minimum version:** Set `MinVersion: tls.VersionTLS12` (or `TLS13`) explicitly; don't rely on defaults that may allow older, weaker protocol versions.
+- **Let Go choose cipher suites:** Go's default cipher suite selection for TLS 1.2+ is already conservative and well-maintained; only override `CipherSuites` if you have a specific compliance requirement.
+- **Rotate certificates before they expire:** Automate renewal (e.g., with ACME/Let's Encrypt tooling) rather than tracking expiry dates manually.
+- **Never log private keys or full certificates with keys attached.**
+- **Prefer TLS 1.3 where compatible:** It removes several legacy cryptographic options that were sources of past vulnerabilities and completes the handshake in fewer round trips.
+
+---
+
+## Key Takeaways
+
+- TLS adds confidentiality, integrity, and authentication on top of the plain TCP connections built earlier in the book.
+- `tls.Listen`/`tls.Dial` mirror `net.Listen`/`net.Dial` closely, so upgrading existing TCP code to TLS is largely a drop-in change.
+- `RootCAs` and `ClientCAs` control which certificates a client or server trusts — never bypass that check with `InsecureSkipVerify` in production.
+- Mutual TLS extends the authentication guarantees to the client as well, enforced during the handshake itself.
+
+---
 
 [Previous: Authentication and Authorization](18-authentication-and-authorization.md) | [Next: Logging and Monitoring](20-logging-and-monitoring.md)

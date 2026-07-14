@@ -5,4 +5,128 @@ title: "APIs for Multi-Tenancy and SaaS"
 
 # APIs for Multi-Tenancy and SaaS
 
-// Patrones de diseño, seguridad, separación de datos
+A multi-tenant API serves many independent customers ("tenants") from the same running application and, usually, the same database — a project management tool where Acme Corp and Globex Inc both use the product without ever seeing each other's data, backed by the same Go binary and the same Postgres instance. The entire discipline of multi-tenancy comes down to one question asked at every layer of the stack: how do you guarantee that a request scoped to one tenant can never read or write another tenant's data, even when a developer makes a mistake three years from now.
+
+## Identifying the tenant
+
+Before anything else, every request needs to be unambiguously associated with exactly one tenant. The three common mechanisms are a subdomain (`acme.myapp.com`), a header (`X-Tenant-ID`), or a claim embedded in the auth token itself. The token-based approach is generally the most robust, because it ties tenant identity to something already cryptographically verified rather than to a client-supplied value that could be spoofed:
+
+```go
+type contextKey string
+
+const tenantContextKey contextKey = "tenant"
+
+func tenantMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := r.Context().Value(claimsContextKey).(*JWTClaims)
+		if !ok {
+			http.Error(w, "unauthenticated", http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), tenantContextKey, claims.TenantID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func tenantFromContext(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(tenantContextKey).(string)
+	return id, ok
+}
+```
+
+This middleware runs after authentication and before every handler that touches tenant data, so `tenantFromContext` is the single source of truth downstream code relies on — no handler should ever read a tenant ID from a query parameter or request body, because that would let one tenant simply ask for another tenant's ID.
+
+<Warning title="Never trust a client-supplied tenant ID">
+If a tenant identifier can be set via a header or query string the client controls, it can be forged. Derive it from something the server verified — a signed token claim, or a session looked up server-side — never from raw request input.
+</Warning>
+
+## Isolating data: three levels of strictness
+
+**Separate databases per tenant** gives the strongest isolation — a bug in one tenant's query can't possibly touch another tenant's database, because there's no shared connection at all. It also means running migrations and backups per tenant, which becomes operationally expensive past a few dozen tenants.
+
+**Separate schemas, shared database** is a middle ground common in Postgres-based SaaS: each tenant gets its own schema (`acme.orders`, `globex.orders`) inside one database, and the API selects the schema per request via the connection's search path. It keeps operational overhead lower than fully separate databases while still preventing an unqualified query from accidentally touching another tenant's rows.
+
+**Shared tables with a tenant_id column** is the most common approach for products with many tenants, because it scales operationally the best — one schema, one migration path, one set of indexes. The entire safety of this model rests on every single query filtering by `tenant_id`, with no exceptions:
+
+```go
+func listOrders(ctx context.Context, db *sql.DB) ([]Order, error) {
+	tenantID, ok := tenantFromContext(ctx)
+	if !ok {
+		return nil, errors.New("no tenant in context")
+	}
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, total FROM orders WHERE tenant_id = $1`, tenantID)
+	// ...
+}
+```
+
+<DeepDive title="Postgres row-level security as a safety net">
+Application-level filtering is only as reliable as the discipline of every developer who touches the query layer. Postgres row-level security (RLS) policies let you enforce `tenant_id = current_setting('app.tenant_id')` at the database level, so even a handler that forgets the `WHERE` clause still can't read another tenant's rows — the database rejects the leak rather than the application preventing it. Setting `app.tenant_id` per connection (via `SET LOCAL` inside the request's transaction) from the same middleware that resolves the tenant keeps both layers in sync.
+</DeepDive>
+
+## Per-tenant configuration and limits
+
+SaaS products commonly need per-tenant behavior beyond data isolation: different rate limits for a free tier versus an enterprise plan, different feature availability, different webhook endpoints. Rather than sprinkling `if tenant.Plan == "enterprise"` checks through handlers, centralize tenant configuration behind a lookup keyed by tenant ID, loaded once per request (and cached, since it rarely changes):
+
+```go
+type TenantConfig struct {
+	Plan            string
+	RateLimitPerMin int
+	FeatureFlags    map[string]bool
+}
+
+func loadTenantConfig(ctx context.Context, tenantID string) (TenantConfig, error) {
+	if cfg, ok := tenantConfigCache.Get(tenantID); ok {
+		return cfg.(TenantConfig), nil
+	}
+	cfg, err := fetchTenantConfigFromDB(ctx, tenantID)
+	if err == nil {
+		tenantConfigCache.Set(tenantID, cfg, 5*time.Minute)
+	}
+	return cfg, err
+}
+```
+
+This keeps plan-based logic in one place, and it means a customer upgrading their plan takes effect within the cache TTL rather than requiring a deploy.
+
+## Noisy neighbors
+
+Shared infrastructure means one tenant's traffic spike can degrade service for everyone else — the "noisy neighbor" problem. Per-tenant rate limiting (using the tenant ID as the key, instead of a global limit) contains this at the API layer:
+
+```go
+func perTenantRateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tenantID, _ := tenantFromContext(r.Context())
+		limiter := limiterFor(tenantID) // one token bucket per tenant, cached
+		if !limiter.Allow() {
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+## Testing tenant isolation as a first-class concern
+
+Isolation bugs are among the most expensive to discover in production, because discovering one means a customer already saw another customer's data. Write tests that specifically try to break isolation, not just tests that verify the happy path works for one tenant at a time:
+
+```go
+func TestTenantIsolation(t *testing.T) {
+	acmeCtx := contextForTenant("acme")
+	globexCtx := contextForTenant("globex")
+
+	order := createOrder(acmeCtx, db, Order{Total: 100})
+
+	_, err := getOrder(globexCtx, db, order.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected globex to not see acme's order, got: %v", err)
+	}
+}
+```
+
+This test asserts something more specific than "the query works" — it asserts that a tenant explicitly attempting to read another tenant's resource by ID gets a not-found result, not a permission error that would reveal the resource exists at all, and not the resource itself. Running this pattern against every resource type in the system, as part of the normal test suite rather than a one-off manual check, is what actually catches a missing `tenant_id` filter before a customer does.
+
+<Axiom>In a multi-tenant system, every shared resource is a potential leak or a potential bottleneck — isolation and fairness are the same design problem viewed from two angles.</Axiom>
+
+Getting multi-tenancy right is less about clever code and more about consistency: pick one place tenant identity is established, one place data is scoped, and make deviating from that path harder than following it.

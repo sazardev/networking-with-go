@@ -5,4 +5,158 @@ title: "Advanced API Rate Limiting and Anti-Abuse"
 
 # Advanced API Rate Limiting and Anti-Abuse
 
-// Ejemplo: Redis, token bucket, sliding window, protección contra DDoS
+The rate limiting in an earlier chapter used an in-memory `rate.Limiter` per client — good enough for a single instance, but it breaks down the moment you run more than one, since each instance tracks its own limits independently. This chapter covers distributed rate limiting, tiered limits, and the broader anti-abuse patterns that go beyond simple request counting.
+
+---
+
+## Why In-Memory Limiting Falls Apart at Scale
+
+With 3 replicas behind a load balancer, and a per-client limit of 5 requests/second enforced with an in-memory `rate.Limiter` map, a client hammering the API can actually get up to 15 requests/second through — one-third landing on each instance, each of which thinks the client is well within its individual limit. The fix is a shared counter every instance reads from and writes to.
+
+---
+
+## Distributed Rate Limiting with Redis
+
+Redis is the standard shared store for this, since it's fast enough to check on every request and supports atomic operations needed to avoid race conditions between instances checking and incrementing a counter concurrently.
+
+A sliding-window counter using `INCR` and `EXPIRE`, via `github.com/redis/go-redis/v9`:
+
+```go
+import (
+	"context"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+func allow(ctx context.Context, rdb *redis.Client, key string, limit int, window time.Duration) (bool, error) {
+	count, err := rdb.Incr(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	if count == 1 {
+		rdb.Expire(ctx, key, window)
+	}
+	return count <= int64(limit), nil
+}
+```
+
+```go
+allowed, err := allow(r.Context(), rdb, "ratelimit:"+apiKey, 100, time.Minute)
+if err != nil {
+	// fail open or closed depending on your risk tolerance — see below
+}
+if !allowed {
+	http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+	return
+}
+```
+
+`INCR` is atomic in Redis even under heavy concurrent access from multiple API instances, and setting the key's expiry only on the very first increment (`count == 1`) turns this into a simple fixed-window counter that resets every `window`. For a smoother, more precise limit that doesn't allow a burst of `2 * limit` right at a window boundary, a sliding-window log (storing timestamps in a sorted set and trimming those older than the window) or a Lua script implementing token bucket atomically on the Redis side are the usual upgrades — libraries like `github.com/go-redis/redis_rate` package this token-bucket logic for you.
+
+<Warning title="Decide explicitly: fail open or fail closed">
+If Redis is unreachable, what should happen to the request? Failing open (let it through) prioritizes availability but temporarily disables your rate limiting exactly when something's already going wrong. Failing closed (reject it) prioritizes protection but turns a Redis outage into a full API outage. Most public APIs fail open for a brief Redis blip and alert loudly, since an unprotected minute is usually a smaller risk than an unnecessary full outage — but this is a judgment call specific to your threat model, not a universal default.
+</Warning>
+
+---
+
+## Tiered Rate Limits
+
+Not every client should get the same limit. A common pattern keys the limit itself off the authenticated client's plan, not just their identity:
+
+```go
+func limitFor(plan string) (limit int, window time.Duration) {
+	switch plan {
+	case "enterprise":
+		return 10000, time.Minute
+	case "pro":
+		return 1000, time.Minute
+	default:
+		return 60, time.Minute
+	}
+}
+```
+
+Combined with the distributed limiter above, this gives every client a limit proportional to what they're paying for (or what tier of trust they've earned), rather than one blanket number for the whole API.
+
+---
+
+## Beyond Request Counting: Anti-Abuse Patterns
+
+Rate limiting protects against volume; it doesn't protect against a client that stays under the limit but is still behaving maliciously — credential stuffing at a slow, deliberate pace, or scraping content one request at a time, patiently, for days. A few additional layers:
+
+### Exponential backoff signaling
+
+Rather than a flat `Retry-After: 1`, scale the suggested wait with repeated violations, discouraging tight retry loops:
+
+```go
+violations := getViolationCount(clientKey) // tracked alongside the rate limit itself
+retryAfter := time.Duration(1<<min(violations, 6)) * time.Second
+w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+```
+
+### Circuit breakers for downstream protection
+
+Rate limiting protects your API from clients; a circuit breaker protects your API (and its callers) from a struggling downstream dependency. `github.com/sony/gobreaker` wraps a call and trips open after too many recent failures, failing fast instead of piling up slow, doomed requests:
+
+```go
+import "github.com/sony/gobreaker/v2"
+
+cb := gobreaker.NewCircuitBreaker[*http.Response](gobreaker.Settings{
+	Name:        "payment-provider",
+	MaxRequests: 5,
+	Timeout:     30 * time.Second,
+})
+
+resp, err := cb.Execute(func() (*http.Response, error) {
+	return httpClient.Do(req)
+})
+```
+
+Once the failure rate crosses the breaker's threshold, it "opens" and rejects calls immediately for the `Timeout` duration, giving the downstream service room to recover instead of being hit with a continued flood of retries from every one of your API's instances.
+
+### Behavioral signals beyond IP and API key
+
+Sophisticated abuse rotates IP addresses and API keys, so identity-based limits alone eventually miss it. Additional signals worth tracking per request: unusually regular request timing (a script, not a human), a login endpoint receiving many distinct usernames from one source, or a scraping pattern that walks resource IDs sequentially. These usually feed a separate detection pipeline — often built on the same structured logs from the observability chapter — rather than a synchronous check on every request, since the analysis is inherently about patterns over time, not any single request in isolation.
+
+### CAPTCHA as a targeted, not default, gate
+
+Reserve CAPTCHA challenges for requests that have already tripped a suspicion signal — repeated failed logins, an unusual request rate from a new client — rather than gating every request behind one, which only degrades the experience for legitimate traffic without meaningfully slowing down an attacker willing to solve a few challenges.
+
+---
+
+## Real-World Example: A Tiered, Distributed Limit in Action
+
+**Request from a "pro" tier client, under its limit:**
+
+```http
+GET /api/v1/products HTTP/1.1
+Authorization: Bearer <pro-tier-token>
+```
+
+```http
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 998
+```
+
+**The same client, after exceeding its limit:**
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 4
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 0
+
+{"error": "rate limit exceeded for your plan"}
+```
+
+Exposing `X-RateLimit-Limit` and `X-RateLimit-Remaining` (a de facto standard, though not a single formal RFC) lets well-behaved clients throttle themselves proactively instead of discovering the limit only by hitting a `429`.
+
+---
+
+## Putting It Together
+
+A mature anti-abuse strategy layers several of these mechanisms rather than relying on any single one: a distributed, tiered rate limiter as the first line of defense, circuit breakers protecting downstream calls from cascading failures, and behavioral analysis catching patterns that stay under the numeric limit but are still clearly abusive. None of these replace the basic rate limiting and CORS from the earlier chapter — they extend it for APIs operating at a scale where simple per-IP counting is no longer enough.
+
+This closes out the core building-blocks section of Part APIs — from clean URLs through serialization, frameworks, real-time features, security, documentation, testing, versioning, deployment, and now abuse protection at scale. The chapters ahead go further into specialized territory: advanced gateways, alternative data protocols, background jobs, and the operational concerns of running Go APIs in increasingly complex, multi-tenant, and distributed environments.

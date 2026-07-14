@@ -1,15 +1,15 @@
 ---
 id: "[2.13.0]"
-title: "Chat Applications: Design, Protocols, and Go Implementation 💬"
+title: "Chat Applications: Design, Protocols, and Go Implementation"
 ---
 
-# Chat Applications: Design, Protocols, and Go Implementation 💬
+# Chat Applications: Design, Protocols, and Go Implementation
 
 > "Imagine a group conversation where everyone can speak and listen in real time. Chat applications are the classic use case for WebSockets and real-time networking!"
 
 ---
 
-## 🚦 Why Build a Chat Application?
+## Why Build a Chat Application?
 - **Real-Time Communication:** Users expect instant delivery and receipt of messages.
 - **Multi-User:** Many clients can join, send, and receive messages simultaneously.
 - **Practical:** Chat is a foundation for collaborative tools, games, support systems, and more.
@@ -17,7 +17,7 @@ title: "Chat Applications: Design, Protocols, and Go Implementation 💬"
 
 ---
 
-## 🧩 Chat Protocols and Architecture
+## Chat Protocols and Architecture
 - **WebSocket-Based:** Most modern chat apps use WebSockets for low-latency, bidirectional messaging.
 - **Message Format:** Typically JSON (e.g., `{ "user": "Alice", "msg": "Hello!" }`).
 - **Broadcast:** Server receives a message and sends it to all connected clients.
@@ -25,7 +25,7 @@ title: "Chat Applications: Design, Protocols, and Go Implementation 💬"
 
 ---
 
-## 🏗️ Typical Chat Server Architecture
+## Typical Chat Server Architecture
 
 ```mermaid
 flowchart TD
@@ -43,7 +43,7 @@ flowchart TD
 
 ---
 
-## 🛠️ Go in Action: Minimal WebSocket Chat Server (Gorilla)
+## Go in Action: Minimal WebSocket Chat Server (Gorilla)
 
 This example shows a minimal chat server using `gorilla/websocket`. All messages from any client are broadcast to all connected clients.
 
@@ -68,7 +68,7 @@ sequenceDiagram
 
 ---
 
-## 📝 Example: Minimal Go WebSocket Chat Server (Gorilla)
+## Example: Minimal Go WebSocket Chat Server (Gorilla)
 
 See: [`main.go`](../../exercises/part2/13-chat-server-gorilla/main.go)
 
@@ -90,7 +90,7 @@ See: [`main.go`](../../exercises/part2/13-chat-server-gorilla/main.go)
 
 ---
 
-## 🚀 Ejemplo avanzado: Chat WebSocket con usuario y hora (Gorilla)
+## Ejemplo avanzado: Chat WebSocket con usuario y hora (Gorilla)
 
 En este ejemplo, cada usuario elige su nombre antes de conectarse. Los mensajes enviados incluyen el nombre del remitente y la hora de envío, lo que hace el chat más realista y útil.
 
@@ -117,13 +117,13 @@ sequenceDiagram
 
 ---
 
-### 📂 Archivos de ejercicio
+### Archivos de ejercicio
 - [Servidor avanzado de chat (Gorilla)](../../exercises/part2/13-chat-server-advanced-gorilla/main.go)
 - [Cliente avanzado de chat (Gorilla)](../../exercises/part2/13-chat-client-advanced-gorilla/main.go)
 
 ---
 
-### 🏃‍♂️ Cómo usarlo
+### Cómo usarlo
 1. Instala gorilla/websocket: `go get github.com/gorilla/websocket`
 2. Ejecuta el servidor: `go run exercises/part2/13-chat-server-advanced-gorilla/main.go`
 3. Ejecuta el cliente: `go run exercises/part2/13-chat-client-advanced-gorilla/main.go`
@@ -132,7 +132,7 @@ sequenceDiagram
 
 ---
 
-### 🧑‍💻 Formato de mensaje
+### Formato de mensaje
 Los mensajes entre cliente y servidor usan JSON:
 ```json
 {
@@ -147,7 +147,7 @@ Los mensajes entre cliente y servidor usan JSON:
 
 ---
 
-### 📝 Explicación del código
+### Explicación del código
 - El servidor espera que cada cliente envíe su nombre al conectarse.
 - Cada mensaje recibido se marca con la hora actual y se reenvía a todos los clientes.
 - El cliente muestra los mensajes en formato: `[hora] usuario: mensaje`.
@@ -155,7 +155,7 @@ Los mensajes entre cliente y servidor usan JSON:
 
 ---
 
-## 🧠 Key Takeaways
+## Key Takeaways
 - Chat apps are a classic real-time networking challenge—perfect for learning concurrency, broadcasting, and protocol design.
 - Use WebSockets for low-latency, bidirectional messaging.
 - Manage clients and broadcasts with goroutines and channels in Go.

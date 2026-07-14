@@ -1,10 +1,134 @@
 ---
 id: "[4.5.0]"
-title: "Packet Sniffing and Analysis with Go 🕵️‍♀️"
+title: "Packet Sniffing and Analysis with Go"
 ---
 
-# Packet Sniffing and Analysis with Go 🕵️‍♀️
+# Packet Sniffing and Analysis with Go
 
-Learn to capture and analyze network packets using Go.
+> "A phone tap doesn't change the call — it just listens to a copy of it. Packet sniffing is the network equivalent: a quiet copy of every frame that crosses an interface, for whoever is allowed to look."
+
+---
+
+## What Sniffing Actually Captures
+
+Every network interface sees far more traffic pass by than the frames addressed to it — normally the network card discards anything not meant for its own address. **Promiscuous mode** disables that filtering, handing every frame on the segment up to whatever software asked for it. A **packet sniffer** is that software: it captures raw frames off the wire and lets you inspect their headers and payloads, layer by layer.
+
+This is invaluable for legitimate work: debugging why a TCP handshake never completes, verifying that a service really is using TLS instead of falling back to plaintext, or investigating unusual traffic during incident response (Chapter 4.9). It's also, unsurprisingly, a tool an attacker uses to harvest credentials from unencrypted traffic — which is itself the strongest argument for encrypting everything (Chapter 4.12).
+
+<Warning title="Capture only what you're authorized to capture">
+Sniffing traffic on a network segment captures everyone's packets on that segment, not just your own — on shared media or a hub, that can include other people's data. Only run packet capture on networks and interfaces you own or are explicitly authorized to monitor, and be aware that in many places, intercepting communications you're not a party to is a separate offense from unauthorized access.
+</Warning>
+
+---
+
+## Why Go Needs Help From libpcap
+
+Go's standard library gives you sockets, not raw frame capture — reading link-layer frames and enabling promiscuous mode requires OS-level support that `net` doesn't expose. The standard tool for this is **`gopacket`** (`github.com/google/gopacket`), a widely used Go wrapper around `libpcap` (Linux/macOS) or `Npcap`/`WinPcap` (Windows). It needs that native library installed, and capturing on a real interface needs elevated privileges (root, or `CAP_NET_RAW`/`CAP_NET_ADMIN` on Linux) — capturing on a loopback interface for local testing usually needs less.
+
+---
+
+## Go Implementation: Capturing and Decoding Packets
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
+)
+
+func main() {
+	const (
+		device      = "lo0"              // change to your loopback/test interface
+		snapshotLen = 1600
+		promiscuous = false
+		timeout     = pcap.BlockForever
+	)
+
+	handle, err := pcap.OpenLive(device, snapshotLen, promiscuous, timeout)
+	if err != nil {
+		log.Fatalf("open capture: %v (try running with elevated privileges)", err)
+	}
+	defer handle.Close()
+
+	// Only look at TCP traffic to keep the example focused.
+	if err := handle.SetBPFFilter("tcp"); err != nil {
+		log.Fatalf("set filter: %v", err)
+	}
+
+	source := gopacket.NewPacketSource(handle, handle.LinkType())
+	for packet := range source.Packets() {
+		analyze(packet)
+	}
+}
+
+func analyze(packet gopacket.Packet) {
+	netLayer := packet.NetworkLayer()
+	tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	if netLayer == nil || tcpLayer == nil {
+		return
+	}
+	tcp, _ := tcpLayer.(*layers.TCP)
+
+	flags := ""
+	if tcp.SYN {
+		flags += "SYN "
+	}
+	if tcp.ACK {
+		flags += "ACK "
+	}
+	if tcp.FIN {
+		flags += "FIN "
+	}
+	if tcp.RST {
+		flags += "RST "
+	}
+
+	fmt.Printf("[%s] %s -> %s  srcPort=%d dstPort=%d flags=%s\n",
+		time.Now().Format(time.RFC3339),
+		netLayer.NetworkFlow().Src(), netLayer.NetworkFlow().Dst(),
+		tcp.SrcPort, tcp.DstPort, flags)
+}
+```
+
+A few things worth understanding in this code:
+
+- **`pcap.OpenLive`** opens the capture handle on a named interface, with a snapshot length (how many bytes of each packet to keep), a promiscuous-mode flag, and a read timeout.
+- **`SetBPFFilter`** applies a Berkeley Packet Filter expression — the same filter syntax `tcpdump` uses — so you only receive the traffic you care about instead of decoding everything.
+- **`gopacket.NewPacketSource`** turns the raw handle into a Go channel of decoded `Packet` values, using `handle.LinkType()` to know how to interpret the outermost layer (Ethernet, loopback, etc.).
+- **`packet.Layer(layers.LayerTypeTCP)`** pulls out a specific protocol layer by type; `gopacket` decodes each layer lazily as you ask for it, which keeps high-volume capture reasonably efficient.
+
+---
+
+## From Packets to Meaning
+
+A raw stream of packets is noisy. Turning it into analysis usually means asking a specific question and filtering toward it:
+
+- **Is a handshake completing?** Watch for SYN, SYN-ACK, ACK in sequence between two hosts; a SYN with no reply suggests a filtered port or a SYN-flood pattern (Chapter 4.3).
+- **Is traffic actually encrypted?** Inspect the payload of a supposedly-HTTPS connection; a plaintext HTTP request where TLS was expected is a serious finding.
+- **Is something talking that shouldn't be?** Unexpected destination IPs or ports on an internal segment are a classic indicator during incident response.
+
+BPF filters (`"tcp port 443"`, `"host 10.0.0.5"`, `"tcp[tcpflags] & tcp-syn != 0"`) let you narrow capture to exactly the conversation you're studying instead of drowning in unrelated traffic — essential once you're pointed at anything busier than a lab VM.
+
+---
+
+## Reading Instead of Capturing Live
+
+`gopacket` can also replay a previously saved capture file, which is often how sniffing is actually used in practice — capture once with appropriate authorization and tooling, then analyze offline, repeatedly, without needing to be on the wire again:
+
+```go
+handleFromFile, err := pcap.OpenOffline("capture.pcap")
+```
+
+Everything downstream — the `gopacket.NewPacketSource` loop, the layer inspection — works identically whether the handle came from a live interface or a saved file, which is one of `gopacket`'s more convenient design choices.
+
+<Axiom>The packet never lies about what crossed the wire — only about what the sender intended you to believe was inside it. Sniffing shows you the former; analysis is figuring out the latter.</Axiom>
+
+---
 
 [Previous: Network Scanning and Enumeration with Go](04-network-scanning-and-enumeration-with-go.md) | [Next: Vulnerability Assessment and Exploitation Basics](06-vulnerability-assessment-and-exploitation-basics.md)

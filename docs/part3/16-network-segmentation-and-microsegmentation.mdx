@@ -5,4 +5,101 @@ title: "Network Segmentation and Microsegmentation"
 
 # Network Segmentation and Microsegmentation
 
-// ...contenido y ejemplos de segmentación y microsegmentación de red...
+> "A ship isn't built as one open hull — it's divided into watertight compartments, so a single puncture floods one section instead of sinking the whole vessel. Network segmentation is the same idea, applied to compromise instead of seawater."
+
+---
+
+## Limiting the Blast Radius
+
+Chapter 4.15 introduced zero trust as a policy philosophy: never trust a connection just because of where it came from. **Segmentation** is the structural tool that makes enforcing that policy practical — dividing a network into smaller zones with controlled boundaries between them, so that a compromise in one zone doesn't automatically grant access to every other zone.
+
+The core benefit is containment. If an attacker compromises one host, the question that matters most afterward is: what else can they reach *from there*? A flat network answers "everything." A well-segmented network answers "almost nothing" — which directly limits the scope of the incident response described in Chapter 4.9.
+
+---
+
+## Traditional Segmentation
+
+Classic network segmentation works at the network layer, using tools that predate — and still coexist with — zero trust architecture:
+
+- **VLANs (Virtual LANs)** separate broadcast domains at the switch level, commonly used to isolate, say, guest Wi-Fi from internal corporate traffic even when they share physical switches.
+- **Subnetting** divides IP address space into smaller ranges, often aligned with VLANs, so routing and firewall rules can be applied per range.
+- **Firewalls between zones** enforce which protocols and ports may cross a segment boundary — a database subnet might only accept connections from an application subnet, on exactly the database's port, from nowhere else.
+- **DMZs (demilitarized zones)** place internet-facing services in their own segment, isolated from both the public internet and the fully internal network, so a compromised public-facing server doesn't have a direct path inward.
+
+This model groups whole classes of machines together — "the web tier," "the database tier" — and controls traffic between those groups.
+
+---
+
+## Microsegmentation: Down to the Workload
+
+**Microsegmentation** takes the same idea much further: instead of policies between broad zones, policies are defined per workload, or even per service-to-service connection, often independent of physical network topology. Two virtual machines on the exact same subnet can still be prevented from talking to each other at all, if there's no legitimate reason they should.
+
+This is usually implemented through:
+
+- **Host-based firewalls** enforcing rules per machine rather than relying solely on a network device upstream.
+- **Software-defined networking (SDN) policies** that travel with a workload regardless of which physical host or subnet it's scheduled onto — essential in dynamic, container-orchestrated environments where IP addresses are not stable identifiers.
+- **Service mesh sidecars**, common in Kubernetes environments, which enforce per-service authorization and encryption (often via mutual TLS, tying directly back to Chapter 4.12 and 4.15) at the level of individual service calls rather than network segments.
+
+The practical difference from traditional segmentation: a traditional firewall rule might say "the app tier can reach the database tier on port 5432." A microsegmentation policy says "*this specific service* can reach *this specific database service*, and nothing else in the database tier can be reached by it at all" — a much tighter, per-relationship model of trust.
+
+---
+
+## Modeling a Segmentation Policy in Go
+
+The underlying idea — an explicit allow-list of which service may talk to which — is simple enough to sketch directly, and mirrors what a real policy engine evaluates on every connection attempt:
+
+```go
+package main
+
+import "fmt"
+
+// policy maps a source service to the set of destination services
+// it is explicitly permitted to reach. Anything not listed is denied
+// by default — the "fail closed" habit from Chapter 4.1.
+var policy = map[string][]string{
+	"web-frontend":  {"auth-service", "api-gateway"},
+	"api-gateway":   {"orders-service", "inventory-service"},
+	"orders-service": {"orders-db"},
+}
+
+func allowed(source, destination string) bool {
+	for _, dest := range policy[source] {
+		if dest == destination {
+			return true
+		}
+	}
+	return false
+}
+
+func main() {
+	attempts := []struct{ Source, Destination string }{
+		{"web-frontend", "orders-db"},      // should be denied: no direct path
+		{"orders-service", "orders-db"},    // should be allowed
+		{"web-frontend", "auth-service"},   // should be allowed
+	}
+
+	for _, a := range attempts {
+		fmt.Printf("%s -> %s: allowed=%v\n", a.Source, a.Destination, allowed(a.Source, a.Destination))
+	}
+}
+```
+
+Notice that `web-frontend` cannot reach `orders-db` directly even though it can reach services that eventually do — exactly the kind of containment that limits how far a single compromised service can pivot, since a real policy enforcement point (Chapter 4.15) would block that connection attempt entirely rather than letting a compromised frontend probe the database tier directly.
+
+---
+
+## Segmentation and Performance
+
+Segmentation isn't free — every additional boundary is a place a legitimate connection can be misconfigured or accidentally blocked, and overly rigid segmentation can slow down legitimate architectural changes if policies aren't kept in sync with how services actually evolve. The practical answer most mature environments converge on is **policy as code**: segmentation rules defined declaratively, version-controlled, and deployed alongside the services they govern, rather than hand-maintained firewall rules that drift out of sync with reality.
+
+<Axiom>A flat network is one incident away from a total compromise. A well-segmented one turns that same incident into a contained, survivable event — the difference is entirely architectural, decided long before the incident happens.</Axiom>
+
+---
+
+## Closing Part 3's First Arc
+
+Chapters 4.1 through 4.16 have moved from fundamentals through hands-on Go tooling to the architectural principles — zero trust and segmentation — that shape how secure networks are actually built and operated. The chapters ahead go deeper into detection, response at scale, and the offensive and defensive disciplines that build on everything covered here.
+
+---
+
+[Previous: Zero Trust Networking Concepts](15-zero-trust-networking-concepts.md) | [Next: IDS/IPS: Concepts and Go Implementations](17-ids-ips-concepts-and-go-implementations.md)

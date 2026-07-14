@@ -5,4 +5,172 @@ title: "APIs for Graph Databases and NoSQL"
 
 # APIs for Graph Databases and NoSQL
 
-// Ejemplo: Neo4j, MongoDB, Redis, integración y patrones
+Not every API sits in front of a relational database. Once your data looks like a network of relationships (who follows whom, which products were bought together), or like loosely structured documents (user profiles with optional fields, event logs), forcing it into rows and joins costs you more than it gives back. This chapter looks at building Go APIs on top of two very different NoSQL shapes: a document store (MongoDB) and a graph database (Neo4j), plus the in-memory data structure store that shows up everywhere as a supporting player (Redis).
+
+## Document stores: MongoDB
+
+MongoDB stores JSON-like documents (BSON under the hood), which maps naturally onto Go structs — you rarely need an ORM-style translation layer. The official driver is `go.mongodb.org/mongo-driver/mongo`:
+
+```go
+package main
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+type Product struct {
+	ID    string  `bson:"_id"`
+	Name  string  `bson:"name"`
+	Price float64 `bson:"price"`
+	Tags  []string `bson:"tags,omitempty"`
+}
+
+var products *mongo.Collection
+
+func initMongo(ctx context.Context, uri string) error {
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		return err
+	}
+	products = client.Database("catalog").Collection("products")
+	return nil
+}
+
+func getProduct(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	id := r.PathValue("id")
+	var p Product
+	err := products.FindOne(ctx, bson.M{"_id": id}).Decode(&p)
+	if err == mongo.ErrNoDocuments {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+```
+
+Notice the `bson` struct tags mirroring `json` tags — MongoDB documents are optional-field friendly by design, which is exactly why the `Tags` field uses `omitempty`: a product with no tags simply omits the field rather than storing an empty array or a null placeholder. This flexibility is MongoDB's main appeal for APIs whose resource shape evolves over time (adding a new optional field doesn't require a migration).
+
+<Warning title="Flexible schema is not the same as no schema">
+Just because MongoDB doesn't enforce a schema at write time doesn't mean your API should skip validation. Decode into a typed struct, validate required fields explicitly, and consider MongoDB's own JSON Schema validation on the collection if multiple services write to it.
+</Warning>
+
+## Graph databases: Neo4j
+
+Graphs shine when the *relationships* are the interesting part of the query — "friends of friends who like the same three artists" is painful in SQL joins and natural in a graph traversal. Neo4j's query language, Cypher, expresses that directly, and the official Go driver (`github.com/neo4j/neo4j-go-driver/v5/neo4j`) wraps it in a session API:
+
+```go
+import "github.com/neo4j/neo4j-go-driver/v5/neo4j"
+
+func recommendFriends(ctx context.Context, driver neo4j.DriverWithContext, userID string) ([]string, error) {
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+	defer session.Close(ctx)
+
+	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+		res, err := tx.Run(ctx, `
+			MATCH (me:User {id: $id})-[:FOLLOWS]->(:User)-[:FOLLOWS]->(fof:User)
+			WHERE NOT (me)-[:FOLLOWS]->(fof) AND me <> fof
+			RETURN DISTINCT fof.id AS id LIMIT 10`,
+			map[string]any{"id": userID})
+		if err != nil {
+			return nil, err
+		}
+		var ids []string
+		for res.Next(ctx) {
+			id, _ := res.Record().Get("id")
+			ids = append(ids, id.(string))
+		}
+		return ids, res.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.([]string), nil
+}
+```
+
+The API layer around this is deliberately thin: your HTTP handler validates the incoming user ID, calls `recommendFriends`, and serializes the slice as JSON. The interesting logic — "friend of a friend, not already followed" — lives entirely in the Cypher query, not in Go loops. That's the general shape of graph-backed APIs: push relationship traversal down to the database, keep the Go layer focused on request handling and serialization.
+
+<DeepDive title="Sessions are not connections">
+`driver.NewSession` doesn't open a new TCP connection each time — the driver pools connections internally, and sessions are cheap, short-lived objects you create per unit of work and close promptly. Holding a session open across multiple unrelated requests defeats the pooling and can starve other goroutines of connections.
+</DeepDive>
+
+## Redis: the supporting cast
+
+Redis rarely serves as an API's system of record, but it shows up constantly as a cache, a session store, or a rate-limiting counter. The `github.com/redis/go-redis/v9` client is the de facto standard:
+
+```go
+import "github.com/redis/go-redis/v9"
+
+var rdb = redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+
+func getCachedProduct(ctx context.Context, id string) (string, error) {
+	val, err := rdb.Get(ctx, "product:"+id).Result()
+	if err == redis.Nil {
+		return "", nil // cache miss, caller should hit the database
+	}
+	return val, err
+}
+
+func cacheProduct(ctx context.Context, id, jsonPayload string) error {
+	return rdb.Set(ctx, "product:"+id, jsonPayload, 5*time.Minute).Err()
+}
+```
+
+The cache-aside pattern this implies — check Redis, fall back to the database on a miss, write the result back to Redis with a TTL — is the workhorse pattern behind most APIs that need low read latency without keeping every record in memory permanently.
+
+## Designing the API layer, not just the query
+
+Whichever backend you pick, the same discipline applies: your HTTP handlers should not leak database-specific error types or query syntax into the response. Translate `mongo.ErrNoDocuments` and a Cypher query returning zero rows into the same `404 Not Found`; translate connection failures and query timeouts into a `503 Service Unavailable` rather than a `500` with a stack trace. Clients of your API shouldn't need to know whether "not found" came from a missing document, a missing graph node, or a missing key — the REST contract should look identical regardless of what's underneath it.
+
+## Pagination without a monotonic row ID
+
+Relational APIs often paginate with `OFFSET`/`LIMIT` or a numeric ID cursor, but neither maps cleanly onto MongoDB's ObjectIDs or a graph's internal node identifiers, and `OFFSET` in particular degrades badly at scale because the database still has to walk past every skipped document. Cursor-based pagination using a field you already sort by avoids both problems:
+
+```go
+func listProducts(ctx context.Context, afterID string, limit int64) ([]Product, error) {
+	filter := bson.M{}
+	if afterID != "" {
+		filter["_id"] = bson.M{"$gt": afterID}
+	}
+	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}).SetLimit(limit)
+
+	cursor, err := products.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []Product
+	err = cursor.All(ctx, &results)
+	return results, err
+}
+```
+
+The client's next request simply passes the last `_id` it received as `afterID` — the query becomes "give me the next page after this specific document," which stays fast regardless of how deep into the collection the client has paged, unlike `OFFSET` which gets slower the further in you go.
+
+## Consistency models are part of the API contract
+
+Relational databases default to strong consistency inside a transaction; many NoSQL systems trade that away for availability and partition tolerance, and your API needs to be honest with clients about which guarantee actually applies. A MongoDB replica set read with the default read preference can return slightly stale data from a secondary; Neo4j causal clustering offers a "bookmark" mechanism specifically so a client can request "at least as recent as my last write" when it matters:
+
+```go
+session := driver.NewSession(ctx, neo4j.SessionConfig{
+	Bookmarks: neo4j.BookmarksFromRawValues(lastKnownBookmark),
+})
+```
+
+If your API lets a client immediately re-read data it just wrote (a common expectation after a `POST`), verify that the read path actually provides that guarantee rather than assuming it — this is precisely the kind of detail that works fine in local testing against a single node and fails intermittently in a production cluster.
+
+<Axiom>The database shape should change how you query, not how your API responds.</Axiom>

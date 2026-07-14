@@ -1,8 +1,134 @@
 ---
 id: "[3.40.0]"
-title: "WebRTC and P2P Communication in Go 📹"
+title: "WebRTC and P2P Communication in Go"
 ---
 
-# WebRTC and P2P Communication in Go 📹
+# WebRTC and P2P Communication in Go
 
-// ...content coming soon...
+> Two people want to talk directly, but neither knows the other's address. So they both call a mutual friend first, who introduces them and passes along contact details, then steps out of the conversation entirely. From that point on, the two talk directly, with no middleman relaying every word. That mutual friend is a signaling server. The direct conversation that follows is WebRTC.
+
+WebRTC (Web Real-Time Communication) is best known as "the thing that makes video calls work in a browser without a plugin," but at its core it is a general-purpose framework for establishing a direct, low-latency connection between two peers -- audio, video, or arbitrary data -- even when both peers are behind NAT and have no public IP address. You already met NAT traversal, STUN, and TURN in the P2P chapter earlier in this book; WebRTC is where that theory becomes a concrete, standardized protocol stack you can drive from Go.
+
+### The Pieces of a WebRTC Connection
+
+A `PeerConnection` is the central object on each side. Getting two of them talking involves a handshake that never touches the media path itself:
+
+- **Signaling**: the out-of-band exchange of connection metadata (offers, answers, and ICE candidates) between peers. WebRTC deliberately does not define this transport -- you can use WebSockets, HTTP polling, or anything else. It is the "mutual friend" in the analogy.
+- **SDP (Session Description Protocol)**: a text format describing what a peer wants to send and receive -- codecs, media types, network parameters. The initiating peer creates an **offer**, the other peer responds with an **answer**.
+- **ICE (Interactive Connectivity Establishment)**: the process of gathering candidate addresses (local interface, server-reflexive via STUN, relayed via TURN) and testing pairs of them until a working path is found.
+- **Data channels**: once connected, peers can open SCTP-backed data channels that behave like ordered or unordered, reliable or unreliable, message streams -- useful for anything that is not audio/video (game state, file chunks, chat).
+
+### Go Implementation
+
+Go does not ship a WebRTC implementation in the standard library -- this is squarely third-party territory, and the reference implementation in the Go ecosystem is [pion/webrtc](https://github.com/pion/webrtc), a pure-Go library used in production by projects that need WebRTC without a browser or a C++ dependency.
+
+Creating a peer connection with a STUN server configured for NAT traversal:
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/pion/webrtc/v4"
+)
+
+func main() {
+	config := webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{URLs: []string{"stun:stun.l.google.com:19302"}},
+		},
+	}
+
+	peerConnection, err := webrtc.NewPeerConnection(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer peerConnection.Close()
+
+	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		fmt.Println("ICE connection state changed:", state.String())
+	})
+}
+```
+
+To exchange data instead of media, open a data channel before creating the offer:
+
+```go
+dataChannel, err := peerConnection.CreateDataChannel("chat", nil)
+if err != nil {
+	log.Fatal(err)
+}
+
+dataChannel.OnOpen(func() {
+	fmt.Println("data channel open, sending message")
+	dataChannel.SendText("hello from Go")
+})
+
+dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+	fmt.Printf("received: %s\n", string(msg.Data))
+})
+```
+
+The offer/answer exchange itself needs a signaling channel. In a real application this is usually a small WebSocket server -- the kind you built in the WebSockets chapter -- relaying JSON blobs between two clients:
+
+```go
+offer, err := peerConnection.CreateOffer(nil)
+if err != nil {
+	log.Fatal(err)
+}
+if err := peerConnection.SetLocalDescription(offer); err != nil {
+	log.Fatal(err)
+}
+
+// Wait for ICE gathering to complete, then send peerConnection.LocalDescription()
+// to the remote peer over your signaling channel (WebSocket, HTTP, anything).
+<-webrtc.GatheringCompletePromise(peerConnection)
+sendOverSignalingChannel(*peerConnection.LocalDescription())
+```
+
+On the receiving side, the remote peer calls `SetRemoteDescription` with the offer it received, generates an answer with `CreateAnswer`, and sends that answer back the same way. Once both sides have set each other's descriptions and ICE has found a working candidate pair, `OnICEConnectionStateChange` reports `connected` and the data channel (or media track) starts flowing directly between the two machines.
+
+<DeepDive title="Why signaling is not part of WebRTC">
+The standard deliberately leaves signaling transport undefined because every application's needs differ: a video-calling app might reuse its existing chat server's WebSocket connection, while a game might use its matchmaking service. WebRTC only standardizes what happens *after* both sides know how to reach each other.
+</DeepDive>
+
+### When Direct Connection Is Not Possible
+
+ICE tries host candidates first (direct LAN or public IP), then server-reflexive candidates discovered via STUN (your public IP:port as seen from outside your NAT), and finally falls back to a TURN relay if no direct path works -- typically because both peers sit behind symmetric NATs that STUN cannot punch through. A TURN server is not optional infrastructure for a serious deployment; without one, a meaningful percentage of real-world connections (mobile networks, corporate NATs) will simply fail to connect.
+
+<Warning title="STUN alone is not enough for production">
+The public Google STUN server used above is fine for local testing, but production WebRTC deployments need their own STUN/TURN infrastructure (for example, `coturn`) with authentication, since an open relay is both a cost and an abuse vector.
+</Warning>
+
+### Where This Fits Outside the Browser
+
+You do not need a browser on either end. Two Go processes can use pion/webrtc to establish a direct, NAT-traversing data channel between them -- useful for peer-to-peer file transfer tools, decentralized applications, or any system where you want to avoid routing bulk traffic through a central server once the two ends have found each other. The signaling server stays lightweight (it only ever sees small SDP/ICE messages), while the actual payload travels the shortest path the network allows.
+
+### A Minimal Signaling Server
+
+Since WebRTC leaves signaling entirely up to you, a small `net/http` server exchanging SDP blobs by ID is often all a demo needs -- no dedicated WebSocket infrastructure required for a simple two-party handshake:
+
+```go
+type sessionStore struct {
+	mu       sync.Mutex
+	offers   map[string]webrtc.SessionDescription
+	answers  map[string]webrtc.SessionDescription
+}
+
+func (s *sessionStore) postOffer(w http.ResponseWriter, r *http.Request) {
+	var offer webrtc.SessionDescription
+	json.NewDecoder(r.Body).Decode(&offer)
+
+	s.mu.Lock()
+	s.offers[r.URL.Query().Get("session")] = offer
+	s.mu.Unlock()
+}
+```
+
+The other peer polls (or is notified over its own channel) for that offer, generates an answer locally, and posts it back to a matching `/answer` endpoint. Once both descriptions are exchanged this way, the signaling server has done its entire job -- everything from that point on is ICE negotiation and then a direct peer-to-peer path.
+
+### Comparing This to What You Already Know
+
+If the NAT traversal chapter's STUN/TURN discussion felt abstract, WebRTC is where that theory becomes something you can watch happen: `OnICECandidate` fires once for every candidate address ICE discovers, and `OnICEConnectionStateChange` reports the moment a usable pair is confirmed. Unlike the manual UDP hole-punching techniques covered earlier, you are not implementing the NAT traversal algorithm yourself -- pion/webrtc implements the full ICE state machine, and your job is limited to relaying the handshake messages it produces.

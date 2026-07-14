@@ -1,8 +1,148 @@
 ---
 id: "[3.51.0]"
-title: "Wireless Networking and Go 📶"
+title: "Wireless Networking and Go"
 ---
 
-# Wireless Networking and Go 📶
+# Wireless Networking and Go
 
-// ...content coming soon...
+> "A wired connection is a conversation through a pipe—say something at one end, it arrives at the other. Wireless is shouting across a crowded room and hoping the right person hears you over everyone else shouting too. The physics are messier, and so is everything built on top of them."
+
+## What's Actually Different About Wireless
+
+Everything you've learned about TCP, UDP, and sockets still applies once a wireless link is up—Go's `net` package doesn't know or care whether the bytes travelled over copper or radio. What's different is everything *below* that: a Wi-Fi (802.11) radio has to negotiate a shared, noisy medium, handle collisions, manage signal strength and roaming between access points, and re-transmit far more aggressively than Ethernet ever needs to.
+
+That layer—802.11 frame construction, channel access, retransmission—lives in firmware and the OS's wireless driver stack. It is not something a portable, cross-platform Go program can reach into directly. There is no standard library package for raw 802.11 framing, and there shouldn't be one: the details are wildly different between Linux's `nl80211`/`mac80211`, Windows's Native Wifi API, and macOS's CoreWLAN, and getting it wrong risks destabilizing the OS's own network stack.
+
+<Warning title="Raw 802.11 injection is not portable">
+Frame injection and monitor-mode capture are possible on Linux with driver support, root privileges, and either cgo bindings to `libnl`/`libpcap` or shelling out to tools like `iw`. There is no cross-platform Go API for this, and production code should not depend on it.
+</Warning>
+
+## What Go Can Actually Do with Wireless
+
+The honest, practical answer is: Go automates and monitors wireless networking the same way it automates anything else on the OS—by calling standard networking APIs once a link exists, and by shelling out to platform tools or reading kernel-exposed statistics for anything that needs radio-level visibility. Three approaches cover almost every real use case:
+
+- **Treat the wireless interface like any other network interface.** Once associated, a Wi-Fi adapter is just another interface with an IP address; `net.Interfaces()` and `net.Dial` work identically.
+- **Shell out to OS tools for radio-level information.** SSID, signal strength (RSSI), and channel aren't exposed through `net`, but `nmcli`/`iw` (Linux), `netsh wlan` (Windows), and `airport`/`wdutil` (macOS) expose them as text you can parse with `os/exec`.
+- **Manage wireless infrastructure over SNMP.** Enterprise access points and controllers expose their state over SNMP, which is a wire protocol Go can speak directly—no OS tool needed.
+
+### Enumerating and Inspecting Interfaces
+
+`net.Interfaces()` (standard library) works identically for wired and wireless adapters, and it's the right first step for any tool that needs to know what's available before deciding how to reach the radio-specific details:
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+	"strings"
+)
+
+func listWirelessCandidates() ([]net.Interface, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, fmt.Errorf("listing interfaces: %w", err)
+	}
+
+	var wireless []net.Interface
+	for _, iface := range ifaces {
+		// A naming convention heuristic (wlan0, wlp2s0, en0 on macOS Wi-Fi, etc.).
+		// It's not authoritative—use OS tools below for a definitive answer.
+		name := strings.ToLower(iface.Name)
+		if strings.HasPrefix(name, "wl") || strings.HasPrefix(name, "wi") {
+			wireless = append(wireless, iface)
+		}
+	}
+	return wireless, nil
+}
+```
+
+### Reading Radio State via OS Tools
+
+For actual signal strength, SSID, and channel, the honest path is `os/exec` against the platform's own tool, parsing whatever structured output it offers. Linux's NetworkManager CLI (`nmcli`) can emit terse, script-friendly output, which makes it a good target:
+
+```go
+package main
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+type WifiNetwork struct {
+	SSID    string
+	Signal  int // percentage, per nmcli
+	Channel string
+}
+
+// scanWifi shells out to `nmcli` (Linux) to list nearby networks.
+// This is inherently platform-specific; a real tool would branch on runtime.GOOS.
+func scanWifi() ([]WifiNetwork, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "nmcli", "-t", "-f", "SSID,SIGNAL,CHAN", "dev", "wifi", "list")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("nmcli: %w", err)
+	}
+
+	var networks []WifiNetwork
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), ":")
+		if len(fields) < 3 {
+			continue
+		}
+		var signal int
+		fmt.Sscanf(fields[1], "%d", &signal)
+		networks = append(networks, WifiNetwork{SSID: fields[0], Signal: signal, Channel: fields[2]})
+	}
+	return networks, scanner.Err()
+}
+```
+
+The `-t` flag asks `nmcli` for machine-parseable, colon-separated output specifically so scripts don't have to fight column alignment—always prefer a tool's scripting-oriented output mode over its human-facing one when one exists.
+
+### Managing Access Points over SNMP
+
+Enterprise wireless controllers and access points typically expose their operational state—client counts, channel utilization, radio power—over SNMP, which unlike 802.11 framing *is* a normal network protocol Go can speak natively over UDP. A real, widely used pure-Go SNMP client is `github.com/gosnmp/gosnmp`; the shape of a query looks like this:
+
+```go
+// Illustrative: querying an AP's client count via SNMP GET.
+// Requires the gosnmp module and the vendor's actual OID for the counter.
+params := &gosnmp.GoSNMP{
+	Target:    "10.0.0.5",
+	Port:      161,
+	Community: "public",
+	Version:   gosnmp.Version2c,
+	Timeout:   time.Duration(2) * time.Second,
+}
+if err := params.Connect(); err != nil {
+	log.Fatal(err)
+}
+defer params.Conn.Close()
+
+result, err := params.Get([]string{".1.3.6.1.4.1.9.9.618.1.8.1.0"}) // vendor-specific OID
+```
+
+This is a real, correct shape for an SNMP query—the specific OID always comes from the access point vendor's MIB, which is why production tools ship an OID table rather than hardcoding one.
+
+## Practical Wireless Concerns Worth Modeling
+
+Even without touching 802.11 frames, a Go program managing wireless clients should account for behavior that wired code doesn't usually worry about:
+
+- **Roaming.** A client's IP-level connection can survive moving between access points, but there's often a brief blackout during the handoff—design retries and timeouts accordingly.
+- **Variable latency and loss.** Radio interference means retry logic that works fine on Ethernet may be too aggressive or too lenient over Wi-Fi; test under realistic conditions.
+- **Captive portals.** Public Wi-Fi often intercepts the first HTTP request to show a login page. A robust client should detect a captive portal (typically an unexpected redirect or TLS certificate mismatch) rather than treating it as a network failure.
+
+## Key Takeaways
+
+- Go's `net` package works identically over wired and wireless links once a connection is established; the difference lives entirely below that layer.
+- There is no portable Go API for raw 802.11 framing—automation and monitoring instead shell out to OS tools (`nmcli`, `netsh wlan`, `airport`) via `os/exec`.
+- SNMP is a real network protocol Go can speak natively, and it's the standard way to manage enterprise access points and controllers.
+- Design for wireless-specific realities—roaming blackouts, variable latency, captive portals—that wired networking code rarely has to consider.

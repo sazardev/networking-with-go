@@ -1,15 +1,15 @@
 ---
 id: "[2.9.0]"
-title: "Context and Cancellation: Concepts and Go Implementation ⏹️"
+title: "Context and Cancellation: Concepts and Go Implementation"
 ---
 
-# Context and Cancellation: Concepts and Go Implementation ⏹️
+# Context and Cancellation: Concepts and Go Implementation
 
 > "Imagine you’re in a busy airport. You’re waiting for your flight, but you need to be ready to leave at a moment’s notice if your gate changes, your flight is canceled, or you get a call from home. In Go, `context.Context` is your boarding pass: it carries deadlines, cancellation signals, and extra info everywhere you go!"
 
 ---
 
-## 🚦 Why Context Matters in Networking
+## Why Context Matters in Networking
 
 - **Networking is unpredictable:** Clients disconnect, timeouts happen, and requests may need to be canceled.
 - **Go’s solution:** The `context` package lets you control cancellation, timeouts, and pass request-scoped data across API boundaries and goroutines.
@@ -17,7 +17,7 @@ title: "Context and Cancellation: Concepts and Go Implementation ⏹️"
 
 ---
 
-## 🧠 What is `context.Context`?
+## What is `context.Context`?
 
 - **A signal carrier:** It lets you signal cancellation, set deadlines, and pass values down a call chain.
 - **Propagation:** Contexts are passed explicitly as the first argument to functions that do work on behalf of a request.
@@ -27,7 +27,7 @@ title: "Context and Cancellation: Concepts and Go Implementation ⏹️"
 
 ---
 
-## 🏗️ Context in Action: Basic Cancellation
+## Context in Action: Basic Cancellation
 
 Let’s see how to cancel a goroutine using context.
 
@@ -63,7 +63,7 @@ func main() {
 
 ---
 
-## ⏰ Context with Deadlines and Timeouts
+## Context with Deadlines and Timeouts
 
 - **Deadlines:** Stop work after a specific time.
 - **Timeouts:** Like deadlines, but relative to now.
@@ -82,7 +82,7 @@ case <-ctx.Done():
 
 ---
 
-## 🧳 Passing Values with Context
+## Passing Values with Context
 
 - **Use sparingly:** Only for request-scoped data (e.g., auth tokens, trace IDs).
 - **Not for everything:** Don’t use context for passing optional parameters or configs.
@@ -97,7 +97,7 @@ fmt.Println("UserID:", userID)
 
 ---
 
-## 🛠️ Go in Action: Context in a TCP Server
+## Go in Action: Context in a TCP Server
 
 Let’s build a TCP server that can cancel client handlers using context.
 
@@ -147,7 +147,7 @@ func main() {
 
 ---
 
-## 🧩 How Context Propagates: Visual Flow
+## How Context Propagates: Visual Flow
 
 ```mermaid
 flowchart TD
@@ -164,7 +164,7 @@ flowchart TD
 
 ---
 
-## 🖥️ Sequence: Context Cancellation in Practice
+## Sequence: Context Cancellation in Practice
 
 ```mermaid
 sequenceDiagram
@@ -182,7 +182,7 @@ sequenceDiagram
 
 ---
 
-## 🧬 Deep Dive: How Go’s Context Works Internally
+## Deep Dive: How Go’s Context Works Internally
 
 - **Context is an interface:**
   - `Deadline()`, `Done()`, `Err()`, `Value(key)`
@@ -197,7 +197,7 @@ sequenceDiagram
 
 ---
 
-## 📝 Example: Context Tree in a Web Server
+## Example: Context Tree in a Web Server
 
 ```mermaid
 flowchart TD
@@ -215,7 +215,7 @@ flowchart TD
 
 ---
 
-## 🧠 Key Takeaways
+## Key Takeaways
 - Use context to control cancellation, timeouts, and pass request-scoped data.
 - Always pass context as the first argument (`ctx context.Context`).
 - Cancel contexts to clean up goroutines and resources.
@@ -224,7 +224,7 @@ flowchart TD
 
 ---
 
-## 🧪 Exercises
+## Exercises
 - [Context Cancel Basic](../../exercises/part2/09-context-cancel-basic/main.go)
 - [Context Deadline](../../exercises/part2/09-context-deadline/main.go)
 - [Context TCP Server](../../exercises/part2/09-context-tcp-server/main.go)

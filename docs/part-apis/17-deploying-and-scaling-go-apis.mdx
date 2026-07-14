@@ -5,4 +5,168 @@ title: "Deploying and Scaling Go APIs"
 
 # Deploying and Scaling Go APIs
 
-// ...contenido y ejemplos...
+Everything up to this point has run on a developer's laptop. This chapter covers what changes when a Go API needs to run reliably, at scale, in production: building deployable artifacts, containerizing them, running multiple instances safely, and shutting down without dropping in-flight requests.
+
+---
+
+## Why Go Deploys Well
+
+Go compiles to a single, statically linked binary with no runtime, no interpreter, and (with `CGO_ENABLED=0`) no dynamic library dependencies at all:
+
+```sh
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o myapi ./cmd/myapi
+```
+
+That binary can run on a bare Linux server, inside a minimal container, or on most cloud compute products without installing a language runtime first — a meaningful operational simplification compared to ecosystems that need a matching interpreter version present on every host.
+
+---
+
+## A Multi-Stage Docker Build
+
+Building inside Docker keeps the final image small by discarding the Go toolchain after compilation:
+
+```dockerfile
+# ---- build stage ----
+FROM golang:1.23 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/myapi ./cmd/myapi
+
+# ---- final stage ----
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /out/myapi /myapi
+EXPOSE 8080
+ENTRYPOINT ["/myapi"]
+```
+
+The `build` stage has the full Go toolchain and module cache; the final stage starts from `distroless/static`, an image with no shell, no package manager, and no OS utilities — just enough to run a single static binary. The result is typically a final image in the tens of megabytes, with a drastically smaller attack surface than a full Linux base image, since there's no shell for an attacker to get into even if they compromise the process.
+
+Copying `go.mod`/`go.sum` before the rest of the source, and running `go mod download` before `COPY . .`, means Docker's layer cache reuses the downloaded modules on rebuilds unless dependencies actually changed — only source code changes trigger a recompile, not a redownload.
+
+---
+
+## Configuration via Environment Variables
+
+Twelve-factor apps configure themselves from the environment, not from checked-in config files, so the same image runs unmodified in every environment:
+
+```go
+type Config struct {
+	Port        string
+	DatabaseURL string
+	LogLevel    string
+}
+
+func LoadConfig() Config {
+	return Config{
+		Port:        getEnv("PORT", "8080"),
+		DatabaseURL: getEnv("DATABASE_URL", ""),
+		LogLevel:    getEnv("LOG_LEVEL", "info"),
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+```
+
+This keeps secrets (database credentials, API keys) out of the image and out of source control — they're injected at deploy time by whatever's running the container (a Kubernetes `Secret`, a cloud provider's parameter store, or a plain `.env` file loaded outside of version control in development).
+
+---
+
+## Graceful Shutdown, Revisited
+
+Chapter 4 introduced graceful shutdown for a single process; it matters even more once a deployment routinely replaces running instances (a rolling deploy, an autoscaler scaling down, a node being drained):
+
+```go
+srv := &http.Server{Addr: ":" + cfg.Port, Handler: handler}
+
+go func() {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Error("server error", "err", err)
+	}
+}()
+
+ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer stop()
+<-ctx.Done()
+
+shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+defer cancel()
+srv.Shutdown(shutdownCtx)
+```
+
+Kubernetes sends `SIGTERM` and waits a grace period (30 seconds by default) before forcibly killing the container with `SIGKILL`. `srv.Shutdown` stops accepting new connections immediately and waits for in-flight requests to finish, up to the deadline passed on `shutdownCtx` — tune that deadline to comfortably fit inside whatever grace period your orchestrator gives you.
+
+---
+
+## Running Multiple Instances
+
+A single Go process can handle a large volume of concurrent requests thanks to goroutines, but real resilience comes from running multiple instances behind a load balancer — so one instance crashing, or one node failing, doesn't take the whole API down.
+
+A minimal Kubernetes `Deployment` and `Service` pair:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapi
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: myapi}
+  template:
+    metadata:
+      labels: {app: myapi}
+    spec:
+      containers:
+        - name: myapi
+          image: registry.example.com/myapi:1.4.0
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8080}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapi
+spec:
+  selector: {app: myapi}
+  ports: [{port: 80, targetPort: 8080}]
+```
+
+The `Service` load-balances across all `Pods` matching the `app: myapi` label, and the two probes wired to `/readyz` and `/healthz` from the previous chapter control, respectively, whether traffic reaches an instance and whether Kubernetes considers it alive at all.
+
+<DeepDive title="Horizontal Pod Autoscaling">
+A `HorizontalPodAutoscaler` can adjust `replicas` automatically based on CPU usage, memory, or a custom metric (like requests-per-second from the Prometheus metrics set up in the previous chapter). Because Go services are stateless by design in this architecture — no in-memory session state tied to a specific instance — scaling out is just a matter of adding more identical replicas behind the same `Service`, with no special coordination required between them.
+</DeepDive>
+
+---
+
+## Designing for Statelessness
+
+Horizontal scaling only works cleanly if any instance can handle any request. That means:
+
+- **No in-memory session state** tied to a specific process — store sessions in a shared store (Redis, a database) instead of a local map, or rely on stateless tokens (the JWTs from chapter 10) that any instance can verify independently.
+- **No local file storage for user data** — uploaded files belong in object storage (S3-compatible or similar), not on the container's local disk, which is ephemeral and instance-specific.
+- **Idempotent retries** — a client retrying a timed-out request should be safe even if the first attempt actually succeeded server-side; this usually means supporting an idempotency key on write operations.
+
+---
+
+## Real-World Example: A Rolling Deploy
+
+**Before**: 3 replicas running `myapi:1.4.0`.
+
+**During deploy**: Kubernetes starts a new `Pod` running `myapi:1.5.0`, waits for its `readinessProbe` to pass before routing any traffic to it, then terminates one old `Pod` — sending `SIGTERM`, giving it up to the grace period to finish in-flight requests via the graceful shutdown logic above — and repeats until all three replicas are on the new version.
+
+**After**: 3 replicas running `myapi:1.5.0`, with zero dropped requests throughout, assuming the readiness probe and graceful shutdown timeout were both configured correctly.
+
+That last assumption is the one worth testing deliberately — a readiness probe that returns healthy before the server is actually ready to serve traffic, or a shutdown timeout shorter than your slowest real request, are the two most common causes of dropped requests during an otherwise routine deploy.
+
+Next, we'll go beyond the basic rate limiting from earlier in this part and look at defending an API against more sophisticated abuse at scale.

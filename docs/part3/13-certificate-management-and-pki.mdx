@@ -5,4 +5,151 @@ title: "Certificate Management and PKI"
 
 # Certificate Management and PKI
 
-// ...contenido y ejemplos de gestión de certificados y PKI...
+> "TLS promises the lock on the door is real. A certificate is the notarized paperwork proving the locksmith who installed it is who they claim to be. PKI is the whole system of notaries that makes that paperwork worth trusting."
+
+---
+
+## Why TLS Needs Certificates at All
+
+Chapter 4.12 showed that TLS encrypts and authenticates a connection — but authenticates it *to whom*? Encryption alone doesn't prove you're talking to the right server; an attacker performing a man-in-the-middle attack (Chapter 4.3) can happily encrypt traffic too, just with themselves in the middle. A **certificate** is what closes that gap: a signed statement binding a public key to an identity (typically a domain name), issued by a party the client already trusts.
+
+**PKI (Public Key Infrastructure)** is the whole surrounding system that makes certificates meaningful: certificate authorities (CAs) that issue and sign them, the chain-of-trust model that lets a client verify a certificate it's never seen before, and the mechanisms (expiry, revocation) that limit how long a compromised or mis-issued certificate stays dangerous.
+
+---
+
+## The Chain of Trust
+
+A certificate rarely stands alone — it's part of a **chain**:
+
+- **Root CA certificate** — self-signed, and pre-installed in operating systems' and browsers' trust stores. Root CAs are guarded extremely carefully precisely because compromising one undermines trust in every certificate it ever issued.
+- **Intermediate CA certificate(s)** — signed by the root (or another intermediate), used to actually issue end-entity certificates day to day, so the root key itself rarely has to be used directly.
+- **Leaf (end-entity) certificate** — the certificate for the actual server, signed by an intermediate, presented during the TLS handshake.
+
+Verifying a certificate means walking this chain upward: is the leaf signed by an intermediate the client recognizes, and is that intermediate signed by a root already in the trust store? If every link holds and none of the certificates have expired or been revoked, the chain is trusted.
+
+<DeepDive title="Why intermediates exist at all">
+If every server certificate were signed directly by a root, the root's private key would need to be online and used constantly — a huge attack surface for the single most sensitive key in the whole system. Intermediates let the root stay offline almost all the time, only used rarely to sign new intermediates, while day-to-day issuance happens through keys that are easier to rotate or revoke if something goes wrong.
+</DeepDive>
+
+---
+
+## Working With Certificates in Go: `crypto/x509`
+
+The standard library's `crypto/x509` package parses, verifies, and builds certificates. A common task is inspecting a certificate's key fields — issuer, expiry, and the hostnames it's valid for:
+
+```go
+package main
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"log"
+)
+
+func inspect(host string) error {
+	conn, err := tls.Dial("tcp", host+":443", &tls.Config{ServerName: host})
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer conn.Close()
+
+	certs := conn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return fmt.Errorf("no certificate presented")
+	}
+	leaf := certs[0]
+
+	fmt.Printf("Subject:     %s\n", leaf.Subject)
+	fmt.Printf("Issuer:      %s\n", leaf.Issuer)
+	fmt.Printf("Valid from:  %s\n", leaf.NotBefore)
+	fmt.Printf("Valid until: %s\n", leaf.NotAfter)
+	fmt.Printf("DNS names:   %v\n", leaf.DNSNames)
+
+	// Verify explicitly against the system trust store, independent of
+	// whatever tls.Dial already did during the handshake itself.
+	opts := x509.VerifyOptions{DNSName: host}
+	if _, err := leaf.Verify(opts); err != nil {
+		return fmt.Errorf("verification failed: %w", err)
+	}
+	return nil
+}
+
+func main() {
+	if err := inspect("example.com"); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("certificate verified successfully")
+}
+```
+
+`leaf.Verify` rebuilds and checks the chain independently, which is useful whenever you need to validate a certificate outside the normal TLS handshake path — for instance, auditing a certificate pulled from storage before deploying it.
+
+---
+
+## Generating a Self-Signed Certificate for Local Testing
+
+Local development and lab work often need a certificate without involving a real CA at all:
+
+```go
+package main
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"os"
+	"time"
+)
+
+func main() {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		DNSNames:     []string{"localhost"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+
+	// Self-signed: the certificate is signed with its own key, so template
+	// is passed as both the certificate to create and the "parent" signer.
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		panic(err)
+	}
+
+	certOut, _ := os.Create("cert.pem")
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: der})
+	certOut.Close()
+
+	keyOut, _ := os.Create("key.pem")
+	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	keyOut.Close()
+}
+```
+
+This produces exactly the `cert.pem`/`key.pem` pair the TLS server in Chapter 4.12 expects. A self-signed certificate like this will fail normal chain verification for anyone but you — which is correct and expected. It's meant for local testing, not for anything a real client should trust without deliberately adding it to a custom root pool.
+
+---
+
+## Revocation and Rotation
+
+Certificates expire on purpose — `NotAfter` bounds how long a mis-issued or compromised certificate can cause damage, which is why automated renewal (widely available via the ACME protocol used by many CAs) has become the norm rather than manual, easily-forgotten yearly renewal. For certificates that need to be invalidated *before* their expiry — a compromised private key, for example — CAs publish **CRLs (Certificate Revocation Lists)** or support **OCSP (Online Certificate Status Protocol)** queries so clients can check current validity beyond just the expiry date.
+
+<Warning title="An expired certificate is a self-inflicted outage">
+Unlike most security failures, a certificate silently expiring is entirely predictable and entirely preventable — track expiry dates for every certificate you operate, alert well before expiry, and prefer automated renewal over a calendar reminder.
+</Warning>
+
+---
+
+[Previous: Implementing TLS/SSL in Go](12-implementing-tls-ssl-in-go.md) | [Next: Secure Coding Practices in Go](14-secure-coding-practices-in-go.md)

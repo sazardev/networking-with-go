@@ -5,4 +5,143 @@ title: "APIs for CI/CD and DevOps"
 
 # APIs for CI/CD and DevOps
 
-// Pipelines, despliegue azul/verde, canary, rollback
+Continuous integration and deployment pipelines are themselves driven by APIs — GitHub Actions, GitLab CI, and every cloud provider's deployment service expose an HTTP API underneath their UI, and your Go services frequently need to talk to those APIs directly: triggering a deployment from your own internal tool, reacting to a build's completion, or building a custom dashboard that aggregates pipeline status across many repositories. This chapter covers both directions: calling CI/CD platform APIs from Go, and designing your own API endpoints to support deployment strategies like blue-green and canary releases.
+
+## Talking to GitHub's API from Go
+
+`github.com/google/go-github` is Google's actively maintained, comprehensive client for the GitHub REST API, and it's the standard choice when a Go service needs to interact with GitHub programmatically — triggering a workflow, reading check statuses, or reacting to repository events.
+
+```go
+package main
+
+import (
+	"context"
+
+	"github.com/google/go-github/v66/github"
+	"golang.org/x/oauth2"
+)
+
+func newGitHubClient(ctx context.Context, token string) *github.Client {
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+	return github.NewClient(oauth2.NewClient(ctx, ts))
+}
+
+func triggerDeployWorkflow(ctx context.Context, client *github.Client, owner, repo string) error {
+	_, err := client.Actions.CreateWorkflowDispatchEventByFileName(
+		ctx, owner, repo, "deploy.yml",
+		github.CreateWorkflowDispatchEventRequest{Ref: "main"},
+	)
+	return err
+}
+```
+
+This is the same mechanism behind a "Deploy" button in an internal admin tool: rather than reimplementing deployment logic in your Go service, you trigger the existing, tested GitHub Actions workflow and let it do the work, which keeps a single source of truth for how deployments actually happen.
+
+## Receiving CI/CD webhooks
+
+The other direction — reacting when a pipeline finishes — uses the same webhook-verification pattern from the earlier webhooks chapter, applied to GitHub's specific payload shape and signature header:
+
+```go
+func githubWebhookHandler(secret []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		payload, err := github.ValidatePayload(r, secret)
+		if err != nil {
+			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			return
+		}
+
+		event, err := github.ParseWebHook(github.WebHookType(r), payload)
+		if err != nil {
+			http.Error(w, "unparseable event", http.StatusBadRequest)
+			return
+		}
+
+		switch e := event.(type) {
+		case *github.WorkflowRunEvent:
+			if e.GetWorkflowRun().GetConclusion() == "success" {
+				handleDeploySucceeded(e.GetWorkflowRun())
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+```
+
+`github.ValidatePayload` does the HMAC verification for you against GitHub's `X-Hub-Signature-256` header — the same idea from the webhooks chapter, already implemented and tested for GitHub's specific conventions, so there's no reason to reimplement it by hand here.
+
+## Designing your API for progressive delivery
+
+Blue-green and canary deployments are as much an API design concern as an infrastructure one: your service needs to support running two versions simultaneously and routing traffic between them in a controlled way. A minimal canary router based on a weighted random choice, sitting in front of two backend versions:
+
+```go
+type CanaryRouter struct {
+	stableProxy *httputil.ReverseProxy
+	canaryProxy *httputil.ReverseProxy
+	canaryWeight int // percentage of traffic, 0-100
+}
+
+func (cr *CanaryRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if rand.Intn(100) < cr.canaryWeight {
+		cr.canaryProxy.ServeHTTP(w, r)
+		return
+	}
+	cr.stableProxy.ServeHTTP(w, r)
+}
+```
+
+In practice, most teams delegate this routing to their gateway or mesh (see the API gateway chapter) rather than reimplementing it in application code, but understanding the mechanism helps you reason about what's actually happening when a deployment tool reports "canary at 10%."
+
+<DeepDive title="Canary weight alone isn't a safe rollout — a health signal is">
+Shifting traffic percentage on a timer without checking error rates defeats the purpose of a canary. A safer version watches the canary's own error rate and latency (exposed via the observability instrumentation from later chapters) and automatically routes all traffic back to `stableProxy` if the canary's metrics degrade, rather than blindly following a pre-set schedule.
+</DeepDive>
+
+## Exposing deployment status through your own API
+
+Internal tools built around CI/CD usually need a unified view across many pipelines, which means your Go service becomes an aggregator: poll or receive webhooks from several sources, normalize their differing status vocabularies into one shape, and expose that as a clean API:
+
+```go
+type DeploymentStatus struct {
+	Service   string    `json:"service"`
+	Version   string    `json:"version"`
+	State     string    `json:"state"` // "pending", "running", "succeeded", "failed"
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func deploymentsHandler(w http.ResponseWriter, r *http.Request) {
+	statuses := aggregateFromAllSources(r.Context())
+	writeJSON(w, http.StatusOK, statuses)
+}
+```
+
+This normalization step matters because GitHub Actions, GitLab CI, and a cloud provider's own deployment service each use different words for the same concept (`"success"` versus `"succeeded"` versus a numeric exit code) — the value of your internal API is precisely that it hides those differences behind one consistent contract for every other tool in your organization to consume.
+
+<Axiom>CI/CD platforms are just APIs with a UI in front of them — treating them that way, and building thin, well-tested Go clients against them, beats clicking through a web console every time you need something the UI doesn't expose.</Axiom>
+
+## Rollbacks as a first-class API operation
+
+A deployment API that only supports moving forward is incomplete. When a canary or a full rollout starts failing, the fastest recovery path is usually re-pointing traffic at the previous known-good version rather than waiting for a fixed-forward deploy to build and ship. Model rollback as an explicit, auditable endpoint rather than something an operator does by hand against raw infrastructure:
+
+```go
+func rollbackHandler(w http.ResponseWriter, r *http.Request) {
+	service := r.PathValue("service")
+	previous, err := lastKnownGoodVersion(r.Context(), service)
+	if err != nil {
+		http.Error(w, "no known-good version recorded", http.StatusConflict)
+		return
+	}
+
+	if err := deployVersion(r.Context(), service, previous); err != nil {
+		http.Error(w, "rollback failed", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Warn("rolled back", "service", service, "version", previous, "actor", currentUser(r))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "rolled back", "version": previous})
+}
+```
+
+Recording every deploy's version alongside a health signal (did it pass its readiness checks, did error rates stay flat) is what makes `lastKnownGoodVersion` meaningful — a rollback endpoint that just replays "the previous version, whatever it was" can just as easily roll back into a version that was already broken.
+
+<Warning title="A rollback API needs the same auth and audit trail as a deploy API">
+It's tempting to leave rollback endpoints loosely protected because "it's just undoing something," but a rollback still changes what code is running in production. Require the same authentication, authorization, and audit logging (who triggered it, when, from what version to what version) that a forward deployment requires.
+</Warning>

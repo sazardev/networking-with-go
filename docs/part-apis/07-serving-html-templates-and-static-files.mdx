@@ -5,4 +5,232 @@ title: "Serving HTML, Templates, and Static Files"
 
 # Serving HTML, Templates, and Static Files
 
-// ...contenido y ejemplos...
+Not every Go server is a pure JSON API. Sometimes you need to render an actual web page — a dashboard, an admin panel, an email preview — and serve the CSS, images, and JavaScript that go with it. Go's standard library covers both jobs: `html/template` for safe HTML rendering, and `net/http`'s file-serving helpers for static assets.
+
+---
+
+## html/template vs text/template
+
+Go ships two template packages with an almost identical API: `text/template` and `html/template`. For anything that ends up in a browser, always use `html/template` — it understands HTML, CSS, and JavaScript contexts and automatically escapes untrusted data to prevent injection attacks. `text/template` does no such escaping and is meant for plain-text output (config files, emails in plain text, code generation).
+
+```go
+import "html/template"
+
+tmpl := template.Must(template.ParseFiles("templates/profile.html"))
+```
+
+`template.Must` panics on a parse error, which is the right behavior for templates parsed once at startup — a broken template file should fail loudly and immediately, not on the first request that happens to hit it.
+
+---
+
+## A Basic Template
+
+```html
+<!-- templates/profile.html -->
+<!doctype html>
+<html>
+<head><title>{{.Name}}'s Profile</title></head>
+<body>
+  <h1>{{.Name}}</h1>
+  <p>Joined: {{.JoinedAt.Format "January 2006"}}</p>
+  {{if .IsAdmin}}<p><strong>Administrator</strong></p>{{end}}
+  <ul>
+    {{range .Posts}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+</body>
+</html>
+```
+
+```go
+type ProfileData struct {
+	Name     string
+	JoinedAt time.Time
+	IsAdmin  bool
+	Posts    []string
+}
+
+func profileHandler(w http.ResponseWriter, r *http.Request) {
+	data := ProfileData{
+		Name:     "Ada Lovelace",
+		JoinedAt: time.Date(2024, time.March, 1, 0, 0, 0, 0, time.UTC),
+		IsAdmin:  true,
+		Posts:    []string{"Hello, world", "On analytical engines"},
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	tmpl.Execute(w, data)
+}
+```
+
+`{{.Name}}` accesses a field, `{{if}}`/`{{range}}` handle conditionals and loops, and every value is HTML-escaped automatically — if `Name` contained `<script>`, it would render as harmless escaped text, not executable markup.
+
+<Warning title="html/template escaping is context-aware, not a substitute for validation">
+Auto-escaping protects against injecting HTML/JS through template output, but it doesn't validate or sanitize the data itself. Never rely on template escaping alone to make untrusted input "safe" for storage, logging, or use outside the template — validate and sanitize at the point of input too.
+</Warning>
+
+---
+
+## Composing Templates with Layouts
+
+Real applications share a layout (header, nav, footer) across many pages. `html/template` supports this with named templates and `{{define}}` / `{{template}}`:
+
+```html
+<!-- templates/layout.html -->
+{{define "layout"}}
+<!doctype html>
+<html>
+<head><title>{{.Title}}</title></head>
+<body>
+  <nav>My Site</nav>
+  {{template "content" .}}
+</body>
+</html>
+{{end}}
+```
+
+```html
+<!-- templates/home.html -->
+{{define "content"}}
+<h1>Welcome, {{.Name}}</h1>
+{{end}}
+```
+
+```go
+tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/home.html"))
+tmpl.ExecuteTemplate(w, "layout", data)
+```
+
+`ParseGlob("templates/*.html")` is the usual shortcut when you have many pages instead of listing each file by name.
+
+---
+
+## Serving Static Files
+
+For CSS, JavaScript, and images, `http.FileServer` combined with `http.StripPrefix` maps a URL prefix onto a directory on disk:
+
+```go
+mux := http.NewServeMux()
+mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("public"))))
+```
+
+A request for `/static/app.css` is served from `public/app.css`. `StripPrefix` is essential here — without it, `http.FileServer` would look for a file literally named `static/app.css` inside `public/`.
+
+---
+
+## Embedding Assets with embed.FS
+
+Shipping templates and static files as loose files next to the binary is fragile — deployment tooling has to remember to copy them. Since Go 1.16, `embed.FS` bakes them straight into the compiled binary:
+
+```go
+import "embed"
+
+//go:embed templates/* public/*
+var assets embed.FS
+
+func main() {
+	tmpl := template.Must(template.ParseFS(assets, "templates/*.html"))
+
+	staticFS, _ := fs.Sub(assets, "public")
+	mux := http.NewServeMux()
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		tmpl.ExecuteTemplate(w, "layout", nil)
+	})
+	http.ListenAndServe(":8080", mux)
+}
+```
+
+Now `go build` produces a single self-contained binary — no separate `templates/` or `public/` directory needs to travel with it in production.
+
+---
+
+## Custom Template Functions
+
+Templates can call helper functions beyond the built-ins, registered with `Funcs` before parsing — useful for formatting that doesn't belong in the handler itself:
+
+```go
+funcMap := template.FuncMap{
+	"currency": func(cents int) string {
+		return fmt.Sprintf("$%.2f", float64(cents)/100)
+	},
+}
+
+tmpl := template.Must(
+	template.New("profile.html").Funcs(funcMap).ParseFiles("templates/profile.html"),
+)
+```
+
+```html
+<p>Total: {{currency .TotalCents}}</p>
+```
+
+`Funcs` must be called before `ParseFiles`/`ParseGlob`, since the parser needs to know which function names are valid while it parses the template's `{{...}}` actions.
+
+---
+
+## Real-World Example: Serving a Dashboard
+
+**Request:**
+
+```http
+GET /dashboard HTTP/1.1
+Host: admin.example.com
+```
+
+**Response:**
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+
+<!doctype html>
+<html>
+<head><title>Dashboard</title></head>
+<body><h1>12 active tasks</h1></body>
+</html>
+```
+
+The static CSS that page links to (`<link rel="stylesheet" href="/static/dashboard.css">`) is served by the same process via `http.FileServer`, with no separate web server required.
+
+---
+
+## Serving a Single-Page App
+
+If your front end is a JavaScript SPA (React, Vue, Svelte), the pattern flips slightly: serve the built static assets normally, but fall back to `index.html` for any path that isn't a known asset or API route, so client-side routing works on a hard refresh:
+
+```go
+mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	path := filepath.Join("dist", filepath.Clean(r.URL.Path))
+	if _, err := os.Stat(path); err == nil {
+		http.ServeFile(w, r, path)
+		return
+	}
+	http.ServeFile(w, r, "dist/index.html")
+})
+```
+
+`filepath.Clean` matters here — without it, a path like `/../../etc/passwd` could escape the intended directory; always clean and validate any user-supplied path before touching the filesystem.
+
+---
+
+## Caching Static Assets
+
+Browsers and CDNs cache aggressively based on response headers, and static assets — CSS, JavaScript, images — are exactly the kind of content worth caching hard, since they rarely change between deploys:
+
+```go
+func cachedStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		next.ServeHTTP(w, r)
+	})
+}
+
+mux.Handle("/static/", cachedStatic(
+	http.StripPrefix("/static/", http.FileServer(http.Dir("public"))),
+))
+```
+
+A year-long `max-age` only works safely if the filename changes whenever the content does — the common convention is to append a content hash to the filename at build time (`app.a3f9c1.css` instead of `app.css`), so a new deploy naturally produces a new URL instead of relying on clients to notice a changed file at the same old path.
+
+With HTML rendering and static assets covered, the next chapter adds a live channel back to the browser: WebSockets, for real-time, bidirectional communication.

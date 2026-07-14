@@ -5,4 +5,148 @@ title: "APIs for File Uploads, Media, and Streaming"
 
 # APIs for File Uploads, Media, and Streaming
 
-// Ejemplo: manejo de archivos grandes, multipart, S3, video/audio streaming
+JSON payloads are small and fit comfortably in memory. Files don't. A profile picture is a few hundred kilobytes; a video upload can be gigabytes. An API that treats every request body the same way — read it all into memory, then process it — will fall over the first time someone uploads something large enough. This chapter covers the two directions of that problem: accepting large uploads without exhausting memory, and serving media back out in a way that supports seeking, resuming, and partial downloads.
+
+## Accepting uploads without loading them into RAM
+
+Go's `net/http` gives you `r.ParseMultipartForm(maxMemory)`, which is fine for small files but dangerous if used carelessly: it buffers up to `maxMemory` bytes in RAM and spills the rest to temp files, but nothing stops a client from sending a request with no `Content-Length` limit at all unless you enforce one yourself.
+
+```go
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	const maxUploadSize = 50 << 20 // 50 MB hard cap
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "file too large or malformed", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "missing file field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	dst, err := os.Create(filepath.Join("/tmp/uploads", header.Filename))
+	if err != nil {
+		http.Error(w, "could not store file", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		http.Error(w, "write failed", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]string{"filename": header.Filename})
+}
+```
+
+`http.MaxBytesReader` is the key line here: it wraps the request body so that reading past the limit returns an error instead of silently consuming unbounded memory or disk. `io.Copy` streams from the multipart part directly to disk in fixed-size chunks — the whole file is never held in memory at once, regardless of whether it's ten kilobytes or ten gigabytes.
+
+<Warning title="Never trust the client-supplied filename">
+`header.Filename` comes straight from the request and can contain path traversal sequences like `../../etc/passwd`. Always sanitize with `filepath.Base` (or generate your own filename, such as a UUID, and store the original only as metadata) before using it to construct a filesystem path.
+</Warning>
+
+## Streaming directly to object storage
+
+For anything beyond small local disks, uploads typically go straight to object storage like S3 rather than the API server's own filesystem. The AWS SDK's `manager.Uploader` accepts an `io.Reader`, so you can pipe the multipart file part straight through without ever writing to local disk:
+
+```go
+import (
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+func uploadToS3(ctx context.Context, client *s3.Client, bucket, key string, body io.Reader) error {
+	uploader := manager.NewUploader(client)
+	_, err := uploader.Upload(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+		Body:   body,
+	})
+	return err
+}
+```
+
+`manager.Uploader` handles multipart upload internally for large objects (splitting them into parts and uploading concurrently), so your Go code doesn't need to reimplement S3's multipart protocol — you just hand it a reader and a destination key.
+
+## Serving media: Range requests matter
+
+Once a file is stored, serving it back for playback or resumable download needs to support HTTP `Range` requests — without them, seeking to the middle of a video means re-downloading everything before that point, and a browser's `<video>` tag simply won't work well. The standard library already does this correctly if you use `http.ServeContent` instead of writing the whole body yourself:
+
+```go
+func serveVideo(w http.ResponseWriter, r *http.Request) {
+	f, err := os.Open("/media/lecture-01.mp4")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	stat, _ := f.Stat()
+	http.ServeContent(w, r, "lecture-01.mp4", stat.ModTime(), f)
+}
+```
+
+`http.ServeContent` inspects the incoming `Range` header, responds with `206 Partial Content` and the correct `Content-Range` when a range is requested, and falls back to a full `200 OK` response otherwise — all without you writing a single line of range-parsing logic. This is the mechanism that lets a user drag a video's progress bar to the middle and start playback immediately, instead of waiting for the whole file to download.
+
+<DeepDive title="io.ReadSeeker is the contract that makes this work">
+`http.ServeContent` requires an `io.ReadSeeker`, not just an `io.Reader`, because serving a range means seeking to an offset before reading. An open `*os.File` satisfies this naturally. If your content lives in object storage instead of local disk, you'll typically proxy the `Range` header through to the storage backend's own ranged-GET support rather than trying to seek an HTTP response body, which generally isn't seekable.
+</DeepDive>
+
+## Streaming uploads the other way: chunked reads
+
+Sometimes you want to process an upload as it arrives rather than after it's fully stored — validating a CSV row by row, for example, or computing a checksum while writing. `r.MultipartReader()` gives you the parts one at a time as a stream, instead of `ParseMultipartForm` buffering the whole form first:
+
+```go
+func streamingUploadHandler(w http.ResponseWriter, r *http.Request) {
+	mr, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, "expected multipart body", http.StatusBadRequest)
+		return
+	}
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "malformed upload", http.StatusBadRequest)
+			return
+		}
+		if part.FormName() == "file" {
+			hash := sha256.New()
+			io.Copy(hash, part) // process as it streams, never fully buffered
+			log.Printf("uploaded %s: sha256=%x", part.FileName(), hash.Sum(nil))
+		}
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+```
+
+This pattern is what makes it practical to accept multi-gigabyte uploads on a server with a fraction of that in available memory: the data flows through, not into, your process.
+
+## Validating file type by content, not extension
+
+A client-supplied filename extension or `Content-Type` header is trivially spoofable — nothing stops someone from naming a script `photo.jpg` and setting the header to `image/jpeg`. If your API needs to enforce that an upload is actually an image, sniff the real content type from the first bytes of the file rather than trusting what the client claims:
+
+```go
+func detectContentType(r io.Reader) (string, io.Reader, error) {
+	buf := make([]byte, 512)
+	n, err := r.Read(buf)
+	if err != nil && err != io.EOF {
+		return "", nil, err
+	}
+	contentType := http.DetectContentType(buf[:n])
+	// Reconstruct a reader that includes the bytes already consumed for sniffing.
+	return contentType, io.MultiReader(bytes.NewReader(buf[:n]), r), nil
+}
+```
+
+`http.DetectContentType` implements the same content-sniffing algorithm browsers use, examining the magic bytes at the start of the file rather than any metadata the client sent. Combining this with an allowlist of acceptable types (rejecting anything outside `image/jpeg`, `image/png`, and similar) closes off a whole class of upload-based attacks where a malicious file is disguised with an innocent-looking extension.
+
+<Axiom>An upload API is judged by what happens at gigabyte ten, not gigabyte one — design for the size you hope never to see, not the size in your test fixtures.</Axiom>

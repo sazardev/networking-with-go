@@ -1,10 +1,169 @@
 ---
 id: "[2.16.0]"
-title: "DNS: Theory and Go Implementation 🏷️"
+title: "DNS: Theory and Go Implementation"
 ---
 
-# DNS: Theory and Go Implementation 🏷️
+# DNS: Theory and Go Implementation
 
-Learn about DNS and how to work with it in Go.
+> "Back in the IP addressing chapter, we compared IP addresses to house addresses. DNS is the phonebook that lets you say 'call the pizza place downtown' instead of memorizing its exact street number. Every time your code dials `example.com:443`, DNS is quietly doing the lookup before the TCP handshake even begins."
+
+---
+
+## Why DNS Exists
+
+Every `net.Dial` call you've written so far that used a hostname — `net.Dial("tcp", "example.com:80")` back in the TCP chapter — silently triggered a DNS lookup first. Computers route packets using numeric IP addresses; humans remember names. DNS (Domain Name System) is the distributed, hierarchical database that maps names to addresses (and back), so nobody has to memorize `93.184.216.34` when they mean `example.com`.
+
+---
+
+## How DNS Resolution Works
+
+Resolution is a hierarchy, not a single lookup:
+
+1. **Root servers** know which servers are authoritative for each top-level domain (`.com`, `.org`, `.io`, ...).
+2. **TLD servers** know which servers are authoritative for each domain under that TLD (`example.com`).
+3. **Authoritative servers** hold the actual records for that domain and answer with the final result.
+4. A **recursive resolver** (often run by your ISP, or a public one like `1.1.1.1`) does this multi-step walk on your behalf and caches the result, so most lookups on the open internet never touch the root at all.
+
+DNS runs primarily over **UDP port 53** — the same connectionless, best-effort delivery model from the UDP chapter fits well here because most queries and responses are small and fit in a single packet. When a response would be too large for a single UDP datagram, DNS falls back to TCP port 53, the same way you saw large payloads eventually need TCP's framing and reliability.
+
+### Common Record Types
+
+- **A / AAAA:** Maps a name to an IPv4 or IPv6 address — the most common lookup.
+- **CNAME:** An alias pointing one name at another name.
+- **MX:** Mail server responsible for a domain.
+- **TXT:** Arbitrary text, often used for domain verification or SPF/DKIM email policy.
+- **NS:** The authoritative name servers for a domain.
+- **PTR:** Reverse lookup, mapping an IP address back to a name.
+
+Every record also carries a **TTL** (time to live), telling resolvers how long they may cache the answer before asking again.
+
+---
+
+## Go Implementation: Standard Lookups
+
+Go's `net` package exposes DNS resolution through a family of `Lookup*` functions, which is what `net.Dial` uses internally whenever you pass it a hostname instead of an IP.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func main() {
+	// A/AAAA records: resolve a hostname to its IP addresses.
+	ips, err := net.LookupHost("example.com")
+	if err != nil {
+		fmt.Println("lookup error:", err)
+		return
+	}
+	fmt.Println("A/AAAA records:", ips)
+
+	// MX records: which servers handle mail for this domain.
+	mxRecords, err := net.LookupMX("example.com")
+	if err == nil {
+		for _, mx := range mxRecords {
+			fmt.Printf("MX: %s (priority %d)\n", mx.Host, mx.Pref)
+		}
+	}
+
+	// TXT records: arbitrary text data attached to the domain.
+	txtRecords, err := net.LookupTXT("example.com")
+	if err == nil {
+		fmt.Println("TXT records:", txtRecords)
+	}
+
+	// PTR (reverse) lookup: IP address back to hostname.
+	names, err := net.LookupAddr("93.184.216.34")
+	if err == nil {
+		fmt.Println("reverse lookup:", names)
+	}
+}
+```
+
+[Exercise: DNS Lookups](../../exercises/part2/16-dns-lookups/main.go)
+
+<DeepDive title="net.Dial already does this for you">
+Every time you've called `net.Dial("tcp", "example.com:80")` in earlier chapters, Go resolved the hostname first, then connected to one of the returned IPs. `net.LookupHost` just exposes that same resolution step directly, which is useful when you want to inspect, cache, or choose among the results yourself.
+</DeepDive>
+
+---
+
+## Custom Resolvers
+
+By default, Go's resolver behavior depends on the platform: it may use the operating system's native resolver (via cgo) or a pure-Go implementation. You can take full control with `net.Resolver`, including pointing it at a specific DNS server — useful for testing against a private DNS server or forcing the pure-Go path:
+
+```go
+resolver := &net.Resolver{
+	PreferGo: true,
+	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+		d := net.Dialer{Timeout: 5 * time.Second}
+		// Ignore the system-configured server and query Cloudflare's
+		// public resolver directly.
+		return d.DialContext(ctx, network, "1.1.1.1:53")
+	},
+}
+
+ips, err := resolver.LookupHost(context.Background(), "example.com")
+```
+
+This is the same `context.Context`-driven, pluggable-dial pattern you saw with `net.Dialer.DialContext` in earlier chapters — DNS resolution is just another network operation that benefits from cancellation and timeouts.
+
+---
+
+## Building a Tiny DNS Cache
+
+Because DNS lookups add latency to every new connection, applications that make many outbound requests often cache results themselves, respecting the record's TTL:
+
+```go
+type cacheEntry struct {
+	ips     []string
+	expires time.Time
+}
+
+type dnsCache struct {
+	mu      sync.Mutex
+	entries map[string]cacheEntry
+}
+
+func (c *dnsCache) lookup(host string) ([]string, error) {
+	c.mu.Lock()
+	if entry, ok := c.entries[host]; ok && time.Now().Before(entry.expires) {
+		c.mu.Unlock()
+		return entry.ips, nil
+	}
+	c.mu.Unlock()
+
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	c.entries[host] = cacheEntry{ips: ips, expires: time.Now().Add(60 * time.Second)}
+	c.mu.Unlock()
+	return ips, nil
+}
+```
+
+[Exercise: DNS Cache](../../exercises/part2/16-dns-cache/main.go)
+
+This mirrors the concurrency-safety patterns from the concurrency chapter: a `sync.Mutex` guards the shared map because multiple goroutines may resolve hostnames concurrently.
+
+<Warning title="Real TTLs, not a guess">
+The 60-second expiry above is a placeholder for the exercise. Go's standard `net` package does not expose the actual TTL returned by the DNS server — if you need TTL-accurate caching, you generally reach for a dedicated DNS library that parses raw records, rather than the `net.Lookup*` convenience functions.
+</Warning>
+
+---
+
+## Key Takeaways
+
+- DNS is a hierarchical, cached lookup system that turns names into addresses (and back) — mostly over UDP, falling back to TCP for larger responses.
+- `net.LookupHost`, `net.LookupMX`, `net.LookupTXT`, and `net.LookupAddr` cover the common record types without any extra dependencies.
+- `net.Resolver` with a custom `Dial` function lets you target a specific DNS server or force Go's pure-Go resolver.
+- Caching lookups reduces latency for applications making many outbound connections, but respect TTLs and guard shared caches with a mutex.
+
+---
 
 [Previous: Proxy Servers and Clients](15-proxy-servers-and-clients.md) | [Next: NAT Traversal and P2P Networking](17-nat-traversal-and-p2p-networking.md)

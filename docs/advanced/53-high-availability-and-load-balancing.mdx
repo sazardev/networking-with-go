@@ -1,8 +1,199 @@
 ---
 id: "[3.53.0]"
-title: "High Availability and Load Balancing ⚖️"
+title: "High Availability and Load Balancing"
 ---
 
-# High Availability and Load Balancing ⚖️
+# High Availability and Load Balancing
 
-// ...content coming soon...
+> "A concert with one entrance is a bottleneck and a fire hazard. A good venue has several doors, staff redirecting people to whichever line is shortest, and a plan for what happens if one door jams. High availability is the plan for the jammed door; load balancing is the staff directing the lines."
+
+## Two Related, Distinct Problems
+
+It's easy to conflate high availability and load balancing because the same piece of infrastructure often does both, but they answer different questions:
+
+- **High availability (HA)** asks: if a component fails, does the system keep working? This is about redundancy, failure detection, and failover.
+- **Load balancing** asks: given several healthy backends, how do we distribute work across them well? This is about throughput and fairness, not failure.
+
+A load balancer that never checks backend health isn't providing HA—it will happily send traffic to a dead server. An HA setup with only one active backend isn't load balancing—it's just failover. Real production systems need both, layered together.
+
+## Load Balancing Algorithms
+
+Most load balancers pick from a small set of well-understood strategies:
+
+- **Round robin**—requests go to backends in fixed rotation. Simple, fair when requests are roughly equal cost.
+- **Least connections**—send the next request to whichever backend currently has the fewest active connections. Better when request cost varies.
+- **Weighted**—like round robin or least-connections, but backends with more capacity get proportionally more traffic.
+- **Consistent hashing**—requests are routed based on a hash of some key (client IP, session ID), so the same client tends to land on the same backend—useful for sticky sessions or cache locality, and it minimizes redistribution when backends are added or removed.
+
+## Go Implementation: A Reverse Proxy Load Balancer
+
+The standard library's `net/http/httputil` package includes `ReverseProxy`, which is real, production-capable machinery for forwarding HTTP requests to a backend. Building a load balancer on top of it means picking which backend to hand each request to.
+
+### Backend Pool with Health Checks
+
+```go
+package main
+
+import (
+	"context"
+	"net"
+	"net/http/httputil"
+	"net/url"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+type Backend struct {
+	URL     *url.URL
+	Proxy   *httputil.ReverseProxy
+	healthy atomic.Bool
+}
+
+type LoadBalancer struct {
+	backends []*Backend
+	counter  atomic.Uint64 // round-robin cursor
+}
+
+func NewLoadBalancer(rawURLs []string) (*LoadBalancer, error) {
+	lb := &LoadBalancer{}
+	for _, raw := range rawURLs {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return nil, err
+		}
+		b := &Backend{URL: u, Proxy: httputil.NewSingleHostReverseProxy(u)}
+		b.healthy.Store(true) // assume healthy until the checker says otherwise
+		lb.backends = append(lb.backends, b)
+	}
+	return lb, nil
+}
+
+// Next returns the next healthy backend using round robin, skipping unhealthy ones.
+func (lb *LoadBalancer) Next() *Backend {
+	n := uint64(len(lb.backends))
+	for i := uint64(0); i < n; i++ {
+		idx := (lb.counter.Add(1) - 1) % n
+		b := lb.backends[idx]
+		if b.healthy.Load() {
+			return b
+		}
+	}
+	return nil // no healthy backends
+}
+```
+
+### Health Checking in the Background
+
+A separate goroutine periodically probes each backend and flips its health flag—this is what turns a plain load balancer into part of an HA setup, because it's what lets the system route around a dead backend automatically:
+
+```go
+func (lb *LoadBalancer) startHealthChecks(interval, timeout time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			for _, b := range lb.backends {
+				go checkBackend(b, timeout)
+			}
+		}
+	}()
+}
+
+func checkBackend(b *Backend, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", b.URL.Host)
+	if err != nil {
+		b.healthy.Store(false)
+		return
+	}
+	conn.Close()
+	b.healthy.Store(true)
+}
+```
+
+A TCP-level check like this only confirms the port is accepting connections; a more thorough check would issue an HTTP request to a dedicated `/healthz` endpoint so a backend that accepts connections but can't actually serve traffic (say, it lost its database connection) is caught too.
+
+### Serving Requests
+
+```go
+package main
+
+import (
+	"net/http"
+)
+
+func (lb *LoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	backend := lb.Next()
+	if backend == nil {
+		http.Error(w, "no healthy backends", http.StatusServiceUnavailable)
+		return
+	}
+	backend.Proxy.ServeHTTP(w, r)
+}
+
+func main() {
+	lb, err := NewLoadBalancer([]string{
+		"http://127.0.0.1:9001",
+		"http://127.0.0.1:9002",
+		"http://127.0.0.1:9003",
+	})
+	if err != nil {
+		panic(err)
+	}
+	lb.startHealthChecks(5*time.Second, 2*time.Second)
+	http.ListenAndServe(":8080", lb)
+}
+```
+
+This is a complete, working L7 (application-layer) load balancer: `atomic.Uint64` gives us a lock-free round-robin cursor safe for concurrent requests, `atomic.Bool` gives each backend a lock-free health flag, and `httputil.ReverseProxy` handles the actual request forwarding, including streaming the response body back to the client.
+
+## Failover and Leader Election
+
+Load balancing distributes *stateless* work well, but some components—a primary database, a job scheduler—can only have one active instance at a time. For those, HA means **failover**: detecting that the active instance died and promoting a standby.
+
+The simplest pattern is a **heartbeat**: the standby periodically checks whether the primary is reachable, and takes over if it isn't for some grace period:
+
+```go
+func watchPrimary(primaryAddr string, checkEvery time.Duration, onFailover func()) {
+	misses := 0
+	const maxMisses = 3
+
+	ticker := time.NewTicker(checkEvery)
+	defer ticker.Stop()
+	for range ticker.C {
+		conn, err := net.DialTimeout("tcp", primaryAddr, 2*time.Second)
+		if err != nil {
+			misses++
+			if misses >= maxMisses {
+				onFailover()
+				return
+			}
+			continue
+		}
+		conn.Close()
+		misses = 0
+	}
+}
+```
+
+Requiring several consecutive missed checks (`maxMisses`) before failing over avoids "flapping"—treating one dropped packet as a full outage and triggering an unnecessary, disruptive promotion.
+
+<DeepDive title="Split-brain">
+If a network partition makes the primary and standby unable to see each other, but both are still reachable by clients, a naive failover scheme can end up with two nodes both believing they're the primary—a "split-brain" that can corrupt data. Real systems (etcd, ZooKeeper, Consul) solve this with a consensus protocol requiring a majority of nodes to agree before a failover is accepted, rather than letting any single standby decide unilaterally.
+</DeepDive>
+
+## Where L4 and DNS-Level HA Fit In
+
+Everything above operates at layer 7 (HTTP). Production stacks often add HA underneath that too: **VRRP/keepalived** lets two machines share a virtual IP, with one active and one on standby at the network layer; **DNS-based** load balancing and failover (short TTLs, health-checked DNS answers) route clients away from a dead region entirely before a single HTTP request is attempted. Go doesn't typically implement these protocols itself—they're handled by the OS or dedicated infrastructure—but understanding where they sit relative to the L7 balancer above is important: a real production topology usually layers DNS-level, L4-level, and L7-level redundancy together, each catching failures the others miss.
+
+## Key Takeaways
+
+- High availability (surviving failure) and load balancing (distributing load) are related but distinct; production systems need both.
+- `net/http/httputil.ReverseProxy` is real standard-library machinery sufficient to build a working L7 load balancer.
+- Lock-free atomics (`atomic.Uint64`, `atomic.Bool`) are a natural fit for the hot-path counters and health flags a load balancer touches on every request.
+- Background health checks are what make a load balancer HA-aware instead of blindly round-robining to dead backends.
+- Failover needs a grace period to avoid flapping, and multi-node failover needs consensus to avoid split-brain.

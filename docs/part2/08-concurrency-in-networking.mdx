@@ -1,15 +1,15 @@
 ---
 id: "[2.8.0]"
-title: "Concurrency in Networking: Theory and Go Implementation 🧵"
+title: "Concurrency in Networking: Theory and Go Implementation"
 ---
 
-# Concurrency in Networking: Theory and Go Implementation 🧵
+# Concurrency in Networking: Theory and Go Implementation
 
 > "Imagine a busy restaurant kitchen: chefs (goroutines) work on different dishes at the same time, waiters (channels) deliver orders and plates, and the manager (main function) keeps everything running smoothly. Welcome to the world of concurrency in Go!"
 
 ---
 
-## 🚦 Why Concurrency Matters in Networking
+## Why Concurrency Matters in Networking
 
 Networking is all about handling many things at once: multiple clients, simultaneous requests, and real-time data. Without concurrency, your server would be like a single cashier at a supermarket—everyone waits in line, and things get slow fast!
 
@@ -18,7 +18,7 @@ Networking is all about handling many things at once: multiple clients, simultan
 
 ---
 
-## 🧠 What is Concurrency? What is Parallelism?
+## What is Concurrency? What is Parallelism?
 
 - **Concurrency:** Doing many things at once (not necessarily at the same time, but making progress on all).
 - **Parallelism:** Actually running things at the same time (on multiple CPU cores).
@@ -29,7 +29,7 @@ Networking is all about handling many things at once: multiple clients, simultan
 
 ---
 
-## 🧵 Goroutines: Lightweight Threads
+## Goroutines: Lightweight Threads
 
 - **What are they?** Functions that run independently, started with the `go` keyword.
 - **How lightweight?** Each goroutine uses only a few KB of memory.
@@ -60,7 +60,7 @@ func main() {
 
 ---
 
-## 📬 Channels: Safe Communication Between Goroutines
+## Channels: Safe Communication Between Goroutines
 
 - **What are they?** Typed pipes for sending data between goroutines.
 - **Why use them?** Avoid race conditions and share data safely.
@@ -85,7 +85,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Concurrent TCP Server
+## Go in Action: Concurrent TCP Server
 
 Let’s build a TCP server that handles each client in a separate goroutine.
 
@@ -115,7 +115,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Channel-Based Message Broadcast
+## Go in Action: Channel-Based Message Broadcast
 
 A simple example where one goroutine sends messages to many receivers using channels.
 
@@ -147,7 +147,7 @@ func main() {
 
 ---
 
-## 🧩 How Go Makes Concurrency Safe and Easy
+## How Go Makes Concurrency Safe and Easy
 
 - **Scheduler:** Go’s runtime schedules goroutines efficiently across CPU cores.
 - **No manual threads:** No need to manage OS threads or locks for most cases.
@@ -172,7 +172,7 @@ default:
 
 ---
 
-## 🧪 Go in Action: Goroutine Stress Test
+## Go in Action: Goroutine Stress Test
 
 Can you really launch 100,000 goroutines in Go? Yes! Here’s an exercise to try it and understand why it works:
 
@@ -231,7 +231,7 @@ flowchart TD
 
 ---
 
-## 🎨 Visual Summary
+## Visual Summary
 
 ```mermaid
 flowchart TD
@@ -248,7 +248,7 @@ flowchart TD
 
 ---
 
-## 🖼️ TCP Server Concurrency Flow
+## TCP Server Concurrency Flow
 
 ```mermaid
 flowchart TD
@@ -266,7 +266,7 @@ flowchart TD
 
 ---
 
-## 🖼️ Channel Broadcast Flow
+## Channel Broadcast Flow
 
 ```mermaid
 flowchart TD
@@ -283,7 +283,7 @@ flowchart TD
 
 ---
 
-## 🤩 Fun Facts & Go Memes
+## Fun Facts & Go Memes
 - Go’s mascot, the gopher, is often shown juggling or running—just like goroutines!
 - The phrase "Don’t communicate by sharing memory; share memory by communicating" is a Go proverb.
 - You can run 100,000+ goroutines on a modern laptop—try it!
@@ -292,13 +292,13 @@ flowchart TD
 
 ---
 
-## 🧬 Deep Dive: How Go Handles Massive Concurrency Under the Hood
+## Deep Dive: How Go Handles Massive Concurrency Under the Hood
 
 > "Let’s open the black box! What really happens when you launch 100,000 goroutines? How does Go orchestrate memory, CPU, OS threads, and scheduling to make it all possible?"
 
 ---
 
-### 🏗️ The Go Concurrency Engine: Step by Step
+### The Go Concurrency Engine: Step by Step
 
 1. **Source Code to Binary:**
    - You write Go code with `go` statements. The Go compiler (`gc`) translates this into machine code, embedding the Go runtime.
@@ -323,7 +323,7 @@ flowchart TD
 
 ---
 
-### 🖥️ Full System Diagram: Go Concurrency Pipeline
+### Full System Diagram: Go Concurrency Pipeline
 
 ```mermaid
 flowchart TD
@@ -350,7 +350,7 @@ flowchart TD
 
 ---
 
-### 🧠 What Each Component Does
+### What Each Component Does
 
 - **Go Compiler:** Translates your code into a binary, embedding the Go runtime.
 - **Go Runtime:** The heart of Go’s concurrency—manages goroutines, scheduling, memory, and more.
@@ -368,7 +368,7 @@ flowchart TD
 
 ---
 
-### 📝 Example: What Happens When You Run 100,000 Goroutines?
+### Example: What Happens When You Run 100,000 Goroutines?
 
 1. Your code calls `go myFunc(i)` 100,000 times.
 2. The Go runtime allocates a tiny stack and metadata for each goroutine.
@@ -379,20 +379,20 @@ flowchart TD
 
 ---
 
-### 🧩 Why is This So Powerful?
+### Why is This So Powerful?
 - You can write highly concurrent code without worrying about threads, locks, or memory.
 - Go’s runtime does the heavy lifting: scheduling, memory, blocking, and cleanup.
 - This model is why Go is used for high-performance servers, cloud systems, and real-time apps.
 
 ---
 
-## 🛰️ Deep Dive: How Go Processes a Network Message (End-to-End)
+## Deep Dive: How Go Processes a Network Message (End-to-End)
 
 > "Let’s follow a network message as it travels from the outside world, through the Go runtime, into your code, and back out again!"
 
 ---
 
-### 🌐 Step-by-Step: From Network to Go and Back
+### Step-by-Step: From Network to Go and Back
 
 1. **Network Packet Arrives:**
    - A client sends a TCP/UDP packet to your server’s IP and port.
@@ -412,7 +412,7 @@ flowchart TD
 
 ---
 
-### 🖥️ Full Lifecycle Diagram (Mermaid)
+### Full Lifecycle Diagram (Mermaid)
 
 ```mermaid
 sequenceDiagram
@@ -435,7 +435,7 @@ sequenceDiagram
 
 ---
 
-### 📝 Example: Minimal TCP Echo Server (with Comments)
+### Example: Minimal TCP Echo Server (with Comments)
 
 ```go
 package main
@@ -484,7 +484,7 @@ func main() {
 
 ---
 
-### 🧠 Key Takeaways
+### Key Takeaways
 - Go’s networking is built on top of OS sockets, but the Go runtime makes it easy and safe.
 - Goroutines allow you to handle many clients at once, without manual thread management.
 - The Go scheduler and runtime handle all the complexity—your code stays clean and simple.

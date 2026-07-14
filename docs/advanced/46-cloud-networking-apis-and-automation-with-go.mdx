@@ -1,8 +1,106 @@
 ---
 id: "[3.46.0]"
-title: "Cloud Networking APIs and Automation with Go ☁️"
+title: "Cloud Networking APIs and Automation with Go"
 ---
 
-# Cloud Networking APIs and Automation with Go ☁️
+# Cloud Networking APIs and Automation with Go
 
-// ...content coming soon...
+> There was a time when getting a new network segment meant an order form, a rack visit, someone physically running cable, and a wait measured in weeks. Cloud networking turned that into a vending machine: describe what you want in a request, and a virtual network, subnet, or firewall rule exists seconds later, built entirely out of software running on someone else's hardware. The switches and routers still exist -- you simply no longer touch them directly.
+
+Every cloud provider exposes its networking primitives -- virtual networks, subnets, security groups, load balancers, DNS records -- through an API first, with the web console as a thin layer built on top of that same API. That matters for this book because it means everything you already know about calling HTTP APIs from Go, and everything you know about designing your own network tools, applies directly to *managing* cloud networks, not just building services that run inside them. It is also why so much of the tooling in this space -- Terraform, Kubernetes, Docker -- is itself written in Go: the official SDKs make this a natural fit.
+
+### The Primitives, Across Providers
+
+The vocabulary differs slightly by vendor, but the underlying shapes are consistent:
+
+- **Virtual network** (AWS VPC, GCP VPC, Azure VNet): an isolated, software-defined network you carve subnets out of.
+- **Subnet**: an IP range within a virtual network, usually tied to a specific availability zone.
+- **Security group / firewall rule**: a stateful or stateless allow-list controlling what traffic can reach a resource -- the cloud equivalent of the firewall concepts from earlier in this book, expressed as API objects instead of `iptables` rules.
+- **Load balancer**: distributes traffic across a pool of backend instances, provisioned as a managed service rather than a box you configure by hand.
+- **DNS**: managed zones and records, exposed as an API so infrastructure automation can update them the moment a resource's address changes.
+
+### Why Automate Instead of Clicking
+
+A single security group rule created by hand in a console is fine. A hundred environments, each needing the same baseline network policy, consistently, and reproducibly after a disaster recovery event, is not something you want to do by hand -- that is the entire premise of infrastructure as code. Writing that automation directly in Go (rather than only through Terraform) makes sense when you need logic Terraform's declarative model does not comfortably express: conditional behavior based on runtime state, integration into a larger Go service, or a custom internal tool with its own workflow.
+
+### Go Implementation: AWS
+
+The official `aws-sdk-go-v2` module structures each service as its own package. Loading credentials and configuration, then creating a security group and authorizing an ingress rule:
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+func main() {
+	ctx := context.Background()
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := ec2.NewFromConfig(cfg)
+
+	sg, err := client.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:   aws.String("app-servers"),
+		Description: aws.String("Allow HTTPS from the internet"),
+		VpcId:       aws.String("vpc-0123456789abcdef0"),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+		GroupId: sg.GroupId,
+		IpPermissions: []types.IpPermission{
+			{
+				IpProtocol: aws.String("tcp"),
+				FromPort:   aws.Int32(443),
+				ToPort:     aws.Int32(443),
+				IpRanges: []types.IpRange{
+					{CidrIp: aws.String("0.0.0.0/0")},
+				},
+			},
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("security group ready:", *sg.GroupId)
+}
+```
+
+`config.LoadDefaultConfig` follows the same credential resolution chain the AWS CLI uses -- environment variables, shared config files, or an instance/task role -- so the same code runs unchanged locally and inside a deployed workload, which is exactly the property you want from automation that might run from a laptop today and a CI pipeline tomorrow.
+
+### The Same Shape, Different Providers
+
+Google Cloud's `cloud.google.com/go/compute/apiv1` and Azure's `github.com/Azure/azure-sdk-for-go` follow the same overall pattern: load credentials through the provider's standard mechanism, construct a typed client for the specific service, and call strongly typed methods that mirror the provider's REST API one-to-one. The API surface differs in naming, but the shape -- context-aware calls, typed request/response structs, provider-managed credential resolution -- repeats across all three, so fluency in one transfers readily to the others.
+
+<DeepDive title="Idempotency matters more here than in most Go code">
+Automation scripts get retried -- by you, by a CI system, by an on-call engineer rerunning a failed deploy. A naive `CreateSecurityGroup` call run twice creates two security groups, or fails the second time with a conflict the caller has to know how to interpret. Production automation checks for existing resources first (or uses provider-specific idempotency tokens where offered) so re-running a script is safe, not just usually safe.
+</DeepDive>
+
+### Where Terraform Fits, and Where Go Still Wins
+
+For static, declarative infrastructure -- "this VPC, these subnets, this load balancer, always" -- Terraform (or a cloud-native equivalent like AWS CloudFormation) is usually the better tool: it tracks state, computes diffs, and has a mature ecosystem of providers. Reach for direct Go SDK calls instead when the logic is dynamic -- a service that provisions a new tenant's isolated network on sign-up, a controller reconciling cloud firewall rules against an internal policy source of truth, or a CLI tool doing something Terraform's HCL cannot express cleanly. Many real platform teams use both: Terraform for the baseline, Go services calling the same SDKs for anything that needs to react to events at runtime.
+
+<Warning title="Least privilege applies to your automation's credentials too">
+A Go program with `AdministratorAccess` calling `CreateSecurityGroup` is one bug away from a much bigger blast radius than intended. Scope the IAM role or service account your automation runs as to exactly the actions it needs -- this matters more, not less, once code (rather than a human clicking through a console) is the thing making changes with real permissions.
+</Warning>
+
+### Handling Rate Limits and Transient Failures
+
+Every major cloud API enforces request rate limits, and automation that runs in a loop (reconciling state every few minutes, or fanning out across many accounts) will eventually hit them. The official SDKs build retry logic with exponential backoff into their default HTTP clients, but it is still your job to make calls idempotent enough that a retried request after a timeout does not create a duplicate resource. Reading the current state before writing, and treating "already exists" as success rather than failure, turns a fragile one-shot script into automation you can safely rerun.
+
+### A Note on Multi-Cloud Code
+
+It is tempting to build an abstraction layer over AWS, GCP, and Azure so the rest of your codebase calls one generic `CreateNetwork` function. In practice, the underlying primitives diverge enough -- AWS security groups are stateful by default, Azure network security groups are not identical in behavior, GCP firewall rules apply at the VPC level rather than per-instance -- that a thin abstraction either leaks those differences back through anyway or hides a real behavioral difference that matters during an incident. Most production Go tooling in this space calls each provider's SDK directly behind a narrow, use-case-specific interface, rather than a broad generic one.

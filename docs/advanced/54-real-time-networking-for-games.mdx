@@ -1,8 +1,184 @@
 ---
 id: "[3.54.0]"
-title: "Real-Time Networking for Games 🎮"
+title: "Real-Time Networking for Games"
 ---
 
-# Real-Time Networking for Games 🎮
+# Real-Time Networking for Games
 
-// ...content coming soon...
+> "TCP is a certified letter: guaranteed delivery, guaranteed order, and a receipt to prove it. A multiplayer game needs a walkie-talkie instead—say the player's position *now*, and if this update gets lost, don't bother resending it, because by the time it arrives the player has already moved again."
+
+## Why Reliable, Ordered Delivery Is the Wrong Default
+
+Everything you know about TCP's guarantees becomes a liability in a fast-paced multiplayer game. If a position update is dropped, TCP will notice and retransmit it—but by the time the retransmission arrives, three newer position updates are queued up behind it, all waiting their turn because TCP also guarantees order. The player sees the retransmitted, stale packet applied late, then a burst of catch-up movement: exactly the stutter competitive games can't tolerate.
+
+Real-time games instead favor:
+
+- **Low latency over completeness.** A late update is often worse than a missing one—game state moves on regardless.
+- **UDP as the base transport**, because it doesn't impose ordering or retransmission you didn't ask for.
+- **Selective reliability**, layered on top of UDP only for the messages that truly need it (e.g., "player fired a shot," not "player's foot is at x=102.3").
+- **A fixed simulation tick rate**, so both client and server agree on discrete time steps rather than reacting to network events at arbitrary moments.
+
+## Building a UDP Game State Channel in Go
+
+The pieces below sketch the core of a real-time multiplayer transport: a server that runs a fixed-rate simulation tick and broadcasts state to connected clients over UDP, with a sequence number so clients can discard stale, out-of-order packets on arrival instead of trusting the network to sort things out.
+
+### The Wire Format
+
+```go
+package main
+
+import (
+	"encoding/binary"
+	"math"
+)
+
+type PlayerState struct {
+	PlayerID uint32
+	Seq      uint32
+	X, Y     float32
+}
+
+// Encode packs a PlayerState into a fixed-size binary packet.
+// Fixed-size binary encoding keeps packets small and parsing allocation-free,
+// which matters when you're sending dozens of these per second per client.
+func (p PlayerState) Encode() []byte {
+	buf := make([]byte, 16)
+	binary.BigEndian.PutUint32(buf[0:4], p.PlayerID)
+	binary.BigEndian.PutUint32(buf[4:8], p.Seq)
+	binary.BigEndian.PutUint32(buf[8:12], math.Float32bits(p.X))
+	binary.BigEndian.PutUint32(buf[12:16], math.Float32bits(p.Y))
+	return buf
+}
+
+func DecodePlayerState(buf []byte) PlayerState {
+	return PlayerState{
+		PlayerID: binary.BigEndian.Uint32(buf[0:4]),
+		Seq:      binary.BigEndian.Uint32(buf[4:8]),
+		X:        math.Float32frombits(binary.BigEndian.Uint32(buf[8:12])),
+		Y:        math.Float32frombits(binary.BigEndian.Uint32(buf[12:16])),
+	}
+}
+```
+
+`math.Float32bits`/`math.Float32frombits` (standard library) reinterpret a `float32`'s bit pattern as a `uint32` and back, which is exactly what's needed to place a float into a fixed-width binary packet.
+
+### A Fixed-Tick Server Loop
+
+```go
+package main
+
+import (
+	"net"
+	"sync"
+	"time"
+)
+
+type Server struct {
+	conn    *net.UDPConn
+	mu      sync.Mutex
+	clients map[string]*net.UDPAddr
+	seq     uint32
+}
+
+func NewServer(addr string) (*Server, error) {
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{conn: conn, clients: make(map[string]*net.UDPAddr)}, nil
+}
+
+// receiveLoop registers clients as soon as they send anything (a simple
+// "join" handshake) and could be extended to read client input packets.
+func (s *Server) receiveLoop() {
+	buf := make([]byte, 512)
+	for {
+		n, addr, err := s.conn.ReadFromUDP(buf)
+		if err != nil || n == 0 {
+			continue
+		}
+		s.mu.Lock()
+		s.clients[addr.String()] = addr
+		s.mu.Unlock()
+	}
+}
+
+// tickLoop runs the authoritative simulation at a fixed rate and broadcasts
+// state to every known client. 20 Hz is a common baseline tick rate.
+func (s *Server) tickLoop(tickRate time.Duration, currentState func() []PlayerState) {
+	ticker := time.NewTicker(tickRate)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.seq++
+		states := currentState()
+
+		s.mu.Lock()
+		targets := make([]*net.UDPAddr, 0, len(s.clients))
+		for _, addr := range s.clients {
+			targets = append(targets, addr)
+		}
+		s.mu.Unlock()
+
+		for _, state := range states {
+			state.Seq = s.seq
+			packet := state.Encode()
+			for _, addr := range targets {
+				s.conn.WriteToUDP(packet, addr)
+			}
+		}
+	}
+}
+```
+
+Running the broadcast on a `time.Ticker` at a fixed rate (say, 50ms for 20 updates per second) decouples the network send rate from however fast the simulation itself computes—clients get a steady cadence of updates regardless of momentary simulation jitter.
+
+### Client-Side: Discarding Stale Packets
+
+Because UDP doesn't guarantee order, a client can receive an older packet after a newer one—the sequence number is what lets it detect and drop that case instead of rendering the world moving backward:
+
+```go
+package main
+
+type ClientState struct {
+	lastSeq map[uint32]uint32 // playerID -> last applied sequence
+}
+
+// Apply returns false (and does nothing) if this update is older than
+// one already applied for the same player.
+func (c *ClientState) Apply(update PlayerState) bool {
+	if c.lastSeq == nil {
+		c.lastSeq = make(map[uint32]uint32)
+	}
+	if last, ok := c.lastSeq[update.PlayerID]; ok && update.Seq <= last {
+		return false
+	}
+	c.lastSeq[update.PlayerID] = update.Seq
+	// ... apply update.X, update.Y to the local game world ...
+	return true
+}
+```
+
+## Selective Reliability for Events That Matter
+
+Position updates can be dropped safely because the next tick supersedes them. Some messages can't be treated that way—"player fired," "player picked up item," "match ended"—because losing one changes the outcome of the game, not just its smoothness. The standard pattern is a lightweight application-level acknowledgment for just those messages: tag them with an ID, resend if no ack arrives within a short timeout, and let the receiver deduplicate by ID. This is exactly the reliability TCP gives you for free, deliberately reimplemented at the application layer so it only applies to the handful of messages that actually need it, instead of to every byte on the wire.
+
+<DeepDive title="Why not just use QUIC?">
+QUIC (implemented in real, production Go libraries like `quic-go`) gives you multiplexed, independently-ordered streams over UDP with built-in encryption—which solves head-of-line blocking between unrelated streams, a real TCP pain point. It's a legitimate choice for game transports that want some reliable streams (chat, inventory) alongside unreliable ones (position), without hand-rolling the reliability layer above. It's not universal in game networking mainly because its per-packet overhead and connection setup cost can matter more than raw UDP at very high tick rates or on very constrained platforms.
+</DeepDive>
+
+## Reducing Bandwidth: Delta Compression
+
+Sending every player's full state every tick scales poorly as player count grows. A common optimization is **delta compression**: only send the fields that changed since the last acknowledged state, rather than the whole struct. This trades CPU (tracking what changed) for bandwidth (sending less), which is almost always the right trade for a server pushing updates to many clients at once.
+
+## Key Takeaways
+
+- Real-time games favor low latency and freshness over TCP's guaranteed, ordered delivery—UDP is the right base transport.
+- A sequence number per message is enough for a client to detect and discard stale, out-of-order updates.
+- A fixed simulation tick rate (driven by `time.Ticker`) decouples network send cadence from simulation variability.
+- Only a small subset of messages—game-affecting events, not continuous state—need application-level reliability layered on top of UDP.
+- QUIC (via real Go libraries like `quic-go`) is a legitimate alternative when you want some reliable, some unreliable streams without building the reliability layer by hand.

@@ -1,10 +1,142 @@
 ---
 id: "[2.23.0]"
-title: "Deploying Go Network Applications: Best Practices 🚢"
+title: "Deploying Go Network Applications: Best Practices"
 ---
 
-# Deploying Go Network Applications: Best Practices 🚢
+# Deploying Go Network Applications: Best Practices
 
-How to deploy Go network applications in production.
+> "Building a boat in the workshop and sailing it across open water are two very different challenges. Everything you've built in this part of the book — servers, proxies, clients — has been tested at the dock. Deployment is what happens when it has to keep running unattended, survive restarts, and handle traffic without you standing next to it."
+
+---
+
+## Why Go Deploys Well
+
+A lot of deployment complexity in other ecosystems comes from shipping a language runtime and a pile of dynamic dependencies alongside the application. Go sidesteps most of that: `go build` produces a single statically linked binary (by default, with no `cgo` dependencies) containing your compiled code and the Go runtime together. There's no separate interpreter or VM to install on the target machine, no dependency resolution step at deploy time — copy the binary over and run it.
+
+Cross-compilation is built into the toolchain: building a Linux binary from a Windows or macOS development machine is a matter of setting two environment variables:
+
+```
+GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
+```
+
+---
+
+## Graceful Shutdown
+
+Every server in this book so far has run in an infinite `for` loop with no clean way to stop. In production, a process gets asked to stop constantly — deploys, autoscaling, container restarts — and a server that just dies mid-request drops whatever it was doing. The fix combines two things already introduced in the context and proxy chapters: `signal.NotifyContext` to observe the shutdown signal, and `http.Server.Shutdown` to stop accepting new work while letting in-flight requests finish.
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+func main() {
+	srv := &http.Server{Addr: ":8080", Handler: buildHandler()}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	}()
+	log.Println("server started on :8080")
+
+	<-ctx.Done() // blocks until SIGINT or SIGTERM arrives
+	log.Println("shutdown signal received, draining connections...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("forced shutdown: %v", err)
+	}
+	log.Println("server stopped cleanly")
+}
+```
+
+[Exercise: Graceful Shutdown](../../exercises/part2/23-graceful-shutdown/main.go)
+
+`srv.Shutdown` stops the listener immediately, then waits (up to the deadline on `shutdownCtx`) for active handlers to finish before returning — exactly the "finish what's in flight, refuse anything new" behavior a load balancer expects when it stops routing traffic to an instance and waits for it to drain.
+
+<Warning title="Orchestrators expect a grace period">
+Container schedulers like Kubernetes send `SIGTERM` and then wait a configurable grace period (commonly 30 seconds) before sending `SIGKILL`, which cannot be caught or delayed. Your shutdown timeout must be comfortably shorter than that grace period, or in-flight requests get killed anyway.
+</Warning>
+
+---
+
+## Configuration for Different Environments
+
+Hardcoded ports and addresses (used throughout this book for clarity) don't survive contact with real deployment environments, where the port, backend URLs, and secrets differ between local, staging, and production. Environment variables are the most portable way to inject configuration into a container or process without rebuilding it:
+
+```go
+func getEnvOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+addr := getEnvOrDefault("SERVER_ADDR", ":8080")
+```
+
+For anything beyond a couple of values, the standard library's `flag` package or a small typed configuration struct populated from environment variables keeps configuration centralized and self-documenting, rather than scattered `os.Getenv` calls throughout the codebase.
+
+---
+
+## Containerizing a Go Server
+
+A multi-stage Dockerfile keeps the final image small by compiling in one stage and copying only the resulting binary into a minimal runtime image:
+
+```
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /server /server
+EXPOSE 8080
+ENTRYPOINT ["/server"]
+```
+
+`CGO_ENABLED=0` guarantees a fully static binary with no dependency on the target system's C libraries, which is what makes it possible to run on a distroless base image containing nothing but the binary itself — no shell, no package manager, a dramatically reduced attack surface compared to a full OS image.
+
+---
+
+## Health Checks for Orchestrators
+
+Deployment platforms need a way to know an instance is actually ready to serve traffic — not just that the process started. The `/health` endpoint sketched in the logging and monitoring chapter is exactly what a container orchestrator's liveness and readiness probes poll:
+
+- **Liveness probe:** "Is the process still responsive?" A failing probe triggers a restart.
+- **Readiness probe:** "Should traffic be routed to this instance right now?" Useful for taking an instance temporarily out of rotation (e.g., while it's still warming up a cache) without restarting it.
+
+---
+
+## Logs and Metrics in Production
+
+Once deployed, a process typically can't be attached to interactively. Structured logs written to `stdout`/`stderr` (as covered in the logging chapter) are collected by the container runtime or orchestrator and shipped to a central log store — write to standard streams rather than local files that may not survive a container restart or be accessible at all.
+
+---
+
+## Key Takeaways
+
+- Go's static binaries and built-in cross-compilation remove most of the runtime-installation complexity other languages face at deploy time.
+- Implement graceful shutdown with `signal.NotifyContext` and `http.Server.Shutdown` so deploys and restarts don't drop in-flight requests.
+- Externalize configuration through environment variables rather than hardcoding addresses and secrets.
+- A small, `CGO_ENABLED=0`, multi-stage Docker build produces a minimal, more secure runtime image.
+- Health check endpoints and stdout-based logging are what let orchestrators and log pipelines manage your service without manual intervention.
+
+---
 
 [Previous: Performance Optimization](22-performance-optimization.md) | [Next: Real-World Projects and Case Studies](24-real-world-projects-and-case-studies.md)

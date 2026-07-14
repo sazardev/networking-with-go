@@ -1,15 +1,15 @@
 ---
 id: "[1.7.0]"
-title: "Ports, Sockets, and Endpoints 🔌"
+title: "Ports, Sockets, and Endpoints"
 ---
 
-# Ports, Sockets, and Endpoints 🔌
+# Ports, Sockets, and Endpoints
 
 > "Imagine a massive apartment building (the internet), where each apartment (IP address) has hundreds of doors (ports). Sockets are the keys that open these doors, letting messages in and out!"
 
 ---
 
-## 🏠 What is a Port?
+## What is a Port?
 
 A port is like a numbered door on your device. While your IP address is your building’s street address, ports are the specific doors where data can enter or leave.
 
@@ -33,7 +33,7 @@ A port is like a numbered door on your device. While your IP address is your bui
 
 ---
 
-## 🔑 What is a Socket?
+## What is a Socket?
 
 A socket is the combination of an IP address and a port number. It’s the unique key that lets two devices talk directly.
 
@@ -51,7 +51,7 @@ A socket is the combination of an IP address and a port number. It’s the uniqu
 
 ---
 
-## 🌐 What is an Endpoint?
+## What is an Endpoint?
 
 An endpoint is one end of a communication channel. It’s defined by an IP address and a port, and sometimes a protocol (TCP/UDP).
 
@@ -70,7 +70,7 @@ An endpoint is one end of a communication channel. It’s defined by an IP addre
 
 ---
 
-## 📝 Real-World Example: Web Browsing
+## Real-World Example: Web Browsing
 
 1. You type a website into your browser.
 2. Your computer opens a socket to the server’s IP and port 80 (or 443 for HTTPS).
@@ -78,7 +78,7 @@ An endpoint is one end of a communication channel. It’s defined by an IP addre
 
 ---
 
-## 🧠 Ports, Sockets, and Endpoints in Go
+## Ports, Sockets, and Endpoints in Go
 
 - **Go Example:**
 
@@ -95,7 +95,7 @@ defer conn.Close()
 
 ---
 
-## 🎨 Visual Summary
+## Visual Summary
 
 ```
 [Your PC: 192.168.1.5:54321] <----> [Web Server: 203.0.113.10:80]
@@ -107,7 +107,7 @@ defer conn.Close()
 
 ---
 
-## 🤩 Fun Facts & Memes
+## Fun Facts & Memes
 - Port 666 is sometimes called the “doom port”—used by old-school hackers!
 - The highest port number is 65535—try remembering them all!
 - Sockets are like walkie-talkies for computers—push to talk, release to listen!

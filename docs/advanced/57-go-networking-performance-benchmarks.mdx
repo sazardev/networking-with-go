@@ -1,8 +1,153 @@
 ---
 id: "[3.57.0]"
-title: "Go Networking Performance Benchmarks 🏁"
+title: "Go Networking Performance Benchmarks"
 ---
 
-# Go Networking Performance Benchmarks 🏁
+# Go Networking Performance Benchmarks
 
-// ...content coming soon...
+> "A car might look fast in the driveway. The only way to know for sure is a stopwatch and a track. Benchmarking network code is exactly that: replacing 'this feels quick' with a number you can compare, reproduce, and defend."
+
+## What "Fast" Actually Means for Network Code
+
+Before writing a single benchmark, it's worth being precise about what you're measuring, because "performance" for a network service is really several different numbers that can move independently:
+
+- **Throughput**—requests or bytes handled per second.
+- **Latency**, and specifically its **percentiles**—p50 (typical), p95, p99 (tail latency). A service can have a great median and a terrible p99, and users notice the p99.
+- **Allocations per operation**—garbage collector pressure scales with allocation rate, and GC pauses show up as latency spikes under load.
+- **Resource usage**—goroutines, file descriptors, and memory as concurrency scales up.
+
+Optimizing one of these can hurt another—buffering more data reduces syscalls (helps throughput) but adds latency (hurts p99). A benchmark should tell you which one actually changed.
+
+## The Standard Library's Benchmark Tooling
+
+Go's `testing` package includes real, built-in benchmarking support—no third-party framework required. A benchmark function takes a `*testing.B` and runs its body `b.N` times, with the testing framework automatically choosing `N` large enough to get a stable measurement:
+
+```go
+package netbench
+
+import (
+	"bytes"
+	"io"
+	"testing"
+)
+
+func BenchmarkCopySmallBuffer(b *testing.B) {
+	data := bytes.Repeat([]byte("x"), 4096)
+	b.ReportAllocs() // also report allocations per iteration, not just time
+	b.ResetTimer()   // exclude setup (the Repeat call above) from the timing
+
+	for i := 0; i < b.N; i++ {
+		io.Copy(io.Discard, bytes.NewReader(data))
+	}
+}
+```
+
+Run it with:
+
+```sh
+go test -bench=. -benchmem ./...
+```
+
+`-benchmem` adds allocations-per-op and bytes-per-op to the output alongside time-per-op—almost always worth enabling, since a network handler that's fast but allocates heavily will still cause GC-driven latency spikes under sustained load.
+
+## Benchmarking Network Code Without Network Noise
+
+A benchmark that dials `localhost` measures the OS's TCP stack, the scheduler, and your code all at once—useful for an end-to-end number, but noisy if you're trying to isolate your own logic. Two standard-library tools let you benchmark application-level logic without real socket overhead:
+
+- **`net.Pipe()`**—returns two connected, in-memory `net.Conn` values with no actual OS socket underneath. Perfect for benchmarking protocol parsing or handler logic in isolation.
+- **`net/http/httptest.Server`**—spins up a real listener on `localhost` for tests that do need actual HTTP semantics, while keeping everything else about the test hermetic.
+
+```go
+package netbench
+
+import (
+	"io"
+	"net"
+	"testing"
+)
+
+// BenchmarkEcho measures a protocol handler's own overhead using net.Pipe,
+// with no real kernel socket in the loop.
+func BenchmarkEcho(b *testing.B) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	go func() {
+		buf := make([]byte, 64)
+		for {
+			n, err := server.Read(buf)
+			if err != nil {
+				return
+			}
+			server.Write(buf[:n])
+		}
+	}()
+
+	msg := []byte("ping")
+	resp := make([]byte, 64)
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		client.Write(msg)
+		io.ReadFull(client, resp[:len(msg)])
+	}
+}
+```
+
+Because `net.Pipe()` is fully in-memory and synchronous, this measures the handler's own read/write and parsing overhead—free of real kernel socket latency, TCP handshake cost, or OS scheduling noise that would otherwise dominate the numbers on a fast handler.
+
+## Profiling: Finding *Where* the Time Goes
+
+A benchmark tells you a number went up or down. `runtime/pprof` and `net/http/pprof` (both standard library) tell you *why*, by sampling where the CPU time or allocations actually happened.
+
+For a long-running server, the easiest entry point is importing `net/http/pprof` for its side effect of registering profiling endpoints on the default mux:
+
+```go
+package main
+
+import (
+	"net/http"
+	_ "net/http/pprof" // registers /debug/pprof/* handlers as a side effect
+)
+
+func main() {
+	go http.ListenAndServe("localhost:6060", nil)
+	// ... start the real server on its own port ...
+	select {}
+}
+```
+
+With that running, `go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30` captures a 30-second CPU profile you can explore interactively (`top`, `list <function>`, or `web` for a call graph). For a benchmark specifically, `go test -bench=. -cpuprofile=cpu.out` produces the same kind of profile scoped to just that benchmark's run.
+
+<DeepDive title="Reading a pprof profile">
+`top` in the pprof interactive shell shows which functions consumed the most cumulative or flat CPU time—flat time is time spent in that function itself, cumulative includes everything it called. Start with flat time on a CPU profile; it points directly at the function actually doing the work, rather than at whichever caller happens to be high in the stack.
+</DeepDive>
+
+## Connection Reuse and Tuning `http.Transport`
+
+For HTTP clients specifically, one of the biggest real-world performance levers isn't algorithmic at all—it's whether TCP connections are being reused. Every new connection pays a TCP handshake and, for HTTPS, a TLS handshake; `http.Transport` (standard library) pools and reuses connections automatically, but its defaults are conservative for high-throughput clients:
+
+```go
+transport := &http.Transport{
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 50, // default is 2 — often the real bottleneck
+	IdleConnTimeout:     90 * time.Second,
+}
+client := &http.Client{Transport: transport}
+```
+
+`MaxIdleConnsPerHost` defaults to 2, which is fine for a client talking to many different hosts but throttles throughput badly for a client hammering a single backend—raising it is frequently the single highest-leverage change available, and it costs nothing to benchmark before and after with the tools above.
+
+## Load Testing Beyond `go test -bench`
+
+Micro-benchmarks measure a function or a handler in isolation; validating an entire running server under realistic concurrent load calls for a dedicated load-testing tool rather than `testing.B`. Two real, commonly used Go-based options are `hey` (a simple HTTP load generator) and `vegeta` (a more configurable constant-rate HTTP load tester with detailed latency-distribution reporting). Both are worth knowing exist, even though the fine details of their command-line usage are outside a chapter focused on Go's own benchmarking primitives.
+
+## Key Takeaways
+
+- "Performance" for network code is really throughput, latency percentiles, and allocation rate together—improving one can cost another.
+- `testing.B` with `-bench`, `-benchmem`, `b.ReportAllocs()`, and `b.ResetTimer()` is real, sufficient tooling for most micro-benchmarks.
+- `net.Pipe()` and `httptest.Server` isolate application logic from real kernel socket overhead when that's what you want to measure.
+- `net/http/pprof` and `runtime/pprof` turn "this got slower" into "this specific function got slower," which is what actually lets you fix it.
+- `http.Transport.MaxIdleConnsPerHost` (default 2) is an easy, high-leverage tuning knob for high-throughput HTTP clients that's frequently overlooked.

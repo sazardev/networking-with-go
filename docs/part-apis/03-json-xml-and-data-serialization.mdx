@@ -5,4 +5,163 @@ title: "JSON, XML, and Data Serialization"
 
 # JSON, XML, and Data Serialization
 
-// ...contenido y ejemplos...
+Every API eventually boils down to one question: how do we turn a Go struct into bytes on the wire, and back again? That process is serialization, and Go's standard library gives you two solid, built-in answers — `encoding/json` and `encoding/xml` — without needing a single third-party dependency. This chapter covers both, how struct tags shape the output, and how to negotiate which format a client actually wants.
+
+---
+
+## Why Serialization Matters
+
+A `struct` in memory is just a block of typed fields; it means nothing to a client written in Python, JavaScript, or another Go binary on a different machine. Serialization defines a shared, language-neutral shape for that data — JSON or XML — so any client that speaks HTTP can decode what your server produces, and vice versa.
+
+- **JSON** dominates modern REST APIs: compact, human-readable, and a near 1:1 match for JavaScript's native data types.
+- **XML** still shows up in enterprise integrations, SOAP-based services, and industries (banking, healthcare, government) with long-lived legacy contracts.
+
+Knowing both means you're never stuck when a client — or a decade-old backend you must integrate with — only speaks one of them.
+
+---
+
+## JSON with encoding/json
+
+The `encoding/json` package converts between Go values and JSON using struct tags to control field names and behavior:
+
+```go
+type User struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email,omitempty"`
+	Password string `json:"-"`
+}
+```
+
+- `json:"name"` renames the field in the output.
+- `omitempty` drops the field entirely when it holds a zero value (empty string, 0, nil, false).
+- `json:"-"` excludes the field from serialization altogether — essential for anything sensitive, like a password hash.
+
+**Encoding:**
+
+```go
+u := User{ID: 1, Name: "Ada Lovelace", Email: "ada@example.com", Password: "secret"}
+data, err := json.Marshal(u)
+// data == `{"id":1,"name":"Ada Lovelace","email":"ada@example.com"}`
+```
+
+**Decoding:**
+
+```go
+var u User
+err := json.Unmarshal(data, &u)
+```
+
+When writing HTTP handlers, prefer streaming over a `[]byte` round trip: `json.NewEncoder(w).Encode(u)` writes directly to the response body, and `json.NewDecoder(r.Body).Decode(&u)` reads directly from the request body without buffering the whole payload in memory first.
+
+<DeepDive title="Rejecting unknown fields">
+By default, `json.Unmarshal` silently ignores fields in the input that don't match your struct. If you want strict validation — rejecting a request body that includes a field you don't recognize — use a decoder with `DisallowUnknownFields()`: `dec := json.NewDecoder(r.Body); dec.DisallowUnknownFields()`. This catches typos and unexpected client payloads early instead of silently dropping data.
+</DeepDive>
+
+---
+
+## XML with encoding/xml
+
+`encoding/xml` mirrors the same struct-tag approach, but XML's richer structure — attributes, nested elements, namespaces — means the tags carry more information:
+
+```go
+type Order struct {
+	XMLName xml.Name `xml:"order"`
+	ID      int      `xml:"id,attr"`
+	Item    string   `xml:"item"`
+	Price   float64  `xml:"price"`
+}
+```
+
+- `XMLName xml.Name` with a tag of `"order"` sets the root element's name.
+- `,attr` makes `ID` render as an XML attribute (`<order id="42">`) instead of a child element.
+- Plain tags like `xml:"item"` become nested elements.
+
+```go
+o := Order{ID: 42, Item: "Keyboard", Price: 49.99}
+data, err := xml.MarshalIndent(o, "", "  ")
+```
+
+produces:
+
+```xml
+<order id="42">
+  <item>Keyboard</item>
+  <price>49.99</price>
+</order>
+```
+
+Decoding is symmetric: `xml.Unmarshal(data, &o)` or `xml.NewDecoder(r.Body).Decode(&o)` for streaming.
+
+---
+
+## Supporting Both Formats: Content Negotiation
+
+A well-behaved API inspects the `Accept` header and serves whichever format the client asked for, defaulting to JSON when the header is absent or set to `*/*`:
+
+```go
+func writeOrder(w http.ResponseWriter, r *http.Request, o Order) {
+	switch r.Header.Get("Accept") {
+	case "application/xml", "text/xml":
+		w.Header().Set("Content-Type", "application/xml")
+		xml.NewEncoder(w).Encode(o)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(o)
+	}
+}
+```
+
+Because the same `Order` struct carries both `json` and `xml` tags, one type serves both representations — no duplicate models needed.
+
+---
+
+## Real-World Example: A Bilingual Response
+
+**Request:**
+
+```http
+GET /orders/42 HTTP/1.1
+Host: api.example.com
+Accept: application/xml
+```
+
+**Response:**
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/xml
+
+<order id="42">
+  <item>Keyboard</item>
+  <price>49.99</price>
+</order>
+```
+
+Change the `Accept` header to `application/json` and the exact same handler returns:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"id":42,"item":"Keyboard","price":49.99}
+```
+
+---
+
+## Common Pitfalls
+
+- **Numbers as float64**: when decoding JSON into `interface{}` (rather than a concrete struct), all numbers become `float64`, which silently loses precision for very large integers. Use `json.Number` (via `dec.UseNumber()`) when exact integer values matter, such as IDs or monetary amounts in cents.
+- **Zero values vs missing fields**: `omitempty` can't distinguish "the client sent `0`" from "the client sent nothing." If that distinction matters — a common case in `PATCH` requests — use a pointer (`*int`) instead of a bare `int` so `nil` unambiguously means "not provided."
+- **Dates**: `time.Time` marshals to RFC 3339 by default (`"2026-07-14T10:00:00Z"`), which is almost always the right choice for APIs — avoid inventing a custom date format unless you have a strong reason to.
+- **Case sensitivity**: JSON field name matching in `encoding/json` is case-insensitive by default during decoding, which can mask typos in client payloads; `DisallowUnknownFields` helps here too.
+
+<Axiom>Serialization is a contract, not an implementation detail — every struct tag you write is a promise to every client that ever calls your API.</Axiom>
+
+---
+
+## Choosing Between JSON and XML
+
+For a new API, JSON is almost always the right default: smaller payloads, native fit with JavaScript, and universal tooling support. Reach for XML only when a specific integration demands it — a partner system, a SOAP-based legacy service, or a regulatory format that's defined in XML Schema. Designing your Go types with both tag sets from day one, as shown above, costs almost nothing and keeps that door open.
+
+With serialization covered, the next chapter puts it to work: building a complete, CRUD-capable RESTful API using nothing but the Go standard library.

@@ -5,4 +5,130 @@ title: "IoT Security: Concepts and Go Implementations"
 
 # IoT Security: Concepts and Go Implementations
 
-// ...contenido y ejemplos de seguridad en IoT con Go...
+> Give an intern full access to the building and no supervision, and you'd call it a management failure. Yet that's exactly how most IoT devices operate: network access, default credentials nobody rotates, firmware that rarely gets patched, and no one reviewing what they actually do all day. Unattended interns with root access - that's the IoT threat model in one sentence.
+
+## Why IoT Devices Are Different
+
+Traditional endpoint security assumes a device with enough compute to run an agent, receive regular patches, and support modern authentication. Most IoT devices violate every one of those assumptions: constrained CPU and memory that can't run a full security stack, firmware that may never be updated after shipping, default or hardcoded credentials that vendors expect (incorrectly) users to change, and lifespans measured in years or decades on networks that evolve much faster than the device's firmware does.
+
+The scale compounds the risk: a single compromised laptop is one incident, but the same default-credential vulnerability shipped across millions of identical devices is a botnet waiting to happen - a pattern the case-studies chapter later in this part examines through a specific, widely documented real-world incident.
+
+## Lightweight Protocols
+
+Constrained devices favor protocols designed for low bandwidth, low power, and intermittent connectivity rather than the assumptions baked into HTTP:
+
+- **MQTT** (Message Queuing Telemetry Transport) uses a lightweight publish/subscribe model over TCP: devices publish readings to a topic, and interested subscribers - a dashboard, an automation rule, another device - receive them through a central broker without a direct connection between publisher and subscriber.
+- **CoAP** (Constrained Application Protocol) mirrors HTTP's request/response semantics (GET, PUT, POST) but runs over UDP with a far smaller message overhead, suited to devices too constrained to justify a full TCP/TLS stack.
+
+Both protocols support security extensions (MQTT over TLS, CoAP with DTLS) but plenty of real deployments skip them for cost or power reasons, which is precisely the gap attackers exploit: unencrypted MQTT traffic on the wrong network segment leaks every device reading and command to anyone listening.
+
+## Securing IoT Deployments
+
+- **Unique device identity**, ideally via a per-device certificate rather than a shared password, so compromising one device doesn't hand over credentials valid for every device of the same model.
+- **Network segmentation**: IoT devices belong on their own VLAN or subnet with tightly scoped firewall rules, never sharing a broadcast domain with servers holding sensitive data - the same principle covered for wireless guest networks in the previous chapter, applied here for the same reason.
+- **Disable unused services**: many devices ship with Telnet, UPnP, or debug interfaces enabled by default that the actual product functionality never needs.
+- **Firmware update capability**: a device with no secure update mechanism is a device that will eventually run known-vulnerable code forever, since nothing about IoT hardware failure is as common as "the vendor stopped supporting the model" while the device keeps running on the network regardless.
+- **Least-privilege network egress**: a smart thermostat has no legitimate reason to make outbound connections to arbitrary internet hosts; an allowlist of exactly the vendor's cloud endpoints, enforced at the firewall, limits what a compromised device can even attempt.
+
+## Go Implementation: Mutual TLS Device Authentication
+
+Certificate-based device identity is one of the more effective single upgrades available to an IoT deployment - it replaces a shared, guessable, rarely-rotated password with a per-device credential that can be individually revoked. A minimal heartbeat service demonstrates the pattern: the server requires and verifies a client certificate before accepting any device data.
+
+```go
+package main
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"log/slog"
+	"net"
+	"os"
+)
+
+// Heartbeat is the structured payload a device sends on each check-in.
+type Heartbeat struct {
+	DeviceID string  `json:"device_id"`
+	BatteryV float64 `json:"battery_voltage"`
+}
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	caCert, err := os.ReadFile("ca.pem")
+	if err != nil {
+		logger.Error("failed to read CA certificate", "error", err)
+		os.Exit(1)
+	}
+	caPool := x509.NewCertPool()
+	caPool.AppendCertsFromPEM(caCert)
+
+	serverCert, err := tls.LoadX509KeyPair("server.pem", "server-key.pem")
+	if err != nil {
+		logger.Error("failed to load server certificate", "error", err)
+		os.Exit(1)
+	}
+
+	config := &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientCAs:    caPool,
+		// Require every device to present a certificate signed by our CA -
+		// no certificate, no connection, regardless of any password.
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	ln, err := tls.Listen("tcp", ":8443", config)
+	if err != nil {
+		logger.Error("listen failed", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("device heartbeat service listening", "addr", ln.Addr().String())
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		go handleDevice(conn, logger)
+	}
+}
+
+func handleDevice(conn net.Conn, logger *slog.Logger) {
+	defer conn.Close()
+
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return
+	}
+	if err := tlsConn.Handshake(); err != nil {
+		logger.Warn("handshake failed, rejecting device", "error", err)
+		return
+	}
+
+	// The device's identity comes from its certificate, not a password
+	// it typed in - this is what makes per-device revocation possible.
+	certs := tlsConn.ConnectionState().PeerCertificates
+	deviceCN := "unknown"
+	if len(certs) > 0 {
+		deviceCN = certs[0].Subject.CommonName
+	}
+
+	var hb Heartbeat
+	if err := json.NewDecoder(tlsConn).Decode(&hb); err != nil {
+		logger.Warn("malformed heartbeat", "device_cert_cn", deviceCN, "error", err)
+		return
+	}
+
+	logger.Info("heartbeat received", "device_cert_cn", deviceCN, "device_id", hb.DeviceID, "battery_voltage", hb.BatteryV)
+}
+```
+
+The server refuses the TLS handshake entirely for any client that can't present a certificate signed by the trusted CA - the connection never reaches application-level code at all. Revoking a single compromised device becomes a matter of adding its certificate to a revocation list or simply not renewing it, without touching credentials for any other device on the fleet.
+
+## Summary
+
+- IoT devices routinely violate the assumptions traditional endpoint security relies on: limited compute, rare patching, and long service life.
+- MQTT and CoAP trade some security defaults for the low overhead constrained devices need; enabling their TLS/DTLS variants is a meaningful, often-skipped improvement.
+- Segmentation, least-privilege egress, and disabling unused services reduce blast radius even when a device itself can't be hardened much further.
+- Per-device mutual TLS authentication, implementable directly with Go's standard library, replaces shared passwords with individually revocable identity.

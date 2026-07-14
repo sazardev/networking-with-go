@@ -1,8 +1,200 @@
 ---
 id: "[3.50.0]"
-title: "Observability and Tracing in Go Networking 🔎"
+title: "Observability and Tracing in Go Networking"
 ---
 
-# Observability and Tracing in Go Networking 🔎
+# Observability and Tracing in Go Networking
 
-// ...content coming soon...
+> "A pilot doesn't fly by feel—the cockpit is covered in instruments telling her altitude, speed, and fuel before anything goes wrong. A production network service without observability is a pilot flying blind: it might be fine, or it might be seconds from stalling, and you have no way to know until something breaks."
+
+## Why Networked Systems Need Instruments
+
+A single-process program either works or crashes with a stack trace pointing at the bug. A networked, distributed system fails in stranger ways: one service is slow, a downstream dependency times out intermittently, a connection pool is exhausted only under load. You can't attach a debugger to production traffic at 2 a.m., so you need the system to tell you what happened after the fact. That's observability, usually broken into three complementary pillars:
+
+- **Metrics**—numeric time series: requests per second, error rate, p99 latency. Cheap to collect, great for dashboards and alerts, but they tell you *that* something is wrong, not *why*.
+- **Logs**—discrete, timestamped events with context. Good for "what exactly happened on this one request," expensive to store and search at scale.
+- **Traces**—the path a single request took across every service and network hop it touched, with timing for each step. This is what tells you *which* of the twelve services in the call chain added the extra 400ms.
+
+Go's standard library gives you real, production-grade tools for the low-level parts of this; you generally reach for a third-party library only for the trace-collection and export layer.
+
+## Structured Logging with `log/slog`
+
+Since Go 1.21, the standard library ships `log/slog`, a structured logging package. Structured logs—key/value pairs instead of formatted sentences—are what makes logs machine-searchable, and this replaces what used to require a third-party dependency:
+
+```go
+package main
+
+import (
+	"log/slog"
+	"net"
+	"os"
+	"time"
+)
+
+func handleConn(logger *slog.Logger, conn net.Conn) {
+	start := time.Now()
+	defer conn.Close()
+
+	remote := conn.RemoteAddr().String()
+	logger.Info("connection accepted", "remote_addr", remote)
+
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		logger.Error("read failed", "remote_addr", remote, "error", err)
+		return
+	}
+
+	logger.Info("connection handled",
+		"remote_addr", remote,
+		"bytes_read", n,
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
+}
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ln, err := net.Listen("tcp", ":9200")
+	if err != nil {
+		logger.Error("listen failed", "error", err)
+		os.Exit(1)
+	}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		go handleConn(logger, conn)
+	}
+}
+```
+
+Every call carries structured fields (`remote_addr`, `bytes_read`) instead of a free-text sentence, so a log aggregator can filter and aggregate on them directly.
+
+## Watching the Network Layer with `httptrace`
+
+The standard library's `net/http/httptrace` package lets you hook into the exact phases of an outgoing HTTP request—DNS lookup, connection establishment, TLS handshake, first response byte—without touching a third-party tool. This is invaluable for answering "is our latency coming from DNS, from the network, or from the server itself?"
+
+```go
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"net/http"
+	"net/http/httptrace"
+	"time"
+)
+
+func timedGet(url string) error {
+	var dnsStart, connectStart, tlsStart time.Time
+
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(httptrace.DNSStartInfo) { dnsStart = time.Now() },
+		DNSDone: func(httptrace.DNSDoneInfo) {
+			fmt.Printf("DNS lookup: %v\n", time.Since(dnsStart))
+		},
+		ConnectStart: func(network, addr string) { connectStart = time.Now() },
+		ConnectDone: func(network, addr string, err error) {
+			fmt.Printf("TCP connect: %v\n", time.Since(connectStart))
+		},
+		TLSHandshakeStart: func() { tlsStart = time.Now() },
+		TLSHandshakeDone: func(tls.ConnectionState, error) {
+			fmt.Printf("TLS handshake: %v\n", time.Since(tlsStart))
+		},
+	}
+
+	req, err := http.NewRequestWithContext(
+		httptrace.WithClientTrace(context.Background(), trace),
+		http.MethodGet, url, nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	start := time.Now()
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	fmt.Printf("Total: %v (status %d)\n", time.Since(start), resp.StatusCode)
+	return nil
+}
+```
+
+`ClientTrace` hooks are called synchronously as the request progresses, so the timings above are exact—no polling, no guessing.
+
+## Distributed Tracing with OpenTelemetry
+
+`httptrace` explains one hop. A real system has many hops, and a slow request might be slow because of the fourth service in the chain, not the first. Distributed tracing solves this by attaching a shared **trace ID** to a request when it enters the system and propagating it through every downstream call, so every service's logs and spans can be stitched back into one timeline.
+
+OpenTelemetry (`go.opentelemetry.io/otel`) is the real, vendor-neutral standard for this in Go today. The core idea: wrap units of work in **spans**, and let the propagation context carry the trace ID across network boundaries automatically.
+
+```go
+package main
+
+import (
+	"context"
+	"net"
+
+	"go.opentelemetry.io/otel"
+)
+
+var tracer = otel.Tracer("network-service")
+
+func dialWithTracing(ctx context.Context, addr string) (net.Conn, error) {
+	ctx, span := tracer.Start(ctx, "tcp.dial")
+	defer span.End()
+
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+	return conn, nil
+}
+```
+
+Each `span.Start`/`span.End` pair records how long that specific operation took and attaches it to the surrounding trace; an exporter (Jaeger, Zipkin, or an OTLP collector) ships the completed spans somewhere you can visualize the whole request as a timeline, hop by hop.
+
+<Axiom>A trace without a propagated ID is just an unusually detailed log. The value of tracing comes entirely from context propagating across process and network boundaries.</Axiom>
+
+## Lightweight Metrics with `expvar`
+
+Not every service needs a full metrics stack. The standard library's `expvar` package exposes counters and gauges over HTTP as JSON, with almost no setup—useful for quick internal dashboards or debugging without pulling in Prometheus client libraries:
+
+```go
+package main
+
+import (
+	"expvar"
+	"net/http"
+)
+
+var (
+	activeConns  = expvar.NewInt("active_connections")
+	totalBytesRx = expvar.NewInt("total_bytes_received")
+)
+
+func main() {
+	// expvar registers its handler on the default mux at /debug/vars automatically.
+	http.ListenAndServe(":6060", nil)
+}
+```
+
+Visiting `/debug/vars` returns a JSON object with every registered variable—simple, dependency-free, and often enough for a small service.
+
+## Putting It Together
+
+A well-observed Go network service typically layers all four techniques: `slog` for structured events, `httptrace` for diagnosing outbound call latency, OpenTelemetry spans for the end-to-end distributed picture, and either `expvar` or a Prometheus client for dashboards and alerts. None of them replace the others—metrics tell you something is wrong, traces tell you where, and logs tell you exactly what happened on the request that mattered.
+
+## Key Takeaways
+
+- Metrics, logs, and traces are complementary, not interchangeable—each answers a different question.
+- `log/slog` (standard library, Go 1.21+) gives you structured, machine-searchable logging without a dependency.
+- `net/http/httptrace` exposes exact timing for DNS, connect, and TLS phases of a single HTTP request.
+- OpenTelemetry propagates a trace ID across network hops so a multi-service request can be reconstructed as one timeline.
+- `expvar` is a real, zero-dependency way to expose simple counters for small services that don't need a full metrics pipeline.

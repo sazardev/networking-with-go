@@ -1,8 +1,188 @@
 ---
 id: "[3.49.0]"
-title: "Automating Network Device Configuration ⚙️"
+title: "Automating Network Device Configuration"
 ---
 
-# Automating Network Device Configuration ⚙️
+# Automating Network Device Configuration
 
-// ...content coming soon...
+> "A medieval scribe copied books by hand, one letter at a time, and every copy risked a new typo. The printing press didn't just make copying faster—it made every copy identical. Automating network configuration is your printing press: instead of an engineer retyping the same VLAN change into four hundred switches at 2 a.m., one program applies it everywhere, the same way, every time."
+
+## Why Manual Configuration Doesn't Scale
+
+Every network engineer has a story about a single mistyped `no shutdown` that took down a branch office. Manual, interactive configuration—SSH in, type commands, hope you remembered all of them—works fine for one device. It falls apart at scale for reasons that have nothing to do with skill:
+
+- **Config drift.** Devices configured by hand slowly diverge from each other and from whatever is written in the runbook.
+- **No audit trail.** "Who changed the ACL on Tuesday?" is hard to answer when the answer lives in someone's terminal history.
+- **Human error compounds.** A typo in one device is a typo. A typo copy-pasted into two hundred devices is an outage.
+- **Change velocity.** Cloud-native environments reconfigure networks constantly; humans typing CLI commands cannot keep up.
+
+Automation replaces "an engineer remembers to do this correctly" with "a program does this the same way every time and tells you when it can't."
+
+## Two Philosophies: Screen-Scraping vs. Structured APIs
+
+Network devices expose configuration through two broad styles, and it matters which one you're automating against.
+
+**CLI screen-scraping** treats the device like a human would: you open an SSH session, send text commands (`show version`, `configure terminal`, `interface GigabitEthernet0/1`), and parse the text that comes back. This works on almost any device ever made, because almost every device has a CLI. Its weakness is that the output format is meant for human eyes, not machines—vendors change wording between firmware versions, and your parser breaks.
+
+**Model-driven APIs**—NETCONF and its younger sibling gNMI—exchange structured data (XML for NETCONF, protobuf for gNMI) instead of freeform text, validated against a formal schema (YANG). You ask for "the operational state of interface 3" and get a typed structure back, not a paragraph you have to regex. These are the right long-term answer, but not every device in a real network supports them yet, which is why screen-scraping automation is still a large, legitimate part of the job.
+
+<DeepDive title="NETCONF and gNMI, briefly">
+NETCONF (RFC 6241) runs over SSH and exchanges XML "configuration datastores." gNMI is Google's newer, gRPC-based equivalent, exchanging protobuf messages and supporting streaming telemetry as well as configuration. Both are modeled against YANG schemas defined by the OpenConfig project or the vendor. Go has real client libraries for both ecosystems (for example `openconfig/gnmic` for gNMI), but the concepts—not a specific API—are what you need to recognize when you meet them in a real network.
+</DeepDive>
+
+## Go Implementation
+
+Go's standard library doesn't ship a network-automation package, but it gives you everything needed to build one: `golang.org/x/crypto/ssh` for the transport, `text/template` for generating correct, repeatable configuration, and goroutines for doing all of it across a fleet of devices at once.
+
+### Talking to a Device Over SSH
+
+`golang.org/x/crypto/ssh` is the real, widely used Go SSH client. Here's a minimal function that opens a session, runs a single command, and returns the output—the building block of any screen-scraping automation tool:
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"golang.org/x/crypto/ssh"
+)
+
+// runCommand opens an SSH session to a device and runs a single command.
+func runCommand(addr, user, password, cmd string) (string, error) {
+	config := &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // demo only: verify real host keys in production
+		Timeout:         5 * time.Second,
+	}
+
+	client, err := ssh.Dial("tcp", addr, config)
+	if err != nil {
+		return "", fmt.Errorf("dial %s: %w", addr, err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("session: %w", err)
+	}
+	defer session.Close()
+
+	out, err := session.CombinedOutput(cmd)
+	if err != nil {
+		return "", fmt.Errorf("run %q: %w", cmd, err)
+	}
+	return string(out), nil
+}
+```
+
+<Warning title="Never ship InsecureIgnoreHostKey">
+`ssh.InsecureIgnoreHostKey()` accepts any host key, which means it cannot detect a man-in-the-middle attack. Real automation tooling verifies the host key against a known-hosts file with `ssh.FixedHostKey` or a custom `HostKeyCallback`.
+</Warning>
+
+### Generating Configuration from a Template
+
+The safest way to avoid typos is to never type the configuration by hand. `text/template` (standard library) lets you define a config skeleton once and fill it in from a Go struct—the same approach tools like Ansible use, minus the YAML:
+
+```go
+package main
+
+import (
+	"os"
+	"text/template"
+)
+
+type Interface struct {
+	Name  string
+	VLAN  int
+	Descr string
+}
+
+const vlanTemplate = `interface {{.Name}}
+ description {{.Descr}}
+ switchport access vlan {{.VLAN}}
+ no shutdown
+!
+`
+
+func renderConfig(iface Interface) error {
+	tmpl, err := template.New("vlan").Parse(vlanTemplate)
+	if err != nil {
+		return err
+	}
+	return tmpl.Execute(os.Stdout, iface)
+}
+```
+
+Because the template is data, not code, the same rendering function produces correct, consistent output whether you're configuring one interface or ten thousand—and you can unit test the rendered string before it ever touches a device.
+
+### Fanning Out Across a Fleet
+
+Real deployments touch many devices, and doing it one at a time defeats the purpose. Goroutines make concurrent rollout straightforward, as long as you bound concurrency so you don't open thousands of SSH sessions at once and as long as you record which devices failed instead of aborting the whole run:
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+type Result struct {
+	Device string
+	Err    error
+}
+
+func applyToFleet(devices []string, cmd string, concurrency int) []Result {
+	results := make([]Result, len(devices))
+	sem := make(chan struct{}, concurrency) // bound concurrent SSH sessions
+	var wg sync.WaitGroup
+
+	for i, d := range devices {
+		wg.Add(1)
+		go func(i int, device string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			_, err := runCommand(device+":22", "admin", "changeme", cmd)
+			results[i] = Result{Device: device, Err: err}
+		}(i, d)
+	}
+	wg.Wait()
+	return results
+}
+
+func main() {
+	devices := []string{"switch1.lab", "switch2.lab", "switch3.lab"}
+	for _, r := range applyToFleet(devices, "show version", 10) {
+		if r.Err != nil {
+			fmt.Printf("FAILED %s: %v\n", r.Device, r.Err)
+			continue
+		}
+		fmt.Printf("OK %s\n", r.Device)
+	}
+}
+```
+
+The buffered channel `sem` acts as a semaphore: only `concurrency` goroutines can hold a token at once, so you get parallelism without overwhelming the devices or your own machine's file descriptors.
+
+## Safety Nets: Dry Runs and Rollback
+
+Automation that applies changes instantly and irreversibly is automation that turns a small mistake into a fleet-wide outage. Production-grade tools always add a layer the code above doesn't show:
+
+- **Dry run first.** Render the config and diff it against the device's current state before applying anything.
+- **Canary devices.** Apply to one or two non-critical devices, verify, then roll out to the rest.
+- **Rollback plan.** Save the previous configuration before changing it, and have an automated path back to it.
+- **Idempotency.** Running the same automation twice should produce the same end state, not stack duplicate changes.
+
+None of these are exotic—the network simulation and virtual lab techniques from the previous chapter are exactly where you should be testing this kind of automation before it ever touches production hardware.
+
+## Key Takeaways
+
+- Manual CLI configuration doesn't scale; drift, human error, and lack of audit trails are structural problems, not skill problems.
+- Screen-scraping (SSH + parsing) works almost everywhere; model-driven APIs (NETCONF, gNMI) are more robust but require device support.
+- `golang.org/x/crypto/ssh` gives you a real, production-capable SSH transport for CLI automation.
+- `text/template` turns configuration into data, eliminating an entire class of typos.
+- Bounded goroutine pools let you roll out changes across a fleet quickly and safely, with per-device error reporting instead of an all-or-nothing failure.

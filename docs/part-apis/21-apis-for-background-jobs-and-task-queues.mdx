@@ -5,4 +5,164 @@ title: "APIs for Background Jobs and Task Queues"
 
 # APIs for Background Jobs and Task Queues
 
-// Ejemplo: Sidekiq, Celery, Go workers, patrones de diseño
+Some work is too slow to do inside an HTTP request. Sending a confirmation email, generating a PDF invoice, resizing an uploaded image, or calling a flaky third-party API can take anywhere from a second to several minutes — far longer than a client should have to wait for a response. The standard fix is to make the request handler do the minimum necessary, hand the rest of the work to a **task queue**, and return immediately. This chapter builds that pattern in Go using `hibiken/asynq`, a Redis-backed task queue library that is one of the most widely used in the Go ecosystem (playing a similar role to Sidekiq in Ruby or Celery in Python).
+
+## Why not just use a goroutine?
+
+The tempting shortcut is `go sendEmail(order)` right inside the handler. It works until the process restarts mid-task and the email silently never sends, or ten thousand requests arrive at once and spawn ten thousand unmanaged goroutines competing for the same downstream API. A real task queue gives you three things a bare goroutine doesn't: durability (the job survives a process restart because it's persisted, not just in memory), retry with backoff (a failed job is retried automatically instead of vanishing), and controlled concurrency (a fixed pool of workers, not an unbounded fan-out).
+
+## Defining and enqueuing a task
+
+With `asynq`, a task is a type name plus a payload. The API handler's only job is to serialize the payload and enqueue it — it never runs the task's logic directly:
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/hibiken/asynq"
+)
+
+const TypeEmailDelivery = "email:deliver"
+
+type EmailPayload struct {
+	OrderID string `json:"order_id"`
+	To      string `json:"to"`
+}
+
+var asynqClient *asynq.Client
+
+func initQueue(redisAddr string) {
+	asynqClient = asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+}
+
+func createOrderHandler(w http.ResponseWriter, r *http.Request) {
+	order := saveOrderSomehow(r) // your normal order-creation logic
+
+	payload, _ := json.Marshal(EmailPayload{OrderID: order.ID, To: order.Email})
+	task := asynq.NewTask(TypeEmailDelivery, payload)
+
+	_, err := asynqClient.Enqueue(task,
+		asynq.MaxRetry(5),
+		asynq.Timeout(30*time.Second),
+		asynq.Queue("default"),
+	)
+	if err != nil {
+		http.Error(w, "could not queue email", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, order)
+}
+```
+
+The request handler returns as soon as `Enqueue` succeeds — typically a few milliseconds, since it's just a write to Redis. The actual email delivery happens somewhere else entirely, on its own schedule, with its own retry policy.
+
+## The worker process
+
+Workers run as a separate process (or a separate goroutine pool in the same binary during development), consuming from the queue and dispatching to handler functions registered by task type:
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/hibiken/asynq"
+)
+
+func handleEmailDelivery(ctx context.Context, t *asynq.Task) error {
+	var p EmailPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return err // non-retriable if you wrap with asynq.SkipRetry
+	}
+	return sendEmail(p.To, p.OrderID) // returning an error triggers a retry
+}
+
+func main() {
+	srv := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: "localhost:6379"},
+		asynq.Config{Concurrency: 10},
+	)
+
+	mux := asynq.NewServeMux()
+	mux.HandleFunc(TypeEmailDelivery, handleEmailDelivery)
+
+	if err := srv.Run(mux); err != nil {
+		log.Fatalf("worker failed: %v", err)
+	}
+}
+```
+
+`Concurrency: 10` caps how many tasks this worker processes in parallel — a hard limit that a naive goroutine-per-request approach doesn't give you. If `handleEmailDelivery` returns a non-nil error, `asynq` retries the task later with exponential backoff, up to the `MaxRetry` set when the task was enqueued, and moves it to a dead-letter-style "archived" state after that.
+
+## Designing the API around asynchronous work
+
+Once work is asynchronous, your API's response contract has to change to match. Returning `201 Created` for the order is fine, but if the client needs to know when the email actually sent, you need a way to check status — either a `GET /orders/{id}` that includes a `notification_status` field updated by the worker, or a webhook fired when the task completes (the subject of the next chapter). What you should not do is make the client poll the task queue directly; the queue is an internal implementation detail, not part of your public API surface.
+
+<DeepDive title="Idempotency matters more with queues than without them">
+Because a task can be retried, `handleEmailDelivery` might run twice for the same order if the first attempt succeeded but the worker crashed before acknowledging it to Redis. Design task handlers so running them twice is safe — check whether the email was already marked sent before sending it again, the same way you'd design a webhook receiver.
+</DeepDive>
+
+## Scheduled and periodic tasks
+
+`asynq` also supports delayed and periodic tasks without a separate cron system:
+
+```go
+_, err := asynqClient.Enqueue(task, asynq.ProcessIn(24*time.Hour)) // reminder email tomorrow
+```
+
+For recurring jobs (nightly reports, hourly cache warmups), `asynq`'s companion scheduler (`asynq.NewScheduler`) accepts a cron expression and enqueues a task on that schedule, which is usually simpler than running a separate `cron` binary alongside your API.
+
+<Axiom>A good API responds fast; a good system finishes the work — a task queue is how you get both without lying to the client about which one just happened.</Axiom>
+
+<Warning title="Don't queue what you haven't validated">
+Enqueue only after you've validated the request and are confident the work should happen — a queue with no schema validation on the way in becomes a queue full of garbage payloads that workers can't process, discovered only when they start failing at 2 a.m.
+</Warning>
+
+## Watching queue depth, not just worker health
+
+A worker process reporting itself healthy tells you nothing about whether work is actually getting done in time — if tasks arrive faster than workers can process them, the queue backs up silently while every individual worker looks perfectly fine. `asynq` ships an `Inspector` type specifically for querying queue state, which is what a monitoring endpoint or a dashboard should poll rather than guessing from worker-side metrics alone:
+
+```go
+import "github.com/hibiken/asynq"
+
+func queueHealthHandler(inspector *asynq.Inspector) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, err := inspector.GetQueueInfo("default")
+		if err != nil {
+			http.Error(w, "could not inspect queue", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]int{
+			"pending": info.Pending,
+			"active":  info.Active,
+			"retry":   info.Retry,
+			"archived": info.Archived,
+		})
+	}
+}
+```
+
+A steadily climbing `Pending` count over several minutes is the earliest reliable signal that you need more worker capacity, well before users start noticing delayed emails or stalled exports — treat it the same way you'd treat a rising latency metric on a synchronous endpoint, because functionally it is the same problem, just shifted to a different part of the system.
+
+## Dead letters and manual recovery
+
+Once a task exhausts its `MaxRetry` attempts, `asynq` moves it to the archived state rather than discarding it — this is your dead-letter queue, and it exists specifically so a systemic failure (a downstream email provider down for an hour) doesn't silently lose every affected task. Building a small endpoint to list and manually re-enqueue archived tasks turns "we lost some emails and don't know which ones" into a two-minute operational fix:
+
+```go
+func retryArchivedHandler(inspector *asynq.Inspector) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.PathValue("id")
+		if err := inspector.RunTask("default", taskID); err != nil {
+			http.Error(w, "could not requeue task", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+```

@@ -5,4 +5,239 @@ title: "Building APIs with Fiber"
 
 # Building APIs with Fiber
 
-// ...contenido y ejemplos...
+Fiber (`github.com/gofiber/fiber/v2`) is a Go web framework inspired by Express.js, built on top of `fasthttp` rather than the standard library's `net/http`. That choice trades some ecosystem compatibility (middleware built for `net/http` doesn't plug directly into Fiber) for very low overhead and a request/response API that will feel immediately familiar to anyone coming from Node.js. This chapter rebuilds the same task API a third time, in Fiber.
+
+---
+
+## Installing Fiber
+
+```sh
+go get github.com/gofiber/fiber/v2
+```
+
+---
+
+## The App and Basic Routes
+
+```go
+package main
+
+import (
+	"github.com/gofiber/fiber/v2"
+)
+
+func main() {
+	app := fiber.New()
+
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+
+	app.Listen(":8080")
+}
+```
+
+Every Fiber handler has the signature `func(c *fiber.Ctx) error` — returning an error from a handler lets Fiber's centralized error handler turn it into a proper HTTP response, instead of every handler managing its own failure path.
+
+---
+
+## Path and Query Parameters
+
+```go
+app.Get("/products/:id", func(c *fiber.Ctx) error {
+	id := c.Params("id")
+	category := c.Query("category", "")
+	return c.JSON(fiber.Map{"id": id, "category": category})
+})
+```
+
+`c.Query("key", "default")` takes an optional default value, so you don't need a separate presence check for the common case of an optional filter.
+
+---
+
+## Parsing the Request Body
+
+`c.BodyParser` decodes JSON, XML, or form data into a struct based on the request's `Content-Type` — one method handles all three:
+
+```go
+type CreateTaskRequest struct {
+	Text string `json:"text"`
+}
+
+func createTask(c *fiber.Ctx) error {
+	var req CreateTaskRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+	}
+	if req.Text == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "text is required"})
+	}
+	task := store.Create(req.Text)
+	return c.Status(fiber.StatusCreated).JSON(task)
+}
+```
+
+---
+
+## A Complete Task API in Fiber
+
+```go
+type Task struct {
+	ID   int    `json:"id"`
+	Text string `json:"text"`
+	Done bool   `json:"done"`
+}
+
+func setupApp(store *Store) *fiber.App {
+	app := fiber.New()
+
+	api := app.Group("/api/v1")
+
+	api.Post("/tasks", func(c *fiber.Ctx) error {
+		var req CreateTaskRequest
+		if err := c.BodyParser(&req); err != nil || req.Text == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "text is required"})
+		}
+		return c.Status(fiber.StatusCreated).JSON(store.Create(req.Text))
+	})
+
+	api.Get("/tasks", func(c *fiber.Ctx) error {
+		return c.JSON(store.List())
+	})
+
+	api.Get("/tasks/:id", func(c *fiber.Ctx) error {
+		id, err := strconv.Atoi(c.Params("id"))
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid id"})
+		}
+		task, err := store.Get(id)
+		if err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "task not found"})
+		}
+		return c.JSON(task)
+	})
+
+	api.Delete("/tasks/:id", func(c *fiber.Ctx) error {
+		id, err := strconv.Atoi(c.Params("id"))
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid id"})
+		}
+		if err := store.Delete(id); err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "task not found"})
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	return app
+}
+```
+
+**Request:**
+
+```http
+POST /api/v1/tasks HTTP/1.1
+Content-Type: application/json
+
+{"text": "Learn Fiber"}
+```
+
+**Response:**
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{"id":1,"text":"Learn Fiber","done":false}
+```
+
+---
+
+## Middleware
+
+Fiber ships an official middleware collection under `github.com/gofiber/fiber/v2/middleware/...` for logging, recovery, CORS, rate limiting, and more:
+
+```go
+import (
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+)
+
+app := fiber.New()
+app.Use(logger.New())
+app.Use(recover.New())
+```
+
+Custom middleware follows the same `func(c *fiber.Ctx) error` shape, calling `c.Next()` to continue the chain:
+
+```go
+func requireAPIKey(validKey string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if c.Get("X-API-Key") != validKey {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid api key"})
+		}
+		return c.Next()
+	}
+}
+
+api := app.Group("/api/v1", requireAPIKey(key))
+```
+
+<Warning title="fasthttp is not net/http">
+Fiber's `*fiber.Ctx` does not wrap `http.ResponseWriter` or `*http.Request` — it's backed by `fasthttp`'s own request/response types, reused across requests from a pool for performance. That means standard-library middleware, and packages that expect `http.Handler`, generally can't be dropped straight into a Fiber app; you need Fiber-specific equivalents. Keep this in mind before mixing Fiber with `net/http`-based libraries.
+</Warning>
+
+---
+
+## Graceful Shutdown
+
+```go
+go func() {
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}()
+
+ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer stop()
+<-ctx.Done()
+
+app.ShutdownWithTimeout(10 * time.Second)
+```
+
+---
+
+## Testing a Fiber Handler
+
+Fiber apps expose a `Test` method built specifically for driving a request through the app in tests, without binding a real port:
+
+```go
+func TestGetTask(t *testing.T) {
+	app := setupApp(seededStore())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/1", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+```
+
+`app.Test` runs the request through the full routing and middleware stack in-process and returns a standard `*http.Response`, so the rest of the assertion — reading `resp.Body`, decoding JSON — looks exactly like testing any other HTTP client call.
+
+---
+
+## Fiber vs Gin
+
+Both frameworks solve the same problem with a similar shape — routes, groups, middleware, JSON helpers — but the underlying engine differs:
+
+- **Gin** builds on `net/http`, so it's compatible with the entire standard-library-based middleware ecosystem, and its `*gin.Context` is a thin layer over familiar types.
+- **Fiber** builds on `fasthttp`, which avoids some of `net/http`'s allocation overhead and can be measurably faster under high load, at the cost of its own middleware ecosystem and reduced interoperability with `net/http`-based code (like `net/http/pprof`, or most gRPC-gateway tooling).
+
+For most teams, the deciding factor isn't raw throughput — both comfortably handle the request volumes most APIs ever see — but which ecosystem of middleware and documentation you'd rather live in. Gin's larger, `net/http`-compatible ecosystem tends to be the safer default; Fiber earns its place when you know performance at extreme scale is the binding constraint, or when the team already prefers its Express-like API from prior Node.js experience.
+
+A practical middle ground worth knowing: Fiber can run behind `net/http` via an adapter package if you later need to embed it inside a larger `net/http`-based application, though at that point it's worth asking whether Gin (which never needed the adapter in the first place) would have been the simpler choice from the start.
+
+Next, we'll shift from JSON APIs to serving HTML pages, templates, and static assets — for the parts of your application that render a page rather than return data.

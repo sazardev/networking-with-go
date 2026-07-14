@@ -1,15 +1,15 @@
 ---
 id: "[2.12.0]"
-title: "WebSockets: Real-Time Communication in Go ⚡"
+title: "WebSockets: Real-Time Communication in Go"
 ---
 
-# WebSockets: Real-Time Communication in Go ⚡
+# WebSockets: Real-Time Communication in Go
 
 > "Imagine a phone call instead of sending letters: both sides can talk and listen at any time, instantly. WebSockets turn HTTP from a one-way street into a two-way highway!"
 
 ---
 
-## 🚦 Why WebSockets? (Deeper Theory)
+## Why WebSockets? (Deeper Theory)
 - **What are WebSockets?**
   - WebSockets are a protocol that enables full-duplex (two-way), persistent communication between a client (usually a browser) and a server over a single TCP connection.
   - Unlike HTTP, which is request/response and stateless, WebSockets keep the connection open, allowing both sides to send data at any time.
@@ -28,7 +28,7 @@ title: "WebSockets: Real-Time Communication in Go ⚡"
 
 ---
 
-## 🌐 Networking Theory: Where Do WebSockets Fit?
+## Networking Theory: Where Do WebSockets Fit?
 - **Layer:** WebSockets operate at the application layer, on top of TCP.
 - **Port:** Usually use the same ports as HTTP/HTTPS (80/443), so they work through most firewalls and proxies.
 - **Protocol:** After the handshake, the protocol is no longer HTTP, but a binary framing protocol defined by RFC 6455.
@@ -36,13 +36,13 @@ title: "WebSockets: Real-Time Communication in Go ⚡"
 
 ---
 
-## ✅ Advantages of WebSockets
+## Advantages of WebSockets
 - **Low latency:** No need to re-establish connections for each message.
 - **Bidirectional:** Both client and server can send messages at any time.
 - **Efficient:** Less overhead than HTTP polling or long-polling.
 - **Scalable:** Good for apps with many simultaneous connections (with proper server design).
 
-## ❌ Disadvantages of WebSockets
+## Disadvantages of WebSockets
 - **Stateful:** Server must keep track of open connections (uses more memory).
 - **Complexity:** More complex to implement and debug than simple HTTP.
 - **Not cacheable:** No built-in caching or intermediaries like HTTP.
@@ -51,7 +51,7 @@ title: "WebSockets: Real-Time Communication in Go ⚡"
 
 ---
 
-## 🧰 Go Packages for WebSockets
+## Go Packages for WebSockets
 - **gorilla/websocket:** The most popular, robust, and well-documented WebSocket package for Go. Handles handshake, frames, and provides a simple API.
 - **nhooyr.io/websocket:** Modern, minimal, and context-aware WebSocket library for Go.
 - **gobwas/ws:** High-performance, low-level WebSocket library for Go.
@@ -64,7 +64,7 @@ title: "WebSockets: Real-Time Communication in Go ⚡"
 
 ---
 
-## 🧑‍💻 Example Use Cases
+## Example Use Cases
 - **Chat server:** Real-time messaging between users.
 - **Live notifications:** Push updates to clients instantly (e.g., social media, news, stock prices).
 - **Collaborative editing:** Multiple users editing the same document in real time.
@@ -73,7 +73,7 @@ title: "WebSockets: Real-Time Communication in Go ⚡"
 
 ---
 
-## 🧠 How WebSockets Work (vs HTTP)
+## How WebSockets Work (vs HTTP)
 - **HTTP:** Client sends a request, server replies, then connection closes.
 - **WebSocket:** Client requests an upgrade, server agrees, then both can send/receive messages until one closes the connection.
 
@@ -90,7 +90,7 @@ sequenceDiagram
 
 ---
 
-## 🛠️ Go in Action: WebSocket Echo Server (Gorilla)
+## Go in Action: WebSocket Echo Server (Gorilla)
 
 Let’s build a simple WebSocket echo server using the popular [gorilla/websocket](https://github.com/gorilla/websocket) package.
 
@@ -120,7 +120,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-echo-server/main.go)
 
 ---
 
-## 🛠️ Go in Action: WebSocket Client Example (Gorilla)
+## Go in Action: WebSocket Client Example (Gorilla)
 
 This client connects to the echo server, sends a message every second, and prints any received messages.
 
@@ -143,7 +143,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-client/main.go)
 
 ---
 
-## 🛠️ Go in Action: Native WebSocket Echo Server (No Third-Party Packages)
+## Go in Action: Native WebSocket Echo Server (No Third-Party Packages)
 
 Go’s standard library does not provide a high-level WebSocket API, but you can implement the protocol manually for learning purposes.
 
@@ -172,7 +172,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-native-server/main.go)
 
 ---
 
-## 🛠️ Go in Action: Native WebSocket Client
+## Go in Action: Native WebSocket Client
 
 This client connects to the native server, performs the handshake, and allows you to type messages to send and receive echoes.
 
@@ -195,7 +195,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-native-client/main.go)
 
 ---
 
-## 🛠️ Go in Action: Native WebSocket Hello Server (Greets with Client IP)
+## Go in Action: Native WebSocket Hello Server (Greets with Client IP)
 
 This advanced example shows how to implement a native WebSocket server (no third-party packages) that greets each client with a message including their IP address.
 
@@ -230,7 +230,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-hello-server/main.go)
 
 ---
 
-## 🛠️ Go in Action: WebSocket Hello Server (Gorilla, Greets with Client IP)
+## Go in Action: WebSocket Hello Server (Gorilla, Greets with Client IP)
 
 This example uses the gorilla/websocket package to greet each client with their IP address as soon as they connect.
 
@@ -269,7 +269,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-hello-server-gorilla/main.go
 
 ---
 
-## 📝 Understanding the Code (Native Example)
+## Understanding the Code (Native Example)
 
 ### Server (Native)
 - Handles the HTTP upgrade handshake manually (see `wsHandler`).
@@ -286,7 +286,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-hello-server-gorilla/main.go
 
 ---
 
-## 🧪 Practical Exercise Files
+## Practical Exercise Files
 - [WebSocket Echo Server Example (Gorilla)](../../exercises/part2/12-websocket-echo-server/main.go)
 - [WebSocket Client Example (Gorilla)](../../exercises/part2/12-websocket-client/main.go)
 - [Native WebSocket Echo Server Example](../../exercises/part2/12-websocket-native-server/main.go)
@@ -296,7 +296,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-hello-server-gorilla/main.go
 
 ---
 
-## 🧠 Key Takeaways
+## Key Takeaways
 - WebSockets enable real-time, bidirectional communication over a single connection.
 - Use the `gorilla/websocket` package for robust WebSocket support in Go.
 - For learning, you can implement the protocol natively using only the standard library.

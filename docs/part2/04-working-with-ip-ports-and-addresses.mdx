@@ -1,15 +1,15 @@
 ---
 id: "[2.4.0]"
-title: "Working with IP, Ports, and Addresses: Concepts and Go Implementation 🏷️"
+title: "Working with IP, Ports, and Addresses: Concepts and Go Implementation"
 ---
 
-# Working with IP, Ports, and Addresses: Concepts and Go Implementation 🏷️
+# Working with IP, Ports, and Addresses: Concepts and Go Implementation
 
 > "Imagine the internet as a vast city. Every building (device) has an address (IP), every door (service) has a number (port), and Go is your GPS, map, and keyring—all in one!"
 
 ---
 
-## 🧭 What Are IPs, Ports, and Addresses?
+## What Are IPs, Ports, and Addresses?
 
 - **IP Address:** Like a street address for your device on a network. IPv4 (e.g., 192.168.1.1) and IPv6 (e.g., 2001:db8::1).
 - **Port:** Like an apartment number—identifies a specific service on a device (e.g., port 80 for web servers).
@@ -17,7 +17,7 @@ title: "Working with IP, Ports, and Addresses: Concepts and Go Implementation �
 
 ---
 
-## 🌍 IP Address Theory
+## IP Address Theory
 
 - **IPv4:** 32 bits, four numbers (0–255), e.g., 8.8.8.8 (Google DNS).
 - **IPv6:** 128 bits, eight groups, e.g., 2001:4860:4860::8888 (also Google DNS).
@@ -32,7 +32,7 @@ Go abstracts away the complexity of IP addresses. When you use `net.LookupIP`, G
 
 ---
 
-## 🚪 Ports and Services
+## Ports and Services
 
 - **Well-known ports:** 80 (HTTP), 443 (HTTPS), 22 (SSH), 25 (SMTP), etc.
 - **Dynamic ports:** Used for temporary connections (e.g., 49152–65535).
@@ -45,7 +45,7 @@ When you open a connection in Go (e.g., `net.Dial("tcp", "example.com:80")`), Go
 
 ---
 
-## 🛠️ Go in Action: Lookup IPs
+## Go in Action: Lookup IPs
 
 Let’s see how to resolve a hostname to its IP addresses in Go:
 
@@ -73,7 +73,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Parsing and Using Ports
+## Go in Action: Parsing and Using Ports
 
 ```go
 package main
@@ -97,7 +97,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Checking Local IPs
+## Go in Action: Checking Local IPs
 
 ```go
 package main
@@ -122,7 +122,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Simple TCP Port Scanner
+## Go in Action: Simple TCP Port Scanner
 
 ```go
 package main
@@ -151,7 +151,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Custom Address Parsing
+## Go in Action: Custom Address Parsing
 
 ```go
 package main
@@ -179,7 +179,7 @@ func main() {
 
 ---
 
-## 🎨 Visual Summary
+## Visual Summary
 
 ```
 [Hostname] --DNS Lookup--> [IP Address]
@@ -191,7 +191,7 @@ func main() {
 
 ---
 
-## 🤩 Fun Facts & Go Memes
+## Fun Facts & Go Memes
 - The first IP address ever assigned was 0.0.0.0 (reserved for special use).
 - IPv6 has enough addresses for every atom on Earth (and then some!).
 - In Go, you can build a DNS resolver, a port scanner, or even your own network protocol with just a few lines of code.

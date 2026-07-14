@@ -1,8 +1,215 @@
 ---
 id: "[3.55.0]"
-title: "Blockchain and Cryptocurrency Networking ⛓️"
+title: "Blockchain and Cryptocurrency Networking"
 ---
 
-# Blockchain and Cryptocurrency Networking ⛓️
+# Blockchain and Cryptocurrency Networking
 
-// ...content coming soon...
+> "Picture a room full of strangers who don't trust each other, but who all agree to keep an identical copy of the same notebook. Whenever someone writes a new entry, everyone else checks it, copies it into their own notebook, and tells their neighbors. No one owns the notebook. No one can secretly rewrite yesterday's page without everyone else noticing their copy doesn't match. That's a blockchain—and underneath the cryptography, it's fundamentally a networking problem: how do strangers agree on one shared history without a central authority?"
+
+## Blockchain Is Mostly a Peer-to-Peer Networking Problem
+
+Strip away the cryptocurrency hype and a blockchain is a **replicated, append-only ledger maintained by a peer-to-peer network with no central coordinator**. The interesting engineering problems are almost all networking problems:
+
+- **Peer discovery**—how does a new node find other nodes to talk to?
+- **Gossip propagation**—when a node creates a new block or transaction, how does it reach the whole network quickly without every node talking to every other node directly?
+- **Consensus over an unreliable network**—if two nodes create competing blocks at nearly the same time, how does the network agree on one canonical history?
+
+Real production chains (Bitcoin Core, go-ethereum) solve these at significant scale with mature, battle-tested code. This chapter builds a small, from-scratch toy blockchain node in Go to make the underlying mechanics concrete—not a production-ready chain, but a real, working illustration of how the pieces fit together.
+
+## The Ledger: Blocks Chained by Hash
+
+Each block contains its data, a reference to the previous block's hash, and its own hash computed over everything—including the previous hash. That chaining is what makes tampering detectable: changing any past block changes its hash, which no longer matches what the next block recorded, and every node with a copy of the chain can see the mismatch.
+
+```go
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"time"
+)
+
+type Block struct {
+	Index     int
+	Timestamp int64
+	Data      string
+	PrevHash  string
+	Nonce     int
+	Hash      string
+}
+
+func (b *Block) computeHash() string {
+	record := fmt.Sprintf("%d%d%s%s%d", b.Index, b.Timestamp, b.Data, b.PrevHash, b.Nonce)
+	sum := sha256.Sum256([]byte(record))
+	return hex.EncodeToString(sum[:])
+}
+
+// mine performs a minimal proof-of-work: increment Nonce until the hash
+// starts with `difficulty` zero characters. This is the same core idea
+// Bitcoin uses, simplified to a tiny difficulty for a teaching example.
+func (b *Block) mine(difficulty int) {
+	target := make([]byte, difficulty)
+	for i := range target {
+		target[i] = '0'
+	}
+	for {
+		b.Hash = b.computeHash()
+		if b.Hash[:difficulty] == string(target) {
+			return
+		}
+		b.Nonce++
+	}
+}
+
+func NewBlock(index int, data, prevHash string, difficulty int) *Block {
+	b := &Block{Index: index, Timestamp: time.Now().Unix(), Data: data, PrevHash: prevHash}
+	b.mine(difficulty)
+	return b
+}
+```
+
+Proof-of-work exists to make block creation expensive on purpose: it's what stops a malicious node from cheaply rewriting history and re-broadcasting a fake chain faster than the real one grows.
+
+### Validating the Chain
+
+```go
+func isChainValid(chain []*Block) bool {
+	for i := 1; i < len(chain); i++ {
+		curr, prev := chain[i], chain[i-1]
+		if curr.PrevHash != prev.Hash {
+			return false
+		}
+		if curr.Hash != curr.computeHash() {
+			return false
+		}
+	}
+	return true
+}
+```
+
+Any node receiving a chain from a peer runs this check before accepting it—trust isn't assumed, it's verified independently by every participant.
+
+## The P2P Layer: Gossiping Blocks Over TCP
+
+The networking half of the toy node: each peer keeps a list of connections to other peers and, when it creates or receives a new block, forwards it to everyone it knows about (except whoever just sent it). This flooding approach is simple and is genuinely how early blockchain gossip protocols worked, just without the optimizations (like tracking which peers have already seen a given block hash) that production networks add to cut down redundant traffic.
+
+```go
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"net"
+	"sync"
+)
+
+type Node struct {
+	mu    sync.Mutex
+	peers map[string]net.Conn
+	chain []*Block
+}
+
+func NewNode(genesis *Block) *Node {
+	return &Node{peers: make(map[string]net.Conn), chain: []*Block{genesis}}
+}
+
+// Listen accepts inbound peer connections and handles each on its own goroutine.
+func (n *Node) Listen(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				continue
+			}
+			n.addPeer(conn)
+		}
+	}()
+	return nil
+}
+
+func (n *Node) addPeer(conn net.Conn) {
+	n.mu.Lock()
+	n.peers[conn.RemoteAddr().String()] = conn
+	n.mu.Unlock()
+	go n.readLoop(conn)
+}
+
+func (n *Node) Connect(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	n.addPeer(conn)
+	return nil
+}
+
+// readLoop receives newline-delimited JSON-encoded blocks from one peer.
+func (n *Node) readLoop(conn net.Conn) {
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		var b Block
+		if err := json.Unmarshal(scanner.Bytes(), &b); err != nil {
+			continue
+		}
+		n.handleIncomingBlock(&b, conn)
+	}
+}
+
+func (n *Node) handleIncomingBlock(b *Block, from net.Conn) {
+	n.mu.Lock()
+	last := n.chain[len(n.chain)-1]
+	valid := b.PrevHash == last.Hash && b.Hash == b.computeHash()
+	if valid {
+		n.chain = append(n.chain, b)
+	}
+	n.mu.Unlock()
+
+	if valid {
+		fmt.Printf("accepted block %d\n", b.Index)
+		n.broadcast(b, from) // gossip onward to other peers
+	}
+}
+
+// broadcast forwards a block to every peer except the one it came from.
+func (n *Node) broadcast(b *Block, except net.Conn) {
+	payload, err := json.Marshal(b)
+	if err != nil {
+		return
+	}
+	payload = append(payload, '\n')
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, conn := range n.peers {
+		if conn == except {
+			continue
+		}
+		conn.Write(payload)
+	}
+}
+```
+
+With this in place, mining a new block and calling `node.broadcast(newBlock, nil)` propagates it outward: each peer that accepts the block re-broadcasts to its own peers, and within a few hops the whole network converges on the same chain—the same gossip pattern real cryptocurrency networks use, just without the additional machinery (peer scoring, orphan block handling, chain-reorg logic) production systems need.
+
+<Warning title="This is a teaching model, not a wallet">
+Real cryptocurrency networks add substantial machinery this example skips entirely: transaction signing and verification with public-key cryptography, a mempool for pending transactions, incentives (block rewards) for miners, protection against Sybil and eclipse attacks, and handling competing chains (forks) by adopting the longest valid one. Never use a from-scratch toy like this to hold real value.
+</Warning>
+
+## Where Go Fits in Real Blockchain Infrastructure
+
+Go is not a toy choice here—**go-ethereum** (`geth`), the reference Ethereum client used by a large share of the network's nodes, is written in Go, as is much of the tooling around it. Its `devp2p` networking layer solves exactly the peer discovery and gossip problems sketched above, at production scale and hardened against years of adversarial conditions. If you want to go further than this chapter's toy node, reading `devp2p`'s discovery and gossip code is a natural next step—the concepts translate directly from what you just built.
+
+## Key Takeaways
+
+- A blockchain is fundamentally a peer-to-peer networking problem: peer discovery, gossip propagation, and consensus over an unreliable network.
+- Chaining blocks by hash (each block's hash depends on the previous one) is what makes tampering with history detectable by every node independently.
+- Proof-of-work makes block creation deliberately expensive, which is what prevents cheap history rewrites.
+- A minimal Go P2P layer—TCP connections plus JSON-encoded block gossip—demonstrates the same flooding pattern real cryptocurrency networks use.
+- Production chains add cryptographic transaction verification, incentive structures, and fork resolution that this toy example intentionally omits; go-ethereum is a real, production Go codebase worth studying for the full picture.

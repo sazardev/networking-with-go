@@ -1,10 +1,177 @@
 ---
 id: "[2.17.0]"
-title: "NAT Traversal and P2P Networking: Concepts and Go Implementation 🔄"
+title: "NAT Traversal and P2P Networking: Concepts and Go Implementation"
 ---
 
-# NAT Traversal and P2P Networking: Concepts and Go Implementation 🔄
+# NAT Traversal and P2P Networking: Concepts and Go Implementation
 
-Explore NAT traversal and peer-to-peer networking in Go.
+> "Imagine two apartment buildings, each with a single front desk that receives all mail for the building. If you want to send a package directly to apartment 4B in the other building, you can't — mail only flows in through the front desk, and only if the desk is expecting it. NAT traversal is the trick of getting both front desks to expect each other's package at the same time, so the packages can meet in the middle."
+
+---
+
+## What NAT Is and Why It Breaks Direct Connections
+
+Every server you've built so far assumed the client could reach it directly at a known IP and port. That assumption falls apart the moment both peers are behind **NAT (Network Address Translation)** — the norm for home routers and most consumer internet connections, where many private IPs (like `192.168.1.x`) share one public IP.
+
+NAT works fine for outbound connections: your laptop opens a connection out, the router remembers the mapping, and return traffic finds its way back. The problem is *inbound*: nothing arrives at your router unless the router already has a mapping for it. Two peers, each behind their own NAT, cannot simply `net.Dial` each other directly — there's no public listener on either side.
+
+### Types of NAT Behavior
+
+- **Full cone:** Once an internal address maps to an external port, any external host can reach it through that port. The most traversal-friendly.
+- **Restricted cone:** Only external hosts the internal host has already sent traffic to can reply through the mapping.
+- **Symmetric:** A new external port is assigned for every distinct destination, making the external mapping unpredictable ahead of time. The hardest to traverse.
+
+---
+
+## Hole Punching
+
+The classic technique for connecting two NATed peers is **hole punching**: both peers simultaneously send traffic toward each other's public address, which causes each router to open a mapping ("punch a hole") for the other's replies, right at the moment those replies arrive. Neither side is a passive listener waiting for a stranger; both are actively initiating traffic, which is what makes it work with cone NATs.
+
+UDP is far friendlier to this than TCP, since it's connectionless — you don't need a three-way handshake before you can start punching, you just start sending datagrams. This is the same connectionless "send now, ask questions later" model from the UDP chapter.
+
+To punch a hole, both peers first need to *learn* their own public address and *exchange* it with the other peer — neither can see its own NAT mapping from the inside. That requires a third party both peers can already reach: a **rendezvous server**.
+
+<DeepDive title="STUN, TURN, and ICE">
+Production P2P systems (WebRTC, many VoIP tools) use standardized protocols for this: **STUN** servers tell a peer its own public IP/port; **TURN** servers relay traffic when direct punching fails (typically against symmetric NAT); **ICE** is the framework that tries direct connections first and falls back to a TURN relay. The rendezvous server we build below is a simplified, hand-rolled stand-in for what a STUN server provides.
+</DeepDive>
+
+---
+
+## Go Implementation: A Rendezvous Server
+
+The rendezvous server has one job: when a peer connects, record the public address the connection *appears* to come from (its NAT-mapped address, not whatever private IP the peer thinks it has), and hand that address to the other peer that registers under the same session.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+	"sync"
+)
+
+type rendezvous struct {
+	mu    sync.Mutex
+	peers map[string]*net.UDPAddr // session ID -> first peer's address
+}
+
+func (r *rendezvous) handle(conn *net.UDPConn, addr *net.UDPAddr, session string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	other, ok := r.peers[session]
+	if !ok {
+		// First peer for this session: remember its address and wait.
+		r.peers[session] = addr
+		return
+	}
+
+	// Second peer arrived: tell each peer the other's public address.
+	conn.WriteToUDP([]byte(other.String()), addr)
+	conn.WriteToUDP([]byte(addr.String()), other)
+	delete(r.peers, session)
+}
+
+func main() {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: 9400})
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+	fmt.Println("rendezvous server listening on :9400")
+
+	r := &rendezvous{peers: make(map[string]*net.UDPAddr)}
+	buf := make([]byte, 256)
+	for {
+		n, addr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			continue
+		}
+		session := string(buf[:n])
+		r.handle(conn, addr, session)
+	}
+}
+```
+
+Because the server reads the packet's source address itself (`addr` from `ReadFromUDP`) rather than trusting anything the client claims, it naturally learns each peer's real public IP and NAT-assigned port — exactly the information neither peer can see on its own.
+
+---
+
+## Go Implementation: The Peer
+
+Each peer registers with the rendezvous server under a shared session name, receives the other peer's public address, and starts sending UDP packets directly to it — punching the hole in its own NAT in the process.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+	"os"
+	"time"
+)
+
+func main() {
+	session := os.Args[1] // both peers must use the same session ID
+
+	rendezvousAddr, _ := net.ResolveUDPAddr("udp", "rendezvous.example.com:9400")
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: 0})
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+
+	// Register with the rendezvous server.
+	conn.WriteToUDP([]byte(session), rendezvousAddr)
+
+	buf := make([]byte, 64)
+	n, _, err := conn.ReadFromUDP(buf)
+	if err != nil {
+		panic(err)
+	}
+	peerAddr, err := net.ResolveUDPAddr("udp", string(buf[:n]))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("peer public address:", peerAddr)
+
+	// Punch: send directly to the peer's public address. The first few
+	// packets may be dropped by the peer's NAT before its own outbound
+	// packets have opened a matching hole — that's expected and why
+	// both sides keep sending on a short interval.
+	go func() {
+		for {
+			conn.WriteToUDP([]byte("ping"), peerAddr)
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
+
+	for {
+		n, from, _ := conn.ReadFromUDP(buf)
+		fmt.Printf("received %q from %s\n", buf[:n], from)
+	}
+}
+```
+
+[Exercise: UDP Hole Punching](../../exercises/part2/17-udp-hole-punching/main.go)
+
+Once each router sees outbound traffic from its own peer toward the other's address, it opens a mapping that lets the other peer's replies through — the "hole" is punched, and from that point the two peers are talking directly, with no traffic passing through the rendezvous server at all.
+
+---
+
+## Limitations
+
+Hole punching reliably works against full-cone and restricted-cone NATs. Against **symmetric NAT**, the external port assigned to a peer changes per destination, so the address learned via the rendezvous server (which the peer contacted from a different destination than the eventual peer-to-peer target) may already be stale by the time the other peer tries it. In that case, a relay — a server both peers *can* reach that simply forwards traffic between them, the same byte-shuffling proxy pattern from the previous chapter — becomes the only reliable fallback, which is exactly the role TURN servers play in production ICE implementations.
+
+---
+
+## Key Takeaways
+
+- NAT breaks unsolicited inbound connections; hole punching works around it by having both peers punch outbound at the same time.
+- A rendezvous server's core value is observing each peer's real public address — something neither peer can determine from the inside.
+- UDP's connectionless model makes it far more forgiving for hole punching than TCP.
+- Symmetric NAT often defeats hole punching outright, which is why production systems keep a relay (TURN-style) as a fallback.
+
+---
 
 [Previous: DNS: Theory and Go Implementation](16-dns-theory-and-go-implementation.md) | [Next: Authentication and Authorization](18-authentication-and-authorization.md)

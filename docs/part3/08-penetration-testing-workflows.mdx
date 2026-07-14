@@ -1,10 +1,112 @@
 ---
 id: "[4.8.0]"
-title: "Penetration Testing Workflows 🏹"
+title: "Penetration Testing Workflows"
 ---
 
-# Penetration Testing Workflows 🏹
+# Penetration Testing Workflows
 
-Learn about the process and methodology of penetration testing.
+> "A fire drill isn't useful because you hope for a fire — it's useful because it proves the exits actually work. A penetration test is a fire drill for your network, run by someone trying, on purpose and with permission, to find the exit that doesn't."
+
+---
+
+## What a Penetration Test Actually Is
+
+A **penetration test** ("pentest") is an authorized, scoped simulation of a real attack against a system, with the explicit goal of finding and demonstrating exploitable weaknesses before a real adversary does. The key words are *authorized* and *scoped* — everything that follows in this chapter assumes both are in place before any technical work starts.
+
+Unlike a vulnerability assessment (Chapter 4.6), which is broad and largely automated, a penetration test is narrower and manual: a smaller set of targets, explored deeply, often chaining multiple minor findings into one demonstrated, significant impact — the difference between "this port is open" and "an open port led to a shell on the internal network."
+
+---
+
+## The Phases
+
+Most pentesting methodologies (PTES, OWASP Testing Guide, and others) converge on a similar shape:
+
+<DeepDive title="The typical phases of an engagement">
+**Scoping and rules of engagement** — agreeing in writing exactly what's in scope, what's off-limits, the testing window, and emergency contacts if something goes wrong. **Reconnaissance** — gathering information about the target passively (public records, DNS, job postings) and actively (scanning, per Chapter 4.4). **Vulnerability analysis** — identifying candidate weaknesses (Chapter 4.6) worth pursuing. **Exploitation** — attempting to actually leverage a weakness to gain access or demonstrate impact, carefully and within scope. **Post-exploitation** — assessing what the access is actually worth: what data, systems, or further access it provides, without exceeding the agreed boundaries. **Reporting** — the deliverable that actually matters to the client: findings, evidence, severity, and concrete remediation guidance.
+</DeepDive>
+
+It's worth internalizing that **reporting is not an afterthought** — for most clients, the report is the entire value of the engagement. A brilliant exploit chain that never gets written up clearly, with reproducible steps and a fix recommendation, delivers close to zero value.
+
+---
+
+## Rules of Engagement
+
+Before any technical work begins, a professional engagement is bounded by a written agreement covering:
+
+- **Scope** — exactly which systems, IP ranges, or applications are in bounds (and explicitly, which are not).
+- **Timing** — the testing window, and whether production hours are off-limits for anything risky (like a DoS-adjacent test).
+- **Permitted techniques** — whether social engineering, physical access attempts, or actual denial-of-service testing are authorized, since not every engagement wants all of them.
+- **Emergency stop conditions** — who to call immediately if a test causes unexpected impact.
+- **Data handling** — how discovered sensitive data is stored, reported, and eventually destroyed.
+
+<Warning title="No authorization, no test">
+Every technique described anywhere in this book — scanning, sniffing, exploitation basics — is only appropriate to run under this kind of explicit authorization: your own lab, a licensed practice platform, a CTF, or a signed rules-of-engagement document. Without it, the exact same actions are unauthorized computer access, a crime in essentially every jurisdiction, regardless of intent.
+</Warning>
+
+---
+
+## Black Box, White Box, and Grey Box
+
+Engagements are often categorized by how much information the tester starts with:
+
+- **Black box** — the tester starts with nothing beyond a target name or IP range, mimicking an external attacker with no inside knowledge.
+- **White box** — the tester is given full information: source code, architecture diagrams, credentials — useful for a deep, efficient review rather than simulating a realistic attacker.
+- **Grey box** — a middle ground, often the most realistic and cost-effective: some information (like a low-privilege account) is provided, mirroring what a real attacker could plausibly obtain early on.
+
+---
+
+## A Minimal Engagement Tracker
+
+Real engagements use dedicated case-management tooling, but the underlying structure is simple enough to model directly — useful for keeping even a small, single-tester engagement organized:
+
+```go
+package main
+
+import "fmt"
+
+type Finding struct {
+	Title    string
+	Severity string // "critical", "high", "medium", "low", "info"
+	Status   string // "open", "verified", "reported", "remediated"
+}
+
+type Engagement struct {
+	Client   string
+	Scope    []string
+	Findings []Finding
+}
+
+func (e *Engagement) summary() {
+	fmt.Printf("Engagement: %s\n", e.Client)
+	fmt.Printf("Scope: %v\n", e.Scope)
+	counts := map[string]int{}
+	for _, f := range e.Findings {
+		counts[f.Severity]++
+	}
+	fmt.Printf("Findings by severity: %v\n", counts)
+}
+
+func main() {
+	eng := Engagement{
+		Client: "internal-lab",
+		Scope:  []string{"10.0.4.0/24"},
+		Findings: []Finding{
+			{"Unauthenticated admin panel", "critical", "verified"},
+			{"Outdated TLS version accepted", "medium", "reported"},
+		},
+	}
+	eng.summary()
+}
+```
+
+This is intentionally minimal, but it captures the shape every real report is built from: a defined scope, a list of findings each with a severity and a status, and a summary a client can act on.
+
+---
+
+## Why This Matters Even If You Never Do This Job
+
+Most readers of this book will build software, not run pentests professionally — but understanding this workflow reshapes how you read a pentest report handed to you about your own system: you'll know why scope matters, why "verified" is different from "reported but unconfirmed," and why a well-written finding always includes clear reproduction steps and a concrete fix, not just a scary severity label.
+
+---
 
 [Previous: Building Simple Security Tools in Go](07-building-simple-security-tools-in-go.md) | [Next: Incident Response and Forensics](09-incident-response-and-forensics.md)

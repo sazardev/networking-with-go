@@ -5,4 +5,46 @@ title: "Bug Bounty and Responsible Disclosure"
 
 # Bug Bounty and Responsible Disclosure
 
-// ...contenido y ejemplos de bug bounty y divulgación responsable...
+> Finding an unlocked door on someone's building puts you in an interesting position: you can walk away, you can shout about it from the rooftop, or you can knock and let the owner know before anyone with worse intentions finds it first. Responsible disclosure is the security community's answer to which of those choices actually makes everyone safer.
+
+## What a Bug Bounty Program Is
+
+A bug bounty program is a formal invitation from an organization for outside researchers to search for and report security vulnerabilities, usually in exchange for recognition, monetary reward, or both. Programs range from public bounties open to anyone (often run through platforms like HackerOne or Bugcrowd, which handle intake, triage, and payment on the organization's behalf) to private, invitation-only programs, to a simple **Vulnerability Disclosure Policy (VDP)** with no monetary reward at all, which exists purely to give researchers a clear, safe channel to report findings without fear of legal retaliation.
+
+The core economic logic is straightforward: paying researchers to find and report vulnerabilities, under controlled conditions and disclosure timelines, is dramatically cheaper than the cost of the same vulnerability being found and exploited by someone with no interest in reporting it responsibly.
+
+## Scope and Rules of Engagement
+
+Every legitimate program publishes a scope: which domains, applications, or systems are in bounds, which testing techniques are explicitly allowed or forbidden (denial-of-service testing is almost universally excluded, for obvious reasons), and what qualifies as a reportable finding versus noise the program doesn't want reported (a missing security header on a low-risk page is rarely worth a report; remote code execution always is).
+
+<Warning title="Scope Is a Hard Boundary, Not a Suggestion">
+Testing outside a program's published scope, even with good intentions, can expose a researcher to the same legal risk as an unauthorized attacker, since the program's authorization only covers what it explicitly defines. Automated scanners are a particularly common source of accidental scope violations - always confirm a scanner's target list matches the program scope exactly before running it, and never point mass-scanning tools at a program's production infrastructure without explicit confirmation that it's permitted.
+</Warning>
+
+## The Disclosure Timeline
+
+**Coordinated (responsible) disclosure** follows a general pattern: a researcher privately reports a vulnerability to the affected organization, the organization has a defined window to investigate and produce a fix, and the details become public only after a patch is available (or the window elapses without one). A widely cited convention, popularized by Google's Project Zero research team, is a 90-day disclosure deadline from the initial report, sometimes with a shorter window for vulnerabilities under active exploitation - though exact timelines vary by program and researcher, and many organizations negotiate extensions in good faith when a fix is complex.
+
+**Full disclosure**, publishing vulnerability details immediately with no advance private notice, is far less common today and generally controversial, since it gives defenders no time to patch before attackers can act on public information. Most of the security research community and most bug bounty platforms favor coordinated disclosure specifically because it balances the public's right to know against the practical harm of publishing a working exploit before any fix exists.
+
+## Writing a Report That Gets Fixed Fast
+
+A good vulnerability report answers, without requiring the recipient to ask follow-up questions: what is the vulnerability, what is its impact if exploited, exactly how to reproduce it step by step (ideally with a minimal, safe proof-of-concept rather than a maximally damaging one), and what conditions are required for it to be exploitable in practice. Reports that are vague about impact or reproduction steps take dramatically longer to triage, and in competitive public bounty programs, slow triage often means someone else's clearer report on the same bug gets paid first.
+
+<DeepDive title="Safe Harbor Language">
+Mature bug bounty and VDP programs increasingly include explicit "safe harbor" language: a commitment that the organization will not pursue legal action against researchers who act in good faith and stay within the defined scope and rules, even if their testing technically violates the letter of a broader computer-access law. This protection exists specifically because ambiguity in older computer-crime statutes has, in the past, discouraged good-faith security research. Confirming a program's safe harbor commitment before testing, and keeping careful records of scope and timeline compliance, is sound practice for any researcher participating in a program.
+</DeepDive>
+
+## Common Pitfalls
+
+- **Testing out of scope**, even accidentally through an overly broad automated scan.
+- **Public disclosure before the agreed timeline**, which damages trust with the program and can void safe harbor protection.
+- **Duplicate reports**: most platforms only reward the first valid report of a given issue, so checking a program's known-issues list first saves time on both sides.
+- **Overstating impact**: exaggerating a low-severity finding to seem more significant tends to damage a researcher's credibility with a program more than it helps in the short term.
+
+## Summary
+
+- Bug bounty programs and VDPs give researchers a legitimate, defined channel to report vulnerabilities instead of exploiting or publicizing them unilaterally.
+- Scope and rules of engagement are hard boundaries - authorization only covers what a program explicitly defines.
+- Coordinated disclosure, often following a roughly 90-day convention, balances giving organizations time to patch against the public's interest in eventual transparency.
+- Clear, well-documented, appropriately-scoped reports get triaged and fixed faster than vague or overstated ones.

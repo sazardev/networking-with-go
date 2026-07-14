@@ -1,10 +1,142 @@
 ---
 id: "[4.3.0]"
-title: "Common Network Attacks (DoS, MITM, Spoofing, etc.) 💥"
+title: "Common Network Attacks (DoS, MITM, Spoofing, etc.)"
 ---
 
-# Common Network Attacks (DoS, MITM, Spoofing, etc.) 💥
+# Common Network Attacks (DoS, MITM, Spoofing, etc.)
 
-Explore common attacks and how they work.
+> "A pickpocket, a con artist, and a mob blocking the door all want different things, but they all exploit the same crowded street. Network attacks are no different — the wire is the crowded street."
+
+---
+
+## A Field Guide, Not a Weapons Manual
+
+This chapter catalogs the attack categories you'll hear about constantly in networking and security work: denial of service, man-in-the-middle, and spoofing, plus a few close relatives. The goal is recognition and defense — understanding how each attack works mechanically so you can spot the conditions that enable it and close them, not a step-by-step guide to causing outages on infrastructure you don't own.
+
+<Warning title="Authorized use only">
+Testing any of the techniques described below — flooding a service, intercepting traffic, forging packets — is only appropriate against systems you own or a target explicitly covered by a signed authorization (a lab, a CTF, a scoped penetration test). Doing this against networks you don't control is illegal in most jurisdictions and can cause real, unintended damage.
+</Warning>
+
+---
+
+## Denial of Service (DoS) and Distributed Denial of Service (DDoS)
+
+The goal of a DoS attack is simple: make a service unavailable to legitimate users, either by exhausting a resource it depends on or by overwhelming its capacity.
+
+- **Volumetric attacks** flood a target with more traffic than its link or infrastructure can handle — the network equivalent of jamming every phone line at once.
+- **Protocol attacks** abuse the mechanics of a protocol itself. A classic example is a **SYN flood**: the attacker sends many TCP SYN packets and never completes the handshake, exhausting the server's table of half-open connections.
+- **Application-layer attacks** target expensive operations at the application level — repeatedly requesting a page that triggers a slow database query, for instance — using comparatively little bandwidth to cause a lot of load.
+- **Distributed** (DDoS) attacks spread the traffic across many source hosts, often a botnet, making the flood harder to block with simple source-IP filtering.
+
+**Defenses:** rate limiting, connection timeouts, SYN cookies (handled by most modern OS TCP stacks), upstream scrubbing services, and — architecturally — designing services so a single slow dependency can't exhaust all available worker capacity (bulkheads, circuit breakers, sensible timeouts on every `net.Conn` and `http.Client`).
+
+---
+
+## Man-in-the-Middle (MITM)
+
+A MITM attack places the attacker on the path between two communicating parties, able to read, and often alter, traffic that both sides believe is private and direct.
+
+Common enablers:
+
+- **ARP spoofing** on a local network: the attacker sends forged ARP replies so that traffic meant for the real gateway or host is routed through the attacker's machine instead.
+- **Rogue Wi-Fi access points** that mimic a trusted network name, so victims connect directly through the attacker.
+- **DNS spoofing/cache poisoning**, which redirects a victim to an attacker-controlled server that impersonates the real one (see below).
+- **TLS stripping or downgrade attempts**, where an attacker intercepts an initial unencrypted request and prevents the upgrade to HTTPS, keeping the victim on plaintext.
+
+**Defenses:** TLS with proper certificate validation (Chapters 4.12–4.13) closes the door on reading or altering traffic even if an attacker sits on the path; HSTS prevents downgrade from HTTPS to HTTP; static ARP entries or port security on switches mitigate ARP spoofing on sensitive segments.
+
+---
+
+## Spoofing
+
+Spoofing means forging an identifying field so traffic appears to come from somewhere — or someone — it doesn't.
+
+- **IP spoofing:** forging the source address in a packet header. Often used to hide the true origin of an attack, or as a building block for reflection/amplification DDoS.
+- **ARP spoofing:** covered above, forging the mapping between an IP and a MAC address on a local segment.
+- **DNS spoofing:** returning a forged DNS response so a hostname resolves to an attacker-controlled IP instead of the legitimate one.
+- **Email/caller-ID style spoofing:** outside pure networking, but the same principle — forging a field a human trusts.
+
+**Defenses:** ingress/egress filtering at network borders (rejecting packets whose source address couldn't legitimately originate from that link — BCP 38), DNSSEC for authenticated DNS responses, and — again — TLS, since a spoofed peer still cannot present a valid certificate for a domain it doesn't control.
+
+---
+
+## Session Hijacking and Replay Attacks
+
+Once two parties are talking, an attacker who obtains a valid session token or captures a valid message can sometimes reuse it:
+
+- **Session hijacking** — stealing or predicting a session identifier (a cookie, a token) to impersonate an already-authenticated user.
+- **Replay attacks** — capturing a legitimate message (like an authentication handshake) and resending it later to repeat its effect.
+
+**Defenses:** short-lived tokens, binding sessions to additional context (IP, TLS channel), nonces or timestamps that make a captured message unusable a second time, and transport encryption so the token can't be captured in the first place.
+
+---
+
+## A Small Defensive Pattern in Go
+
+Most of these attacks are mitigated architecturally rather than with a single snippet, but a simple, concrete example is a per-client rate limiter — a direct defense against both application-layer DoS and brute-force-style abuse:
+
+```go
+package main
+
+import (
+	"net"
+	"sync"
+	"time"
+)
+
+// limiter tracks a simple token count per client address, refilled
+// once per interval. It's a minimal illustration, not a production
+// rate limiter (consider golang.org/x/time/rate for real services).
+type limiter struct {
+	mu      sync.Mutex
+	tokens  map[string]int
+	max     int
+}
+
+func newLimiter(max int) *limiter {
+	return &limiter{tokens: make(map[string]int), max: max}
+}
+
+func (l *limiter) allow(addr net.Addr) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	host, _, _ := net.SplitHostPort(addr.String())
+	if l.tokens[host] <= 0 {
+		return false
+	}
+	l.tokens[host]--
+	return true
+}
+
+func (l *limiter) refill(host string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tokens[host] = l.max
+}
+
+func main() {
+	l := newLimiter(5)
+	go func() {
+		for range time.Tick(time.Second) {
+			l.mu.Lock()
+			for host := range l.tokens {
+				l.tokens[host] = l.max
+			}
+			l.mu.Unlock()
+		}
+	}()
+	_ = l // wire l.allow(conn.RemoteAddr()) into your Accept loop
+}
+```
+
+The specific numbers matter less than the pattern: every connection-accepting service should have an answer to "what happens if one source sends far more requests than a normal client would."
+
+---
+
+## Recognizing the Pattern
+
+Notice that nearly every defense above reduces to a small set of ideas repeated throughout this book: authenticate and encrypt (TLS), validate what you trust implicitly (source addresses, DNS responses), and bound what any single actor can consume (timeouts, rate limits, connection caps). Chapter 4.4 puts you on the other side of this equation — using Go to discover what's exposed on a network before an attacker does.
+
+---
 
 [Previous: Threat Modeling and Attack Surfaces](02-threat-modeling-and-attack-surfaces.md) | [Next: Network Scanning and Enumeration with Go](04-network-scanning-and-enumeration-with-go.md)

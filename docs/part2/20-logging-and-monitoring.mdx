@@ -1,10 +1,169 @@
 ---
 id: "[2.20.0]"
-title: "Logging and Monitoring: Concepts and Go Implementation 📊"
+title: "Logging and Monitoring: Concepts and Go Implementation"
 ---
 
-# Logging and Monitoring: Concepts and Go Implementation 📊
+# Logging and Monitoring: Concepts and Go Implementation
 
-How to log and monitor Go network applications.
+> "A server without logging is a black box in flight with no flight recorder: if something goes wrong at 3 a.m., you're left guessing what happened from the wreckage. Logging and monitoring are the instruments on the dashboard — they tell you what the system is doing right now, and leave a trail for figuring out what it did five minutes ago."
+
+---
+
+## Why This Matters More for Network Applications
+
+Every server built in this book so far handles requests from clients you can't see and can't step through with a debugger while they happen. When a client on the other side of a TCP connection reports "it's slow" or "it failed," logs and metrics are usually the only window into what actually happened on your side of the wire.
+
+- **Logs** record discrete events: a connection was accepted, a request failed, a token was rejected.
+- **Metrics** record aggregate numbers over time: requests per second, error rate, average latency, open connection count.
+
+Both matter. Logs tell you the story of one specific request; metrics tell you the health of the whole system at a glance.
+
+---
+
+## Structured Logging with `log/slog`
+
+Plain `fmt.Println` debugging output — which earlier chapters leaned on for simplicity — doesn't scale to a real service: it's hard to search, filter, or feed into a log aggregation system. Go's standard library ships `log/slog`, a structured logging package that emits key-value pairs instead of free-form text, in either a human-readable or JSON format.
+
+```go
+package main
+
+import (
+	"log/slog"
+	"os"
+)
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
+	slog.Info("server starting", "addr", ":8080")
+	slog.Warn("slow response", "path", "/api/users", "duration_ms", 842)
+	slog.Error("connection failed", "remote_addr", "203.0.113.5:51234", "error", "timeout")
+}
+```
+
+Each call produces a single JSON line with the message and its attributes as separate fields — trivially parseable by log aggregation tools, unlike a formatted string you'd have to pick apart with regular expressions.
+
+---
+
+## Logging Middleware for HTTP Servers
+
+The middleware pattern from the authentication chapter applies just as well here: wrap a handler to log every request that passes through it.
+
+```go
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		slog.Info("request handled",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"remote_addr", r.RemoteAddr,
+		)
+	})
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the status code,
+// since the standard interface has no way to read it back afterward.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+```
+
+[Exercise: HTTP Logging Middleware](../../exercises/part2/20-http-logging-middleware/main.go)
+
+Wrapping `http.ResponseWriter` this way — capturing the status code as a side effect of intercepting `WriteHeader` — is a common pattern any time you need to observe what a handler did without changing its behavior.
+
+---
+
+## Contextual Logging with Request IDs
+
+In a concurrent server handling many requests at once, log lines from different requests interleave in the output. Attaching a unique request ID to each request — carried through `context.Context`, the same mechanism used for cancellation and for the authenticated user ID in the previous chapter — lets you filter a log stream down to a single request's story:
+
+```go
+type contextKey string
+
+const requestIDKey contextKey = "requestID"
+
+func requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := generateRequestID()
+		ctx := context.WithValue(r.Context(), requestIDKey, id)
+		slog.InfoContext(ctx, "request started", "request_id", id, "path", r.URL.Path)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+```
+
+`slog.InfoContext` accepts a `context.Context` alongside the message, letting handlers that support context-aware logging (or custom `slog.Handler` implementations) enrich every log line with values pulled from that context automatically.
+
+---
+
+## Monitoring: Metrics and Health Checks
+
+Beyond individual log lines, a running service benefits from exposing aggregate numbers. A minimal, dependency-free approach uses `sync/atomic` counters updated as requests flow through, exposed on their own HTTP endpoint:
+
+```go
+var (
+	totalRequests  atomic.Int64
+	failedRequests atomic.Int64
+)
+
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		totalRequests.Add(1)
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		if rec.status >= 500 {
+			failedRequests.Add(1)
+		}
+	})
+}
+
+func metricsHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "requests_total %d\n", totalRequests.Load())
+	fmt.Fprintf(w, "requests_failed_total %d\n", failedRequests.Load())
+}
+```
+
+This plain-text `key value` format is intentionally close to what tools like Prometheus scrape from a `/metrics` endpoint — the concept (expose numbers over HTTP, let an external system poll and aggregate them) is the same whether you write the exposition format by hand or use a metrics library that formats it for you.
+
+A **health check** endpoint follows the same idea in miniature — a cheap handler an orchestrator (load balancer, container scheduler) can poll to decide whether this instance is still healthy:
+
+```go
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+}
+```
+
+<DeepDive title="pprof is part of monitoring too">
+`net/http/pprof` — covered in depth in the performance chapter — exposes live CPU and memory profiles over HTTP. It's less about steady-state metrics and more about answering "why is this instance slow right now," but it belongs in the same observability toolbox as logs and metrics.
+</DeepDive>
+
+---
+
+## Key Takeaways
+
+- Logs tell the story of individual events; metrics summarize system health over time. Production services need both.
+- `log/slog` gives you structured, filterable logging in the standard library, with JSON output ready for log aggregation.
+- Wrapping `http.Handler` is the same pattern used for authentication middleware — apply it for logging, metrics, and request IDs alike.
+- Attaching a request ID to `context.Context` ties every log line from one request together, even under heavy concurrency.
+- A `/metrics` endpoint and a `/health` endpoint are cheap to build and are what load balancers and monitoring systems expect to poll.
+
+---
 
 [Previous: Security in Go Networking](19-security-in-go-networking.md) | [Next: Testing and Debugging](21-testing-and-debugging.md)

@@ -5,4 +5,168 @@ title: "API Documentation and OpenAPI/Swagger"
 
 # API Documentation and OpenAPI/Swagger
 
-// ...contenido y ejemplos...
+A REST endpoint is only as useful as its documentation. OpenAPI (formerly known as Swagger) is the industry-standard, machine-readable format for describing an HTTP API — its paths, request/response shapes, authentication, and error codes — in a way that both humans and tools (client generators, testing tools, API gateways) can consume.
+
+---
+
+## What OpenAPI Actually Is
+
+An OpenAPI document is a YAML or JSON file describing your API's surface. At a high level, it has three main parts:
+
+- **`paths`**: every route and HTTP method your API exposes, with parameters, request bodies, and possible responses.
+- **`components/schemas`**: reusable data shapes (a `Product`, a `User`, an `Error`) referenced from multiple paths so you define each shape once.
+- **`info`, `servers`, `security`**: metadata — API title and version, base URLs, and how authentication works (API key, bearer token, OAuth2).
+
+A minimal excerpt:
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Task API
+  version: "1.0.0"
+paths:
+  /tasks/{id}:
+    get:
+      summary: Get a task by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The requested task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          description: Task not found
+components:
+  schemas:
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        text:
+          type: string
+        done:
+          type: boolean
+```
+
+Once this document exists, Swagger UI (or an equivalent renderer) turns it into an interactive page where anyone can browse endpoints and try requests directly from the browser — without writing a single line of frontend code.
+
+---
+
+## Spec-First vs Code-First
+
+There are two ways to arrive at that YAML file:
+
+- **Spec-first**: write the OpenAPI document by hand (or generate it from a design tool) before writing any code, then implement handlers that match it. This keeps the contract stable and lets frontend and backend teams work in parallel from an agreed shape.
+- **Code-first**: write Go handlers first, and annotate them with comments that a tool scans to generate the OpenAPI document automatically. `swaggo/swag` is the standard tool for this in the Go ecosystem.
+
+Neither approach is universally "correct" — spec-first suits teams that value the contract as the source of truth; code-first suits smaller teams that want documentation to stay physically next to the code it describes.
+
+---
+
+## Code-First with swaggo/swag
+
+```sh
+go install github.com/swaggo/swag/cmd/swag@latest
+go get github.com/swaggo/http-swagger
+```
+
+Annotate a handler with structured comments directly above its function:
+
+```go
+// GetTask godoc
+// @Summary      Get a task by ID
+// @Description  Returns a single task
+// @Tags         tasks
+// @Produce      json
+// @Param        id   path      int  true  "Task ID"
+// @Success      200  {object}  Task
+// @Failure      404  {object}  ErrorResponse
+// @Router       /tasks/{id} [get]
+func (a *API) getTask(w http.ResponseWriter, r *http.Request) {
+	// ... handler body as in chapter 4 ...
+}
+```
+
+Running `swag init` scans the codebase for these `@`-prefixed annotations and generates a `docs/` package containing the OpenAPI JSON/YAML plus a Go file the router can serve. Wiring the generated docs into your `net/http` mux:
+
+```go
+import httpSwagger "github.com/swaggo/http-swagger"
+
+mux.Handle("/swagger/", httpSwagger.WrapHandler)
+```
+
+Visiting `/swagger/index.html` now shows a live, browsable, testable version of the API — regenerated every time you rerun `swag init` after changing annotations.
+
+<DeepDive title="Gin and Fiber have dedicated integrations">
+`swaggo` publishes framework-specific adapters — `gin-swagger` for Gin and a Fiber-compatible handler for Fiber — so the same annotation-driven workflow works regardless of which framework from earlier chapters you're using; only the one line wiring the docs handler into the router changes.
+</DeepDive>
+
+---
+
+## Real-World Example: What Swagger UI Shows
+
+Given the annotation above, Swagger UI renders an entry like:
+
+```
+GET /tasks/{id}
+  Parameters: id (integer, required, in path)
+  Responses:
+    200 - Task { id, text, done }
+    404 - ErrorResponse { error }
+  [Try it out]
+```
+
+Clicking "Try it out," entering an ID, and executing sends a real `GET /tasks/3` to your running server and displays the actual response — useful for manual QA and for onboarding a new engineer who needs to understand the API's shape quickly.
+
+---
+
+## Validating Requests Against the Spec
+
+Beyond display, an OpenAPI document is machine-checkable: request validation middleware can reject a payload that doesn't match the schema before your handler ever sees it, using a library like `github.com/getkin/kin-openapi` to load the spec and check incoming requests against it:
+
+```go
+loader := openapi3.NewLoader()
+doc, _ := loader.LoadFromFile("openapi.yaml")
+router, _ := legacyrouter.NewRouter(doc)
+
+func validationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		route, pathParams, err := router.FindRoute(r)
+		if err == nil {
+			reqValidationInput := &openapi3filter.RequestValidationInput{
+				Request: r, PathParams: pathParams, Route: route,
+			}
+			if err := openapi3filter.ValidateRequest(r.Context(), reqValidationInput); err != nil {
+				http.Error(w, "request does not match API schema", http.StatusBadRequest)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+This turns the spec from documentation-only into an enforced contract — a client sending an extra required field or the wrong type gets a `400` immediately, with no handler code needed to check for it.
+
+---
+
+## Keeping Documentation Honest
+
+Documentation that drifts from the actual behavior of the API is worse than no documentation — it actively misleads. A few practices keep it trustworthy:
+
+- **Generate from code or contract, don't hand-maintain a separate document.** Whichever direction you chose (spec-first or code-first), let one artifact be the single source of truth and derive the other from it.
+- **Validate the spec in CI.** Tools like `swag fmt` (for annotation formatting) or an OpenAPI linter can catch a broken or stale spec before it merges.
+- **Document error responses, not just the happy path.** A client integrating against your API needs to know what a `400` or `404` body looks like just as much as what a `200` looks like.
+- **Version the spec alongside the API itself** — when you introduce `/v2/tasks`, publish a `v2` OpenAPI document rather than silently mutating the `v1` one (versioning is covered in depth in a later chapter).
+
+<Axiom>Documentation that isn't generated from the same source as your handlers will eventually lie — treat drift between the two as a bug, not a documentation nitpick.</Axiom>
+
+With the API surface now discoverable and documented, the next chapter turns to proving it actually behaves as documented: testing and mocking APIs in Go.

@@ -5,4 +5,125 @@ title: "Security Automation with Go"
 
 # Security Automation with Go
 
-// ...contenido y ejemplos de automatización de seguridad con Go...
+> A single analyst can carefully review one alert at a time, forever, or a script can watch every alert continuously and only interrupt a human when something actually needs a human. Security automation is not about replacing judgment - it's about making sure the judgment humans do apply lands on the small fraction of events that genuinely warrant it.
+
+## Why Automate Security Tasks
+
+Security teams are almost universally outnumbered by the volume of things worth checking: certificate expirations across a fleet of services, configuration drift against a security baseline, newly discovered hosts on a network, alert triage across a SIEM's output, and repetitive incident response steps that follow the same pattern every time. Automation doesn't need to be sophisticated to be valuable - a script that runs every hour and never forgets to check something is often more reliable than a human doing the same check manually once a week, if that.
+
+Go is particularly well suited to this kind of tooling: a single static binary with no runtime dependencies to install on target systems, genuinely easy concurrency for checking many hosts or services in parallel, and a standard library that already covers most of what security automation needs - `net`, `crypto/tls`, `net/http`, `encoding/json`, and `log/slog` - without reaching for a single external dependency.
+
+## Categories of Security Automation
+
+- **Continuous configuration checking**: verifying firewall rules, TLS configurations, or IAM policies still match an approved baseline, and alerting on drift.
+- **Scheduled scanning and inventory**: periodically enumerating hosts, open ports, and running services to catch unauthorized or forgotten systems - the kind of task covered in the network scanning chapter earlier in this part, run on a schedule rather than by hand.
+- **Alert enrichment and triage**: automatically attaching context (WHOIS data, threat intelligence lookups, asset ownership) to a raw SIEM alert before it reaches a human analyst, so the first thirty seconds of investigation are already done.
+- **Automated response playbooks**: for well-understood, low-risk scenarios (a single failed-login spike, a known-bad IP appearing in logs), automatically taking a safe, reversible containment action - blocking an IP at the firewall, disabling an account pending review - rather than waiting for a human to execute the same steps manually.
+
+<Warning title="Automate Containment Carefully">
+Automated response actions should be reversible, logged, and scoped to scenarios with very low false-positive risk. An automation that can lock out a legitimate user account or block a legitimate customer IP based on a noisy detection rule can turn a minor security event into a self-inflicted outage - the same false-positive concern raised for inline IPS deployments earlier in this part applies with even more force once a human is fully out of the loop.
+</Warning>
+
+## Go Implementation: Automated Certificate Expiry Monitoring
+
+Expired TLS certificates are a persistent, entirely preventable cause of outages and, at times, a real security gap when an expired certificate gets "fixed" by disabling verification instead of renewing it properly. A small concurrent Go program can check certificate health across a whole fleet of hosts on a schedule and flag anything approaching expiry, long before it becomes an incident.
+
+```go
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"sync"
+	"time"
+)
+
+// CertReport captures the result of checking one host's TLS certificate.
+type CertReport struct {
+	Host     string    `json:"host"`
+	NotAfter time.Time `json:"not_after,omitzero"`
+	DaysLeft int       `json:"days_left"`
+	Issuer   string    `json:"issuer,omitempty"`
+	Error    string    `json:"error,omitempty"`
+}
+
+func checkHost(ctx context.Context, host string) CertReport {
+	dialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 5 * time.Second}}
+
+	conn, err := dialer.DialContext(ctx, "tcp", host+":443")
+	if err != nil {
+		return CertReport{Host: host, Error: err.Error()}
+	}
+	defer conn.Close()
+
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return CertReport{Host: host, Error: "not a TLS connection"}
+	}
+
+	certs := tlsConn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return CertReport{Host: host, Error: "no certificate presented"}
+	}
+
+	leaf := certs[0]
+	return CertReport{
+		Host:     host,
+		NotAfter: leaf.NotAfter,
+		DaysLeft: int(time.Until(leaf.NotAfter).Hours() / 24),
+		Issuer:   leaf.Issuer.CommonName,
+	}
+}
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	hosts := []string{"example.com", "golang.org", "github.com"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	results := make([]CertReport, len(hosts))
+	var wg sync.WaitGroup
+	for i, h := range hosts {
+		wg.Add(1)
+		go func(i int, h string) {
+			defer wg.Done()
+			results[i] = checkHost(ctx, h)
+		}(i, h)
+	}
+	wg.Wait()
+
+	const warnThresholdDays = 30
+	for _, r := range results {
+		switch {
+		case r.Error != "":
+			logger.Warn("certificate check failed", "host", r.Host, "error", r.Error)
+		case r.DaysLeft < warnThresholdDays:
+			logger.Warn("certificate expiring soon", "host", r.Host, "days_left", r.DaysLeft)
+		default:
+			logger.Info("certificate healthy", "host", r.Host, "days_left", r.DaysLeft)
+		}
+	}
+
+	report, _ := json.MarshalIndent(results, "", "  ")
+	fmt.Println(string(report))
+}
+```
+
+The pattern here generalizes well past certificates: `tls.Dialer.DialContext` respects the shared context deadline so one unreachable host can't stall the whole run, `sync.WaitGroup` fans the checks out concurrently across every host, and `log/slog` emits structured events that a SIEM (from earlier in this part) can ingest directly instead of needing to parse free-form text. Swap the check function for a port scan, a header inspection, or a configuration API call, and the same concurrent scheduling scaffold works for almost any recurring security check.
+
+## Scheduling and Integration
+
+A standalone binary like the one above becomes genuinely useful once it runs on a schedule (a simple cron entry, a Kubernetes CronJob, or a scheduled cloud function) and its output feeds somewhere a human will actually see it: a chat webhook, a ticketing system, or directly into the SIEM pipeline as a new log source. The goal is always the same regardless of the specific glue: turn a recurring manual check into a background process that only interrupts someone when there's genuinely something to act on.
+
+## Summary
+
+- Automation's real value is filtering: routine checks run continuously and silently, freeing analyst attention for the events that actually need judgment.
+- Go's standard library and concurrency model make it a strong fit for fleet-wide checks - `crypto/tls`, `net`, and goroutines cover a large share of common automation needs with no external dependencies.
+- Automated containment actions need to be reversible and scoped conservatively, since a false positive with no human review can itself cause an outage.
+- A concurrent scheduling scaffold (context deadline plus a wait group) generalizes across nearly any recurring, per-host security check.

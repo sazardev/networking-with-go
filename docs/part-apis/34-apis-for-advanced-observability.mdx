@@ -5,4 +5,152 @@ title: "APIs for Advanced Observability"
 
 # APIs for Advanced Observability
 
-// Tracing distribuido, logs estructurados, alertas, dashboards custom
+The previous chapter instrumented a single service well: structured logs, metrics, health checks. But a request to a modern API rarely stays inside one service — it hits a gateway, calls three internal services, one of which queries a database and another of which calls a third-party API. When that request is slow, "check the logs" means checking logs in four or five different places, with no obvious way to tell which log lines even belong to the same request. Distributed tracing solves exactly this problem, and this chapter builds it with OpenTelemetry, the vendor-neutral standard that has become the default choice for Go services.
+
+## What a trace actually is
+
+A trace is a tree of **spans** — each span representing one unit of work (an HTTP handler, a database query, an outbound call) with a start time, a duration, and a parent-child relationship to other spans. All spans belonging to one logical request share a single **trace ID**, which is how a tracing backend (Jaeger, Tempo, or a vendor's hosted equivalent) reconstructs the full picture: this request touched the gateway, then the orders service, then the database, in this order, taking this long at each step.
+
+## Setting up the OpenTelemetry SDK
+
+`go.opentelemetry.io/otel` is the vendor-neutral API; a separate exporter package ships the collected spans to your tracing backend over OTLP (OpenTelemetry Protocol):
+
+```go
+package main
+
+import (
+	"context"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+)
+
+func initTracing(ctx context.Context, collectorEndpoint string) (func(context.Context) error, error) {
+	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(collectorEndpoint))
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := resource.New(ctx, resource.WithAttributes(
+		semconv.ServiceName("orders-api"),
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	return tp.Shutdown, nil
+}
+```
+
+`otel.SetTextMapPropagator(propagation.TraceContext{})` is easy to skip and is the single most important line for *distributed* tracing specifically — it configures how trace context gets encoded into outgoing HTTP headers and decoded from incoming ones, using the W3C `traceparent` header standard, which is what lets a trace ID survive a hop from one service to the next.
+
+## Instrumenting HTTP servers and clients
+
+`go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` wraps both sides of an HTTP call so that spans are created and propagated automatically, without hand-writing span creation into every handler:
+
+```go
+import "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/orders", ordersHandler)
+
+	wrapped := otelhttp.NewHandler(mux, "orders-api")
+	http.ListenAndServe(":8080", wrapped)
+}
+
+var tracedClient = &http.Client{
+	Transport: otelhttp.NewTransport(http.DefaultTransport),
+}
+
+func callInventoryService(ctx context.Context, productID string) error {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+		"http://inventory-service/check/"+productID, nil)
+	resp, err := tracedClient.Do(req) // propagates the trace context automatically
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+```
+
+`otelhttp.NewHandler` extracts an incoming `traceparent` header (if present) and starts a new child span under it; `otelhttp.NewTransport` does the reverse on the way out, injecting the current span's trace context into the outgoing request's headers. Because both sides use the same propagator, a request entering at the gateway and eventually reaching the inventory service three hops later arrives with the same trace ID intact the whole way — this is the entire mechanism that makes a distributed trace distributed.
+
+## Custom spans for the parts that matter
+
+Auto-instrumentation covers HTTP boundaries; the interesting business logic inside a handler usually deserves its own span:
+
+```go
+var tracer = otel.Tracer("orders-api")
+
+func processOrder(ctx context.Context, order Order) error {
+	ctx, span := tracer.Start(ctx, "processOrder")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("order.id", order.ID))
+
+	if err := validateInventory(ctx, order); err != nil {
+		span.RecordError(err)
+		return err
+	}
+	return chargePayment(ctx, order)
+}
+```
+
+`span.RecordError` attaches the error to the span itself, which is what lets you filter a trace view down to "show me every trace where a span recorded an error," rather than cross-referencing timestamps against a separate log stream by hand.
+
+## Correlating logs, metrics, and traces
+
+The real payoff of tracing isn't the trace view alone — it's linking it to the logs and metrics from the previous chapter so an engineer can move between all three from a single starting point. Two mechanisms make that possible.
+
+**Trace-aware logging**: pull the current trace and span ID out of context and attach them to every structured log line, so a log line and a trace span referencing the same request can be found by the same ID:
+
+```go
+func logWithTrace(ctx context.Context, logger *slog.Logger, msg string, args ...any) {
+	span := trace.SpanFromContext(ctx)
+	sc := span.SpanContext()
+	args = append(args, "trace_id", sc.TraceID().String(), "span_id", sc.SpanID().String())
+	logger.InfoContext(ctx, msg, args...)
+}
+```
+
+**Exemplars**: a Prometheus histogram observation can carry an exemplar — a single sample data point tagged with the trace ID active at the moment it was recorded. Instead of just seeing "p99 latency spiked at 14:03," a dashboard with exemplars lets you click that specific point on the histogram and jump directly to one of the actual traces that produced it:
+
+```go
+requestDuration.(prometheus.ExemplarObserver).ObserveWithExemplar(
+	time.Since(start).Seconds(),
+	prometheus.Labels{"trace_id": trace.SpanContextFromContext(ctx).TraceID().String()},
+)
+```
+
+<DeepDive title="Exemplars are a bridge, not a replacement for either signal">
+A metric answers "how much" and "how often" cheaply, across all traffic, with tiny storage cost. A trace answers "what exactly happened, in order" for one specific request, at much higher storage cost per event. Exemplars deliberately keep both: you still aggregate on the cheap metric for dashboards and alerts, and only pay the cost of pulling a full trace when a specific data point is worth investigating.
+</DeepDive>
+
+## Sampling: you don't need every trace
+
+Capturing a full trace for every single request is rarely necessary and can be expensive at high traffic volumes — the value of tracing comes from having enough representative traces to diagnose problems, not from an exhaustive record of every request that ever succeeded quickly. `sdktrace.NewTracerProvider` accepts a sampler that decides, per trace, whether to actually record it:
+
+```go
+tp := sdktrace.NewTracerProvider(
+	sdktrace.WithBatcher(exporter),
+	sdktrace.WithResource(res),
+	sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(0.1))),
+)
+```
+
+`TraceIDRatioBased(0.1)` samples roughly ten percent of new traces, and `ParentBased` ensures that if an upstream service already decided to sample a trace, downstream services honor that same decision rather than each service flipping its own independent coin — otherwise you'd end up with fragments of a trace where some services recorded spans and others didn't, defeating the purpose of a connected trace entirely. A common refinement is sampling all error traces at 100 percent regardless of the base rate, since the traces you need most are exactly the ones representing something that went wrong.
+
+<Axiom>A single service's logs tell you what it did; a trace tells you what the whole request did — and once you can jump between a metric spike, a trace, and the exact log line behind it, "why is this slow" stops being a multi-hour investigation and becomes a click.</Axiom>

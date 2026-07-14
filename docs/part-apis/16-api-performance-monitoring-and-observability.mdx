@@ -5,4 +5,171 @@ title: "API Performance, Monitoring, and Observability"
 
 # API Performance, Monitoring, and Observability
 
-// ...contenido y ejemplos...
+An API running in production without visibility into its own behavior is a black box — you find out something's wrong when a user complains, not when it starts happening. Observability covers three complementary signals: structured logs (what happened), metrics (how much, how often, how fast), and traces (the path a single request took through your system). This chapter builds all three into a Go API using standard, widely adopted tools.
+
+---
+
+## Structured Logging with log/slog
+
+Since Go 1.21, the standard library includes `log/slog` for structured, leveled logging — no third-party dependency required for solid production logging:
+
+```go
+import "log/slog"
+
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+logger.Info("request handled",
+	"method", r.Method,
+	"path", r.URL.Path,
+	"status", status,
+	"duration_ms", time.Since(start).Milliseconds(),
+)
+```
+
+This emits a single JSON line per call:
+
+```json
+{"time":"2026-07-14T10:00:00Z","level":"INFO","msg":"request handled","method":"GET","path":"/tasks/1","status":200,"duration_ms":4}
+```
+
+Structured, one-line-per-event JSON logs are what let a log aggregation system (Loki, Elasticsearch, CloudWatch Logs Insights) filter and query by field — `status >= 500` or `path = "/tasks/1"` — instead of grepping free-text log lines.
+
+Wrap this in the same kind of middleware used in chapter 4, so every request is logged consistently without touching individual handlers:
+
+```go
+func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		logger.Info("request handled",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+	})
+}
+```
+
+(`statusRecorder` is a small wrapper around `http.ResponseWriter` that captures the status code passed to `WriteHeader`, since the standard interface doesn't expose it after the fact.)
+
+---
+
+## Metrics with Prometheus
+
+`github.com/prometheus/client_golang` is the standard Go client for exposing Prometheus-compatible metrics — counters, gauges, and histograms scraped periodically over HTTP.
+
+```sh
+go get github.com/prometheus/client_golang/prometheus
+go get github.com/prometheus/client_golang/prometheus/promhttp
+```
+
+```go
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+var requestDuration = promauto.NewHistogramVec(
+	prometheus.HistogramOpts{
+		Name:    "http_request_duration_seconds",
+		Help:    "HTTP request duration in seconds",
+		Buckets: prometheus.DefBuckets,
+	},
+	[]string{"method", "path", "status"},
+)
+
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		requestDuration.WithLabelValues(r.Method, r.URL.Path, strconv.Itoa(rec.status)).
+			Observe(time.Since(start).Seconds())
+	})
+}
+
+mux.Handle("/metrics", promhttp.Handler())
+```
+
+Prometheus (or any compatible scraper) pulls `/metrics` on an interval and stores the time series, which tools like Grafana then turn into dashboards and alerts — for example, alerting when the 99th percentile of `http_request_duration_seconds` crosses a threshold for a given path.
+
+<DeepDive title="Histogram, not just an average">
+A simple average latency hides outliers — a service with mostly 5ms responses and a few 5-second stragglers can still report a healthy-looking average. A histogram (as used above) buckets observations so you can compute percentiles (p50, p95, p99) after the fact, which is what actually tells you how bad the slowest requests are, not just the typical one.
+</DeepDive>
+
+---
+
+## Distributed Tracing with OpenTelemetry
+
+Once a request fans out across multiple services — your API calls a database, a cache, and a downstream service — logs and metrics alone can't show you where time was actually spent for one specific slow request. Tracing solves that by attaching a shared trace ID to every step:
+
+```sh
+go get go.opentelemetry.io/otel
+go get go.opentelemetry.io/otel/sdk
+go get go.opentelemetry.io/otel/exporters/otlp/otlptracehttp
+```
+
+```go
+tracer := otel.Tracer("myapi")
+
+func getTask(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracer.Start(r.Context(), "getTask")
+	defer span.End()
+
+	task, err := store.GetWithContext(ctx, id)
+	// ...
+}
+```
+
+Each `tracer.Start` call creates a span; spans started with a context derived from a parent span (as `ctx` is here) automatically nest underneath it, so a trace viewer (Jaeger, Tempo, or a vendor's APM product) can render the whole request as a waterfall — this handler, then the database query it made, each with its own duration.
+
+---
+
+## Health and Readiness Endpoints
+
+Orchestrators like Kubernetes need a cheap, fast way to ask "is this instance okay to receive traffic?" — that's the job of dedicated health endpoints, kept separate from business logic:
+
+```go
+mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK) // process is alive
+})
+
+mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+	if err := db.PingContext(r.Context()); err != nil {
+		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+})
+```
+
+`/healthz` (liveness) should only fail if the process itself is broken beyond repair — a failing dependency shouldn't cause it to fail, or the orchestrator will restart a perfectly healthy process for a problem restarting won't fix. `/readyz` (readiness) is where dependency checks like a database ping belong, since it controls whether traffic gets routed to this instance at all, not whether it gets killed.
+
+---
+
+## Profiling with net/http/pprof
+
+For CPU or memory issues that logs and metrics can point at but not fully explain, importing `net/http/pprof` for its side effects wires up a set of profiling endpoints automatically:
+
+```go
+import _ "net/http/pprof"
+```
+
+```sh
+go tool pprof http://localhost:8080/debug/pprof/profile?seconds=30
+```
+
+<Warning title="Never expose pprof publicly">
+The `/debug/pprof/` endpoints reveal internal memory layout and can be used to degrade performance (a 30-second CPU profile request forces the server to profile itself for that whole window). Bind them to a separate, internal-only port or gate them behind authentication — never expose them on the same public listener as your API.
+</Warning>
+
+---
+
+## Real-World Example: A Slow Endpoint, Diagnosed
+
+A `p99_latency` alert fires for `/orders`. Metrics show the histogram's tail spiking. A trace for one of the slow requests shows 4ms in the handler itself, but 800ms in a single downstream span labeled `db.query: orders_by_user`. That's enough to know exactly where to look next — a missing index, most likely — without guessing from logs alone.
+
+Logs, metrics, and traces each answer a different question — logs the *what*, metrics the *how much*, traces the *where* — and together they turn "the API feels slow" into a specific, actionable finding. Next, we'll look at what it takes to actually run this API in production: deployment and scaling.

@@ -1,15 +1,15 @@
 ---
 id: "[2.5.0]"
-title: "TCP in Depth: Protocol Theory and Go Implementation 🔗"
+title: "TCP in Depth: Protocol Theory and Go Implementation"
 ---
 
-# TCP in Depth: Protocol Theory and Go Implementation 🔗
+# TCP in Depth: Protocol Theory and Go Implementation
 
 > "Imagine sending a letter, but you want to make sure it arrives, in order, and without any missing pages. TCP is the postal service that guarantees delivery, order, and reliability—Go gives you the tools to become a master mail carrier!"
 
 ---
 
-## 📚 What is TCP?
+## What is TCP?
 
 **TCP (Transmission Control Protocol)** is the backbone of reliable communication on the internet. It’s like a polite, organized courier: every message is delivered, in order, and checked for errors. If something goes wrong, TCP tries again—no lost mail!
 
@@ -23,7 +23,7 @@ title: "TCP in Depth: Protocol Theory and Go Implementation 🔗"
 
 ---
 
-## 🧬 How TCP Works (Theory)
+## How TCP Works (Theory)
 
 1. **Three-Way Handshake:**
    - SYN: "Can we talk?" (Client asks to start a conversation)
@@ -48,7 +48,7 @@ title: "TCP in Depth: Protocol Theory and Go Implementation 🔗"
 
 ---
 
-## 🛠️ Go in Action: Simple TCP Client (Paso a Paso)
+## Go in Action: Simple TCP Client (Paso a Paso)
 
 Este ejemplo muestra cómo Go crea un cliente TCP, se conecta a un servidor, envía una petición HTTP y recibe la respuesta.
 
@@ -87,7 +87,7 @@ func main() {
 
 ---
 
-## 🛠️ Go in Action: Simple TCP Server (Explicado)
+## Go in Action: Simple TCP Server (Explicado)
 
 Este servidor TCP escucha conexiones en el puerto 8080 y responde con un mensaje a cada cliente.
 
@@ -133,7 +133,7 @@ func main() {
 
 ---
 
-## 📝 Real-World Example: Echo Server (Comentado)
+## Real-World Example: Echo Server (Comentado)
 
 Un echo server devuelve exactamente lo que recibe. Es ideal para probar conexiones y entender cómo fluye la información.
 
@@ -173,7 +173,7 @@ func main() {
 
 ---
 
-## 🧠 ¿Qué hace Go detrás de cámaras?
+## ¿Qué hace Go detrás de cámaras?
 
 - `net.Dial` y `net.Listen` usan llamadas al sistema operativo para crear sockets TCP.
 - Go gestiona el handshake, la retransmisión y el cierre de conexiones automáticamente.
@@ -182,7 +182,7 @@ func main() {
 
 ---
 
-## 🎨 Visual Summary
+## Visual Summary
 
 ```
 [Client] <---TCP---> [Server]
@@ -194,7 +194,7 @@ func main() {
 
 ---
 
-## 🤩 Fun Facts & Go Memes
+## Fun Facts & Go Memes
 - TCP fue inventado en los 70s y aún es el rey de la red.
 - El stack TCP de Go es tan eficiente que lo usan Docker, Kubernetes y muchos servicios en la nube.
 - Puedes construir un chat, una herramienta de transferencia de archivos o tu propio protocolo con el paquete `net` de Go.

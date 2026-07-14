@@ -5,4 +5,89 @@ title: "Reverse Engineering Network Protocols"
 
 # Reverse Engineering Network Protocols
 
-// ...contenido y ejemplos de ingeniería inversa de protocolos de red...
+> Imagine dropping into a foreign city with no dictionary, only a notebook. You can't read the signs, but you can watch what people do after each exchange - which words make the shopkeeper smile, which make the guard tense up. Given enough conversations, patterns emerge, and eventually you can hold your own. Reverse engineering an undocumented network protocol works the same way: no specification, just captured conversations to learn from.
+
+## Why Reverse Engineer a Protocol
+
+Legitimate reasons to reverse engineer a protocol come up constantly in network engineering and security work: interoperating with a legacy or proprietary system that has no public documentation, auditing a vendor's device to verify it does what it claims, building a compatible open-source client for a service you already have the right to use, or investigating suspicious traffic during an incident where the "protocol" in question is actually malware command-and-control.
+
+<Warning title="Mind the Legal Boundary">
+Reverse engineering sits in genuinely different legal territory depending on jurisdiction, the target's terms of service, and whether any anti-circumvention or DMCA-style protections apply to the specific system. Interoperability-motivated reverse engineering is treated more permissively in many places than reverse engineering to bypass licensing or DRM. When in doubt, this is a question for a lawyer familiar with your jurisdiction and the specific target, not a technical one.
+</Warning>
+
+## Passive Analysis First
+
+The lowest-risk, highest-value first step is almost always passive: capture real traffic with a tool like Wireshark or `tshark`, and look for structure before touching anything live. Useful questions to ask of a capture:
+
+- **Is it text or binary?** Text protocols (HTTP, SMTP, many IoT control protocols) are far easier to start with - readable strings often reveal field names or command verbs directly.
+- **Is there a fixed-size header?** Binary protocols very often start with a fixed-length preamble: a magic number, a version byte, a length field, then a variable-length payload. Comparing several captured messages side by side, byte for byte, usually reveals which byte offsets stay constant (structure) and which vary (data).
+- **What changes between a request and its matching response?** Correlating request/response pairs by timing and connection tells you which fields are echoed back, which are computed, and which are just noise (padding, checksums, sequence counters).
+- **Does the same message type always appear the same length, or does length vary with content?** This distinguishes fixed-record formats from length-prefixed variable formats.
+
+## From Passive Capture to a Working Model
+
+Once a rough field layout is hypothesized, the next step is usually building a small parser and testing it against every captured message: if the hypothesis is right, every message parses cleanly and the "meaning" fields (status codes, identifiers) make sense across samples. If it's wrong, some subset of messages fails to parse or produces garbage, which points at exactly which assumption needs revising.
+
+**State machine reconstruction** is the natural next layer once individual message formats are understood: which message types are valid replies to which other message types, what triggers a session to open or close, and whether the protocol is strictly request/response or allows the server to push unsolicited messages. Sequence diagrams built from several captured sessions side by side make this pattern much easier to see than staring at a single flow.
+
+**Fuzzing** - sending intentionally malformed or boundary-value variants of a message to a live implementation and observing the response (or crash) - is a more active technique that fills in gaps passive capture can't: what does the server do with a length field that lies about the payload size, or a field value outside the range ever observed in real traffic? This moves from purely observational analysis into active testing, and needs the same authorization considerations as any other active technique in this book.
+
+## A Minimal Header Parser in Go
+
+Suppose captured traffic for an unknown protocol consistently starts with four bytes that look like: a 1-byte version, a 1-byte message type, and a 2-byte big-endian payload length. Modeling that hypothesis in Go, and testing it against real bytes, is exactly how the guesswork above turns into a verified parser.
+
+```go
+package main
+
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+)
+
+// Header models a hypothesized fixed-size preamble: version (1 byte),
+// message type (1 byte), and payload length (2 bytes, big-endian).
+type Header struct {
+	Version     uint8
+	MessageType uint8
+	PayloadLen  uint16
+}
+
+var errShortBuffer = errors.New("buffer too short for header")
+
+func parseHeader(buf []byte) (Header, []byte, error) {
+	if len(buf) < 4 {
+		return Header{}, nil, errShortBuffer
+	}
+	h := Header{
+		Version:     buf[0],
+		MessageType: buf[1],
+		PayloadLen:  binary.BigEndian.Uint16(buf[2:4]),
+	}
+	if len(buf) < 4+int(h.PayloadLen) {
+		return Header{}, nil, fmt.Errorf("payload shorter than declared length %d", h.PayloadLen)
+	}
+	return h, buf[4 : 4+int(h.PayloadLen)], nil
+}
+
+func main() {
+	// A sample captured message: version 1, type 0x02, 5-byte payload "hello".
+	sample := []byte{0x01, 0x02, 0x00, 0x05, 'h', 'e', 'l', 'l', 'o'}
+
+	header, payload, err := parseHeader(sample)
+	if err != nil {
+		fmt.Println("parse failed:", err)
+		return
+	}
+	fmt.Printf("version=%d type=%d payload=%q\n", header.Version, header.MessageType, payload)
+}
+```
+
+Running this hypothesis against every message in a capture - not just one - is the real validation step. If the declared length consistently matches the actual remaining bytes across dozens of samples, the header format is very likely correct. If it only works for some messages, that's a strong signal that message type changes the header shape, which is common in protocols with multiple message kinds sharing a connection.
+
+## Summary
+
+- Start passive: capture real traffic before sending anything crafted, and let structure emerge from comparison across many samples.
+- Fixed-size headers, length-prefixed payloads, and request/response correlation are the most common structural patterns to look for first.
+- Move from message-format guesses to a working parser you can test against every captured sample, not just one.
+- Active techniques like fuzzing are powerful but carry the same authorization and legal considerations as any other active security testing covered in this book.
