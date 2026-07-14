@@ -1,3 +1,0 @@
-# Reverse Engineering Network Protocols
-
-// ...contenido y ejemplos de ingeniería inversa de protocolos de red...

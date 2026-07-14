@@ -1,3 +1,0 @@
-# Automating Network Device Configuration ⚙️
-
-// ...content coming soon...

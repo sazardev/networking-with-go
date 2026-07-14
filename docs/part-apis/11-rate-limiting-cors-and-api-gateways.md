@@ -1,3 +1,0 @@
-# Rate Limiting, CORS, and API Gateways
-
-// ...contenido y ejemplos...

@@ -1,3 +1,0 @@
-# WebRTC and P2P Communication in Go 📹
-
-// ...content coming soon...

@@ -1,3 +1,0 @@
-# IoT Security: Concepts and Go Implementations
-
-// ...contenido y ejemplos de seguridad en IoT con Go...

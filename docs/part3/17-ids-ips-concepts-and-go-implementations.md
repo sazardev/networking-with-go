@@ -1,3 +1,0 @@
-# IDS/IPS: Concepts and Go Implementations
-
-// ...contenido y ejemplos de IDS/IPS en Go...

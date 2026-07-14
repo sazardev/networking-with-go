@@ -1,3 +1,0 @@
-# Custom Protocol Design and Implementation 🛠️
-
-// ...content coming soon...

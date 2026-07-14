@@ -1,3 +1,0 @@
-# Red Team vs Blue Team: Concepts and Labs
-
-// ...contenido y ejemplos de ejercicios Red Team vs Blue Team...

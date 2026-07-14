@@ -1,3 +1,0 @@
-# Building RESTful APIs with net/http
-
-// ...contenido y ejemplos...

@@ -1,3 +1,0 @@
-# Zero Trust Networking and Microsegmentation 🚫
-
-// ...content coming soon...

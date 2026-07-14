@@ -1,3 +1,0 @@
-# Deep Packet Inspection and Packet Manipulation 🔬
-
-// ...content coming soon...

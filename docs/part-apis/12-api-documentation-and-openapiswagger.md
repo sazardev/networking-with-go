@@ -1,3 +1,0 @@
-# API Documentation and OpenAPI/Swagger
-
-// ...contenido y ejemplos...

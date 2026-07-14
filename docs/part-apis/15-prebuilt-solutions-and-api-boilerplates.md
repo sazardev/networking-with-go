@@ -1,3 +1,0 @@
-# Prebuilt Solutions and API Boilerplates
-
-// ...contenido y ejemplos...

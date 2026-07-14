@@ -1,3 +1,0 @@
-# JSON, XML, and Data Serialization
-
-// ...contenido y ejemplos...

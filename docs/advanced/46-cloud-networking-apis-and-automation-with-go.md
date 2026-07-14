@@ -1,3 +1,0 @@
-# Cloud Networking APIs and Automation with Go ☁️
-
-// ...content coming soon...

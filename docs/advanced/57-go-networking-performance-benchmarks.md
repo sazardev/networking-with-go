@@ -1,3 +1,0 @@
-# Go Networking Performance Benchmarks 🏁
-
-// ...content coming soon...

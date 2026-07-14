@@ -1,3 +1,0 @@
-# Simulating Attacks and Defense in Lab Environments
-
-// ...contenido y ejemplos de simulación de ataques y defensa en laboratorios...

@@ -1,3 +1,0 @@
-# Testing and Mocking APIs
-
-// ...contenido y ejemplos...

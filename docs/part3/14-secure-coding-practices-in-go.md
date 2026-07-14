@@ -1,3 +1,0 @@
-# Secure Coding Practices in Go
-
-// ...contenido y ejemplos de buenas prácticas de codificación segura en Go...

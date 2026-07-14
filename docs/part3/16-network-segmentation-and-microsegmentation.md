@@ -1,3 +1,0 @@
-# Network Segmentation and Microsegmentation
-
-// ...contenido y ejemplos de segmentación y microsegmentación de red...

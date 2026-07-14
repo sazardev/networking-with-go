@@ -1,0 +1,22 @@
+title: "Networking with Go - The Easy Way Guide"
+subtitle: "Master network programming, APIs, and cybersecurity in Go"
+author: ""
+source: docs
+output: networking-with-go.pdf
+theme: default
+
+lint:
+  require_frontmatter:
+    - id
+    - title
+  require_id_format: "[X.Y.Z]"
+  no_duplicate_ids: true
+  max_heading_depth: 3
+
+render:
+  timeout: 60s
+  paper: a4
+  margin_top: 20mm
+  margin_bottom: 20mm
+  margin_left: 15mm
+  margin_right: 15mm

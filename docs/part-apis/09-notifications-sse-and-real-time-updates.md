@@ -1,3 +1,0 @@
-# Notifications, SSE, and Real-Time Updates
-
-// ...contenido y ejemplos...

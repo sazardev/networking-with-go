@@ -1,3 +1,0 @@
-# gRPC and Protocol Buffers in Go ⚡
-
-// ...content coming soon...

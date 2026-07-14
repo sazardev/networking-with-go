@@ -1,3 +1,0 @@
-# SIEM and Log Analysis for Network Security
-
-// ...contenido y ejemplos de SIEM y análisis de logs para seguridad de red...
