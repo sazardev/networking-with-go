@@ -38,7 +38,8 @@ We'll implement two of these approaches: a minimal custom TCP protocol, and an H
 The core idea of framing: before sending the file bytes, send a small, fixed-format header describing what's coming. A workable minimal header is:
 
 ```
-[8 bytes: file size, big-endian uint64][file name length: 2 bytes][file name][file bytes...]
+[8 bytes: file size, big-endian uint64][file name length: 2 bytes]
+[file name][file bytes...]
 ```
 
 Once the receiver reads the header, it knows exactly how many bytes to expect next, and can stop reading (or write to disk) at precisely the right point — no ambiguity about where the file ends.
@@ -156,10 +157,12 @@ func sendFile(path, addr string) error {
 	name := filepath.Base(path)
 
 	// Write the header: size, then name length, then name.
-	if err := binary.Write(conn, binary.BigEndian, uint64(info.Size())); err != nil {
+	size := uint64(info.Size())
+	if err := binary.Write(conn, binary.BigEndian, size); err != nil {
 		return err
 	}
-	if err := binary.Write(conn, binary.BigEndian, uint16(len(name))); err != nil {
+	nameLen := uint16(len(name))
+	if err := binary.Write(conn, binary.BigEndian, nameLen); err != nil {
 		return err
 	}
 	if _, err := conn.Write([]byte(name)); err != nil {

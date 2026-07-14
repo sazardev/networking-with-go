@@ -46,7 +46,8 @@ Chapter 4.12 showed `ClientAuth: tls.RequireAndVerifyClientCert` as a single fie
 ```go
 config := &tls.Config{
 	ClientAuth: tls.RequireAndVerifyClientCert,
-	ClientCAs:  internalCAPool, // only certificates issued by your internal CA are accepted
+	// Only certificates issued by your internal CA are accepted.
+	ClientCAs:  internalCAPool,
 	MinVersion: tls.VersionTLS13,
 }
 ```

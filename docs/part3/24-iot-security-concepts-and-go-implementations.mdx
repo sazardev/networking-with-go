@@ -116,11 +116,15 @@ func handleDevice(conn net.Conn, logger *slog.Logger) {
 
 	var hb Heartbeat
 	if err := json.NewDecoder(tlsConn).Decode(&hb); err != nil {
-		logger.Warn("malformed heartbeat", "device_cert_cn", deviceCN, "error", err)
+		logger.Warn("malformed heartbeat",
+			"device_cert_cn", deviceCN, "error", err)
 		return
 	}
 
-	logger.Info("heartbeat received", "device_cert_cn", deviceCN, "device_id", hb.DeviceID, "battery_voltage", hb.BatteryV)
+	logger.Info("heartbeat received",
+		"device_cert_cn", deviceCN,
+		"device_id", hb.DeviceID,
+		"battery_voltage", hb.BatteryV)
 }
 ```
 

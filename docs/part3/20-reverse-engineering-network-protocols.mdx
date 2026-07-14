@@ -65,7 +65,9 @@ func parseHeader(buf []byte) (Header, []byte, error) {
 		PayloadLen:  binary.BigEndian.Uint16(buf[2:4]),
 	}
 	if len(buf) < 4+int(h.PayloadLen) {
-		return Header{}, nil, fmt.Errorf("payload shorter than declared length %d", h.PayloadLen)
+		return Header{}, nil, fmt.Errorf(
+			"payload shorter than declared length %d", h.PayloadLen,
+		)
 	}
 	return h, buf[4 : 4+int(h.PayloadLen)], nil
 }
@@ -79,7 +81,8 @@ func main() {
 		fmt.Println("parse failed:", err)
 		return
 	}
-	fmt.Printf("version=%d type=%d payload=%q\n", header.Version, header.MessageType, payload)
+	fmt.Printf("version=%d type=%d payload=%q\n",
+		header.Version, header.MessageType, payload)
 }
 ```
 

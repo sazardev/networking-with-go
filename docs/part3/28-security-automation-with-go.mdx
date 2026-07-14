@@ -102,11 +102,14 @@ func main() {
 	for _, r := range results {
 		switch {
 		case r.Error != "":
-			logger.Warn("certificate check failed", "host", r.Host, "error", r.Error)
+			logger.Warn("certificate check failed",
+				"host", r.Host, "error", r.Error)
 		case r.DaysLeft < warnThresholdDays:
-			logger.Warn("certificate expiring soon", "host", r.Host, "days_left", r.DaysLeft)
+			logger.Warn("certificate expiring soon",
+				"host", r.Host, "days_left", r.DaysLeft)
 		default:
-			logger.Info("certificate healthy", "host", r.Host, "days_left", r.DaysLeft)
+			logger.Info("certificate healthy",
+				"host", r.Host, "days_left", r.DaysLeft)
 		}
 	}
 

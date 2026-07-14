@@ -103,11 +103,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = ch.PublishWithContext(context.Background(), "", q.Name, false, false, amqp.Publishing{
-		ContentType:  "application/json",
-		DeliveryMode: amqp.Persistent,
-		Body:         []byte(`{"order_id": 1042}`),
-	})
+	err = ch.PublishWithContext(
+		context.Background(), "", q.Name, false, false,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Body:         []byte(`{"order_id": 1042}`),
+		},
+	)
 	if err != nil {
 		log.Fatal(err)
 	}

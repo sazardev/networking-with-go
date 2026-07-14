@@ -28,7 +28,9 @@ type OrderRequest struct {
 	Quantity  int    `json:"quantity"`
 }
 
-func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(
+	ctx context.Context, req events.APIGatewayProxyRequest,
+) (events.APIGatewayProxyResponse, error) {
 	var order OrderRequest
 	if err := json.Unmarshal([]byte(req.Body), &order); err != nil {
 		return events.APIGatewayProxyResponse{
@@ -39,7 +41,9 @@ func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.API
 
 	result, err := processOrder(ctx, order)
 	if err != nil {
-		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError}, nil
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusInternalServerError,
+		}, nil
 	}
 
 	body, _ := json.Marshal(result)
@@ -73,7 +77,9 @@ func init() {
 	ginLambda = httpadapter.New(router)
 }
 
-func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(
+	ctx context.Context, req events.APIGatewayProxyRequest,
+) (events.APIGatewayProxyResponse, error) {
 	return ginLambda.ProxyWithContext(ctx, req)
 }
 

@@ -83,7 +83,8 @@ type virtualLab struct {
 }
 
 func (lab *virtualLab) up() error {
-	if out, err := exec.Command("docker", "network", "create", lab.networkName).CombinedOutput(); err != nil {
+	createCmd := exec.Command("docker", "network", "create", lab.networkName)
+	if out, err := createCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("create network: %w (%s)", err, out)
 	}
 
@@ -92,7 +93,7 @@ func (lab *virtualLab) up() error {
 		cmd := exec.Command("docker", "run", "-d",
 			"--name", name,
 			"--network", lab.networkName,
-			"--cap-add", "NET_ADMIN", // needed if the node will run its own routing/iptables
+			"--cap-add", "NET_ADMIN", // for routing/iptables
 			"alpine", "sleep", "infinity",
 		)
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -113,7 +114,8 @@ func (lab *virtualLab) down() error {
 	for _, name := range nodes {
 		exec.Command("docker", "rm", "-f", name).Run()
 	}
-	_, err := exec.Command("docker", "network", "rm", lab.networkName).CombinedOutput()
+	rmCmd := exec.Command("docker", "network", "rm", lab.networkName)
+	_, err := rmCmd.CombinedOutput()
 	return err
 }
 

@@ -39,7 +39,8 @@ func consume(ctx context.Context, brokers []string, topic, groupID string) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: brokers,
 		Topic:   topic,
-		GroupID: groupID, // consumer group: partitions are load-balanced across members
+		// consumer group: partitions are load-balanced across members
+		GroupID: groupID,
 	})
 	defer reader.Close()
 
@@ -49,7 +50,8 @@ func consume(ctx context.Context, brokers []string, topic, groupID string) {
 			log.Println("read error:", err)
 			return
 		}
-		log.Printf("partition=%d offset=%d value=%s", msg.Partition, msg.Offset, msg.Value)
+		log.Printf("partition=%d offset=%d value=%s",
+			msg.Partition, msg.Offset, msg.Value)
 	}
 }
 ```
@@ -94,8 +96,10 @@ func handle(ev []byte) {
 }
 
 func main() {
-	limiter := rate.NewLimiter(rate.Limit(500), 100) // 500 events/sec, burst of 100
-	events := make(chan []byte, 1000)                 // bounded buffer absorbs short bursts
+	// 500 events/sec, burst of 100
+	limiter := rate.NewLimiter(rate.Limit(500), 100)
+	// bounded buffer absorbs short bursts
+	events := make(chan []byte, 1000)
 	go process(context.Background(), events, limiter)
 	time.Sleep(time.Second) // placeholder for real producer lifetime
 }
@@ -136,9 +140,11 @@ func streamTokens(w http.ResponseWriter, r *http.Request) {
 
 	tokens := []string{"The", " quick", " brown", " fox", " jumps."}
 	for _, tok := range tokens {
-		fmt.Fprintf(w, "data: %s\n\n", tok) // SSE message framing: "data: ...\n\n"
-		flusher.Flush()                     // push this chunk to the client now
-		time.Sleep(100 * time.Millisecond)  // simulate token generation latency
+		// SSE message framing: "data: ...\n\n"
+		fmt.Fprintf(w, "data: %s\n\n", tok)
+		flusher.Flush() // push this chunk to the client now
+		// simulate token generation latency
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

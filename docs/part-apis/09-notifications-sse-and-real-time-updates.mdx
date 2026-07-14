@@ -106,7 +106,8 @@ func (b *Broker) Publish(n Notification) {
 		select {
 		case ch <- n:
 		default:
-			// subscriber too slow; drop the event rather than block Publish
+			// subscriber too slow; drop the event rather than
+			// block Publish
 		}
 	}
 }

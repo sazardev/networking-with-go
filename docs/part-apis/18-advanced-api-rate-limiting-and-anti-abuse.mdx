@@ -29,7 +29,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func allow(ctx context.Context, rdb *redis.Client, key string, limit int, window time.Duration) (bool, error) {
+func allow(
+	ctx context.Context, rdb *redis.Client, key string,
+	limit int, window time.Duration,
+) (bool, error) {
 	count, err := rdb.Incr(ctx, key).Result()
 	if err != nil {
 		return false, err

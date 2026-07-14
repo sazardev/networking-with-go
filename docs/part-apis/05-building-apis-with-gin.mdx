@@ -102,7 +102,9 @@ func setupRouter(store *Store) *gin.Engine {
 		api.POST("/tasks", func(c *gin.Context) {
 			var req CreateTaskRequest
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": err.Error(),
+				})
 				return
 			}
 			c.JSON(http.StatusCreated, store.Create(req.Text))
@@ -115,12 +117,16 @@ func setupRouter(store *Store) *gin.Engine {
 		api.GET("/tasks/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "invalid id",
+				})
 				return
 			}
 			task, err := store.Get(id)
 			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+				c.JSON(http.StatusNotFound, gin.H{
+					"error": "task not found",
+				})
 				return
 			}
 			c.JSON(http.StatusOK, task)
@@ -129,11 +135,15 @@ func setupRouter(store *Store) *gin.Engine {
 		api.DELETE("/tasks/:id", func(c *gin.Context) {
 			id, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "invalid id",
+				})
 				return
 			}
 			if err := store.Delete(id); err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+				c.JSON(http.StatusNotFound, gin.H{
+					"error": "task not found",
+				})
 				return
 			}
 			c.Status(http.StatusNoContent)
@@ -186,7 +196,9 @@ func requestID() gin.HandlerFunc {
 func requireAPIKey(validKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.GetHeader("X-API-Key") != validKey {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid api key",
+			})
 			return
 		}
 		c.Next()

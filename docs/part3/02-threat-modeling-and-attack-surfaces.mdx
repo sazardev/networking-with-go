@@ -71,8 +71,10 @@ type EntryPoint struct {
 	Name           string
 	Protocol       string
 	RequiresAuth   bool
-	InternalOnly   bool // only reachable from the internal network, not the public internet
-	AcceptsInput   bool // parses attacker-controlled data
+	// InternalOnly is true when only reachable from the internal
+	// network, not the public internet.
+	InternalOnly bool
+	AcceptsInput bool // parses attacker-controlled data
 }
 
 // riskScore is a deliberately simple heuristic: exposure to the
@@ -102,7 +104,8 @@ func main() {
 
 	for _, e := range surface {
 		fmt.Printf("%-14s proto=%-5s auth=%-5v internal=%-5v risk=%d\n",
-			e.Name, e.Protocol, e.RequiresAuth, e.InternalOnly, riskScore(e))
+			e.Name, e.Protocol, e.RequiresAuth, e.InternalOnly,
+			riskScore(e))
 	}
 }
 ```

@@ -65,11 +65,20 @@ func (rt *RoutingTable) Update(dest, viaNeighbor string, advertisedCost int) boo
 	// Adopt the route if it's better, new, or a refresh from our current next hop
 	// (so that a neighbor's own cost increases correctly propagate to us too).
 	if !exists || newCost < current.Cost || current.NextHop == viaNeighbor {
-		if exists && current.NextHop == viaNeighbor && newCost == current.Cost {
-			rt.routes[dest] = Route{NextHop: viaNeighbor, Cost: newCost, Updated: time.Now()}
+		sameNextHop := exists && current.NextHop == viaNeighbor
+		if sameNextHop && newCost == current.Cost {
+			rt.routes[dest] = Route{
+				NextHop: viaNeighbor,
+				Cost:    newCost,
+				Updated: time.Now(),
+			}
 			return false // refreshed, but no meaningful change
 		}
-		rt.routes[dest] = Route{NextHop: viaNeighbor, Cost: newCost, Updated: time.Now()}
+		rt.routes[dest] = Route{
+			NextHop: viaNeighbor,
+			Cost:    newCost,
+			Updated: time.Now(),
+		}
 		return true
 	}
 	return false
@@ -105,7 +114,9 @@ type Advertisement struct {
 	Routes map[string]int // destination -> this node's cost to reach it
 }
 
-func advertiseLoop(nodeName string, rt *RoutingTable, neighbors []string, interval time.Duration) {
+func advertiseLoop(
+	nodeName string, rt *RoutingTable, neighbors []string, interval time.Duration,
+) {
 	conn, err := net.ListenPacket("udp", ":0")
 	if err != nil {
 		fmt.Println("advertise listen error:", err)
@@ -118,7 +129,10 @@ func advertiseLoop(nodeName string, rt *RoutingTable, neighbors []string, interv
 
 	for range ticker.C {
 		snap := rt.Snapshot()
-		ad := Advertisement{From: nodeName, Routes: map[string]int{nodeName: 0}}
+		ad := Advertisement{
+			From:   nodeName,
+			Routes: map[string]int{nodeName: 0},
+		}
 		for dest, r := range snap {
 			ad.Routes[dest] = r.Cost
 		}

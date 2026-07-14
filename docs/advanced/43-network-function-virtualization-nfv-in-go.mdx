@@ -48,7 +48,8 @@ func newLoadBalancerVNF(backendURLs []string) *loadBalancerVNF {
 		if err != nil {
 			log.Fatal(err)
 		}
-		lb.backends = append(lb.backends, httputil.NewSingleHostReverseProxy(target))
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		lb.backends = append(lb.backends, proxy)
 	}
 	return lb
 }

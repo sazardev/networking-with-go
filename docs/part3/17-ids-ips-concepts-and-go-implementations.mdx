@@ -104,9 +104,15 @@ func (m *ConnectionMonitor) Allow(ip string, logger *slog.Logger) bool {
 
 	if len(kept) > m.maxConns {
 		m.blocked[ip] = true
-		alert := Alert{SourceIP: ip, Attempts: len(kept), Window: m.window.String(), Timestamp: now}
+		alert := Alert{
+			SourceIP:  ip,
+			Attempts:  len(kept),
+			Window:    m.window.String(),
+			Timestamp: now,
+		}
 		payload, _ := json.Marshal(alert)
-		logger.Warn("possible scan detected, blocking source", "alert", string(payload))
+		logger.Warn("possible scan detected, blocking source",
+			"alert", string(payload))
 		return false
 	}
 	return true

@@ -29,8 +29,12 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
-func initTracing(ctx context.Context, collectorEndpoint string) (func(context.Context) error, error) {
-	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(collectorEndpoint))
+func initTracing(
+	ctx context.Context,
+	collectorEndpoint string,
+) (func(context.Context) error, error) {
+	exporter, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpoint(collectorEndpoint))
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +81,8 @@ var tracedClient = &http.Client{
 func callInventoryService(ctx context.Context, productID string) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
 		"http://inventory-service/check/"+productID, nil)
-	resp, err := tracedClient.Do(req) // propagates the trace context automatically
+	// propagates the trace context automatically
+	resp, err := tracedClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -121,7 +126,9 @@ The real payoff of tracing isn't the trace view alone — it's linking it to the
 func logWithTrace(ctx context.Context, logger *slog.Logger, msg string, args ...any) {
 	span := trace.SpanFromContext(ctx)
 	sc := span.SpanContext()
-	args = append(args, "trace_id", sc.TraceID().String(), "span_id", sc.SpanID().String())
+	args = append(args,
+		"trace_id", sc.TraceID().String(),
+		"span_id", sc.SpanID().String())
 	logger.InfoContext(ctx, msg, args...)
 }
 ```
@@ -131,7 +138,9 @@ func logWithTrace(ctx context.Context, logger *slog.Logger, msg string, args ...
 ```go
 requestDuration.(prometheus.ExemplarObserver).ObserveWithExemplar(
 	time.Since(start).Seconds(),
-	prometheus.Labels{"trace_id": trace.SpanContextFromContext(ctx).TraceID().String()},
+	prometheus.Labels{
+		"trace_id": trace.SpanContextFromContext(ctx).TraceID().String(),
+	},
 )
 ```
 

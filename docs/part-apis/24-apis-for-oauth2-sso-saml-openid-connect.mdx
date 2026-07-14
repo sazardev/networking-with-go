@@ -77,7 +77,9 @@ func setupOIDC(ctx context.Context) (*oidc.IDTokenVerifier, error) {
 	return provider.Verifier(&oidc.Config{ClientID: oauthConfig.ClientID}), nil
 }
 
-func verifyIDToken(ctx context.Context, verifier *oidc.IDTokenVerifier, rawIDToken string) (*oidc.IDToken, error) {
+func verifyIDToken(
+	ctx context.Context, verifier *oidc.IDTokenVerifier, rawIDToken string,
+) (*oidc.IDToken, error) {
 	return verifier.Verify(ctx, rawIDToken)
 }
 ```

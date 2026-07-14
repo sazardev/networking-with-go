@@ -52,7 +52,10 @@ func loadTest(url string, concurrency int, totalRequests int) []result {
 					continue
 				}
 				resp.Body.Close()
-				results <- result{status: resp.StatusCode, duration: elapsed}
+				results <- result{
+					status:   resp.StatusCode,
+					duration: elapsed,
+				}
 			}
 		}()
 	}
@@ -132,10 +135,12 @@ A load test run manually once a quarter tells you about the system as it existed
 func TestPerformanceRegression(t *testing.T) {
 	metrics := runVegetaAttackForTest(testServerURL, 50, 20*time.Second)
 	if metrics.Latencies.P95 > 200*time.Millisecond {
-		t.Fatalf("p95 latency regressed: got %s, budget 200ms", metrics.Latencies.P95)
+		t.Fatalf("p95 latency regressed: got %s, budget 200ms",
+			metrics.Latencies.P95)
 	}
 	if metrics.Success < 0.99 {
-		t.Fatalf("success ratio regressed: got %.2f%%, budget 99%%", metrics.Success*100)
+		t.Fatalf("success ratio regressed: got %.2f%%, budget 99%%",
+			metrics.Success*100)
 	}
 }
 ```

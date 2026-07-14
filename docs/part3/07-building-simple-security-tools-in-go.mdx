@@ -50,10 +50,26 @@ type headerCheck struct {
 }
 
 var checks = []headerCheck{
-	{"Strict-Transport-Security", "forces browsers to use HTTPS on future visits", true},
-	{"X-Content-Type-Options", "prevents MIME-type sniffing (expect \"nosniff\")", true},
-	{"X-Frame-Options", "mitigates clickjacking via framing", false},
-	{"Content-Security-Policy", "restricts which sources can execute/load content", false},
+	{
+		Name:        "Strict-Transport-Security",
+		Description: "forces browsers to use HTTPS on future visits",
+		Required:    true,
+	},
+	{
+		Name:        "X-Content-Type-Options",
+		Description: "prevents MIME-type sniffing (expect \"nosniff\")",
+		Required:    true,
+	},
+	{
+		Name:        "X-Frame-Options",
+		Description: "mitigates clickjacking via framing",
+		Required:    false,
+	},
+	{
+		Name:        "Content-Security-Policy",
+		Description: "restricts which sources can execute/load content",
+		Required:    false,
+	},
 }
 
 // audit fetches the target URL and reports which security headers are present.

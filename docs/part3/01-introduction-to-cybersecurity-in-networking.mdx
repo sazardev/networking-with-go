@@ -69,10 +69,12 @@ import "fmt"
 // Asset represents something reachable over the network that
 // a defender is responsible for protecting.
 type Asset struct {
-	Name     string
-	Address  string
-	Exposed  bool // reachable from outside the local network?
-	Property string // primary security property at risk: "confidentiality", "integrity", "availability"
+	Name    string
+	Address string
+	Exposed bool // reachable from outside the local network?
+	// primary security property at risk: "confidentiality",
+	// "integrity", or "availability"
+	Property string
 }
 
 func main() {

@@ -67,10 +67,14 @@ type CreateTaskRequest struct {
 func createTask(c *fiber.Ctx) error {
 	var req CreateTaskRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid body",
+		})
 	}
 	if req.Text == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "text is required"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "text is required",
+		})
 	}
 	task := store.Create(req.Text)
 	return c.Status(fiber.StatusCreated).JSON(task)
@@ -96,7 +100,9 @@ func setupApp(store *Store) *fiber.App {
 	api.Post("/tasks", func(c *fiber.Ctx) error {
 		var req CreateTaskRequest
 		if err := c.BodyParser(&req); err != nil || req.Text == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "text is required"})
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "text is required",
+			})
 		}
 		return c.Status(fiber.StatusCreated).JSON(store.Create(req.Text))
 	})
@@ -108,11 +114,15 @@ func setupApp(store *Store) *fiber.App {
 	api.Get("/tasks/:id", func(c *fiber.Ctx) error {
 		id, err := strconv.Atoi(c.Params("id"))
 		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid id"})
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "invalid id",
+			})
 		}
 		task, err := store.Get(id)
 		if err != nil {
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "task not found"})
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "task not found",
+			})
 		}
 		return c.JSON(task)
 	})
@@ -120,10 +130,14 @@ func setupApp(store *Store) *fiber.App {
 	api.Delete("/tasks/:id", func(c *fiber.Ctx) error {
 		id, err := strconv.Atoi(c.Params("id"))
 		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid id"})
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "invalid id",
+			})
 		}
 		if err := store.Delete(id); err != nil {
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "task not found"})
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "task not found",
+			})
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
@@ -173,7 +187,9 @@ Custom middleware follows the same `func(c *fiber.Ctx) error` shape, calling `c.
 func requireAPIKey(validKey string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if c.Get("X-API-Key") != validKey {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid api key"})
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid api key",
+			})
 		}
 		return c.Next()
 	}

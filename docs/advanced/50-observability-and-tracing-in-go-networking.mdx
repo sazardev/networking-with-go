@@ -95,7 +95,9 @@ func timedGet(url string) error {
 		DNSDone: func(httptrace.DNSDoneInfo) {
 			fmt.Printf("DNS lookup: %v\n", time.Since(dnsStart))
 		},
-		ConnectStart: func(network, addr string) { connectStart = time.Now() },
+		ConnectStart: func(network, addr string) {
+			connectStart = time.Now()
+		},
 		ConnectDone: func(network, addr string, err error) {
 			fmt.Printf("TCP connect: %v\n", time.Since(connectStart))
 		},
@@ -180,7 +182,8 @@ var (
 )
 
 func main() {
-	// expvar registers its handler on the default mux at /debug/vars automatically.
+	// expvar registers its handler on the default mux at
+	// /debug/vars automatically.
 	http.ListenAndServe(":6060", nil)
 }
 ```

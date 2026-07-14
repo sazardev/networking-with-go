@@ -29,7 +29,15 @@ logger.Info("request handled",
 This emits a single JSON line per call:
 
 ```json
-{"time":"2026-07-14T10:00:00Z","level":"INFO","msg":"request handled","method":"GET","path":"/tasks/1","status":200,"duration_ms":4}
+{
+  "time": "2026-07-14T10:00:00Z",
+  "level": "INFO",
+  "msg": "request handled",
+  "method": "GET",
+  "path": "/tasks/1",
+  "status": 200,
+  "duration_ms": 4
+}
 ```
 
 Structured, one-line-per-event JSON logs are what let a log aggregation system (Loki, Elasticsearch, CloudWatch Logs Insights) filter and query by field — `status >= 500` or `path = "/tasks/1"` — instead of grepping free-text log lines.
@@ -86,8 +94,9 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		requestDuration.WithLabelValues(r.Method, r.URL.Path, strconv.Itoa(rec.status)).
-			Observe(time.Since(start).Seconds())
+		requestDuration.WithLabelValues(
+			r.Method, r.URL.Path, strconv.Itoa(rec.status),
+		).Observe(time.Since(start).Seconds())
 	})
 }
 

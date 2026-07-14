@@ -74,7 +74,8 @@ func (c *Controller) handleInstallFlow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(conn).Encode(rule); err != nil {
-		http.Error(w, "failed to push rule: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to push rule: "+err.Error(),
+			http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)

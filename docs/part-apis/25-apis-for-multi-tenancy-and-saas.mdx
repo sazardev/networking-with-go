@@ -23,7 +23,9 @@ func tenantMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "unauthenticated", http.StatusUnauthorized)
 			return
 		}
-		ctx := context.WithValue(r.Context(), tenantContextKey, claims.TenantID)
+		ctx := context.WithValue(
+			r.Context(), tenantContextKey, claims.TenantID,
+		)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -99,7 +101,8 @@ func perTenantRateLimit(next http.Handler) http.Handler {
 		tenantID, _ := tenantFromContext(r.Context())
 		limiter := limiterFor(tenantID) // one token bucket per tenant, cached
 		if !limiter.Allow() {
-			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			http.Error(w, "rate limit exceeded",
+				http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)

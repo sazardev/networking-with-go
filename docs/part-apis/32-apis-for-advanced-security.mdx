@@ -86,7 +86,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	clientCN := r.TLS.PeerCertificates[0].Subject.CommonName
-	// clientCN now identifies which service is calling, cryptographically verified
+	// clientCN now identifies which service is calling,
+	// cryptographically verified
 }
 ```
 
@@ -114,7 +115,9 @@ Including the timestamp in the signed payload lets the receiver reject requests 
 None of the above matters if the private keys and HMAC secrets themselves live in a `.env` file committed to source control. Production systems fetch secrets at startup from a dedicated store — HashiCorp Vault, AWS Secrets Manager, or a cloud provider's equivalent — rather than reading them from environment variables set by a deploy script:
 
 ```go
-func loadSigningKey(ctx context.Context, client *secretsmanager.Client, secretID string) (*rsa.PrivateKey, error) {
+func loadSigningKey(
+	ctx context.Context, client *secretsmanager.Client, secretID string,
+) (*rsa.PrivateKey, error) {
 	out, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
 		SecretId: aws.String(secretID),
 	})
@@ -139,7 +142,9 @@ func isRevoked(ctx context.Context, rdb *redis.Client, tokenID string) bool {
 	return exists > 0
 }
 
-func revokeToken(ctx context.Context, rdb *redis.Client, tokenID string, ttl time.Duration) error {
+func revokeToken(
+	ctx context.Context, rdb *redis.Client, tokenID string, ttl time.Duration,
+) error {
 	return rdb.Set(ctx, "revoked:"+tokenID, "1", ttl).Err()
 }
 ```

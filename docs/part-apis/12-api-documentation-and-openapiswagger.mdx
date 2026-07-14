@@ -144,8 +144,14 @@ func validationMiddleware(next http.Handler) http.Handler {
 			reqValidationInput := &openapi3filter.RequestValidationInput{
 				Request: r, PathParams: pathParams, Route: route,
 			}
-			if err := openapi3filter.ValidateRequest(r.Context(), reqValidationInput); err != nil {
-				http.Error(w, "request does not match API schema", http.StatusBadRequest)
+			err := openapi3filter.ValidateRequest(
+				r.Context(), reqValidationInput,
+			)
+			if err != nil {
+				http.Error(
+					w, "request does not match API schema",
+					http.StatusBadRequest,
+				)
 				return
 			}
 		}

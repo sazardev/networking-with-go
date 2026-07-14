@@ -102,8 +102,9 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 
-		requestDuration.WithLabelValues(r.Method, r.URL.Path, fmt.Sprint(rec.status)).
-			Observe(time.Since(start).Seconds())
+		requestDuration.WithLabelValues(
+			r.Method, r.URL.Path, fmt.Sprint(rec.status),
+		).Observe(time.Since(start).Seconds())
 	})
 }
 ```
@@ -124,7 +125,8 @@ Container orchestrators like Kubernetes need two different questions answered, a
 
 ```go
 func livenessHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK) // if this handler runs at all, the process is alive
+	// if this handler runs at all, the process is alive
+	w.WriteHeader(http.StatusOK)
 }
 
 func readinessHandler(db *sql.DB) http.HandlerFunc {

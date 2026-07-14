@@ -97,7 +97,9 @@ Real applications share a layout (header, nav, footer) across many pages. `html/
 ```
 
 ```go
-tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/home.html"))
+tmpl := template.Must(template.ParseFiles(
+	"templates/layout.html", "templates/home.html",
+))
 tmpl.ExecuteTemplate(w, "layout", data)
 ```
 
@@ -111,7 +113,9 @@ For CSS, JavaScript, and images, `http.FileServer` combined with `http.StripPref
 
 ```go
 mux := http.NewServeMux()
-mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("public"))))
+mux.Handle("/static/", http.StripPrefix(
+	"/static/", http.FileServer(http.Dir("public")),
+))
 ```
 
 A request for `/static/app.css` is served from `public/app.css`. `StripPrefix` is essential here — without it, `http.FileServer` would look for a file literally named `static/app.css` inside `public/`.
@@ -133,7 +137,9 @@ func main() {
 
 	staticFS, _ := fs.Sub(assets, "public")
 	mux := http.NewServeMux()
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	mux.Handle("/static/", http.StripPrefix(
+		"/static/", http.FileServer(http.FS(staticFS)),
+	))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		tmpl.ExecuteTemplate(w, "layout", nil)
 	})
@@ -157,7 +163,9 @@ funcMap := template.FuncMap{
 }
 
 tmpl := template.Must(
-	template.New("profile.html").Funcs(funcMap).ParseFiles("templates/profile.html"),
+	template.New("profile.html").
+		Funcs(funcMap).
+		ParseFiles("templates/profile.html"),
 )
 ```
 

@@ -44,7 +44,9 @@ import (
 )
 
 // scanPort attempts a TCP connect to host:port and reports whether it's open.
-func scanPort(ctx context.Context, host string, port int, timeout time.Duration) bool {
+func scanPort(
+	ctx context.Context, host string, port int, timeout time.Duration,
+) bool {
 	d := net.Dialer{Timeout: timeout}
 	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := d.DialContext(ctx, "tcp", address)

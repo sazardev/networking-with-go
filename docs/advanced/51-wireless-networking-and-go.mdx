@@ -46,8 +46,9 @@ func listWirelessCandidates() ([]net.Interface, error) {
 
 	var wireless []net.Interface
 	for _, iface := range ifaces {
-		// A naming convention heuristic (wlan0, wlp2s0, en0 on macOS Wi-Fi, etc.).
-		// It's not authoritative—use OS tools below for a definitive answer.
+		// A naming convention heuristic (wlan0, wlp2s0, en0 on macOS
+		// Wi-Fi, etc.). Not authoritative—use OS tools below for a
+		// definitive answer.
 		name := strings.ToLower(iface.Name)
 		if strings.HasPrefix(name, "wl") || strings.HasPrefix(name, "wi") {
 			wireless = append(wireless, iface)
@@ -85,7 +86,8 @@ func scanWifi() ([]WifiNetwork, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "nmcli", "-t", "-f", "SSID,SIGNAL,CHAN", "dev", "wifi", "list")
+	cmd := exec.CommandContext(ctx, "nmcli",
+		"-t", "-f", "SSID,SIGNAL,CHAN", "dev", "wifi", "list")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("nmcli: %w", err)
@@ -100,7 +102,9 @@ func scanWifi() ([]WifiNetwork, error) {
 		}
 		var signal int
 		fmt.Sscanf(fields[1], "%d", &signal)
-		networks = append(networks, WifiNetwork{SSID: fields[0], Signal: signal, Channel: fields[2]})
+		networks = append(networks, WifiNetwork{
+			SSID: fields[0], Signal: signal, Channel: fields[2],
+		})
 	}
 	return networks, scanner.Err()
 }
@@ -127,7 +131,8 @@ if err := params.Connect(); err != nil {
 }
 defer params.Conn.Close()
 
-result, err := params.Get([]string{".1.3.6.1.4.1.9.9.618.1.8.1.0"}) // vendor-specific OID
+// OID below is vendor-specific.
+result, err := params.Get([]string{".1.3.6.1.4.1.9.9.618.1.8.1.0"})
 ```
 
 This is a real, correct shape for an SNMP query—the specific OID always comes from the access point vendor's MIB, which is why production tools ship an OID table rather than hardcoding one.

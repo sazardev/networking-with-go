@@ -74,14 +74,16 @@ func TestGetTask(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/tasks/"+tc.id, nil)
+			req := httptest.NewRequest(http.MethodGet,
+				"/tasks/"+tc.id, nil)
 			req.SetPathValue("id", tc.id)
 			rec := httptest.NewRecorder()
 
 			api.getTask(rec, req)
 
 			if rec.Code != tc.wantStatus {
-				t.Errorf("id=%s: expected status %d, got %d", tc.id, tc.wantStatus, rec.Code)
+				t.Errorf("id=%s: expected status %d, got %d",
+					tc.id, tc.wantStatus, rec.Code)
 			}
 		})
 	}
@@ -163,10 +165,11 @@ When your API itself calls another service — a payment provider, a geocoding A
 
 ```go
 func TestPaymentClient_Charge(t *testing.T) {
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"succeeded"}`))
-	}))
+	fake := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"succeeded"}`))
+		}))
 	defer fake.Close()
 
 	client := NewPaymentClient(fake.URL, fake.Client())

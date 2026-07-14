@@ -74,7 +74,9 @@ func proxyConn(ctx context.Context, client net.Conn, upstreamAddr string) {
 }
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(
+		context.Background(), syscall.SIGINT, syscall.SIGTERM,
+	)
 	defer stop()
 
 	ln, err := net.Listen("tcp", ":9200")
@@ -162,7 +164,8 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
+		http.Error(w,
+			"hijacking not supported", http.StatusInternalServerError)
 		return
 	}
 	clientConn, _, err := hijacker.Hijack()

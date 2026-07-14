@@ -100,7 +100,8 @@ func ReadMessage(r io.Reader) (*Message, error) {
 		return nil, err
 	}
 
-	const maxPayload = 16 * 1024 * 1024 // refuse to allocate unbounded memory for a hostile length
+	// Refuse to allocate unbounded memory for a hostile length.
+	const maxPayload = 16 * 1024 * 1024
 	if header.Length > maxPayload {
 		return nil, fmt.Errorf("payload too large: %d bytes", header.Length)
 	}
@@ -114,7 +115,11 @@ func ReadMessage(r io.Reader) (*Message, error) {
 }
 
 func WriteMessage(w io.Writer, msgType uint8, payload []byte) error {
-	header := Header{Version: Version1, Type: msgType, Length: uint32(len(payload))}
+	header := Header{
+		Version: Version1,
+		Type:    msgType,
+		Length:  uint32(len(payload)),
+	}
 	if _, err := w.Write(header.Encode()); err != nil {
 		return fmt.Errorf("writing header: %w", err)
 	}

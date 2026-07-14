@@ -17,7 +17,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		http.Error(w, "file too large or malformed", http.StatusRequestEntityTooLarge)
+		http.Error(w,
+			"file too large or malformed",
+			http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -40,7 +42,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{"filename": header.Filename})
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"filename": header.Filename,
+	})
 }
 ```
 
@@ -61,7 +65,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-func uploadToS3(ctx context.Context, client *s3.Client, bucket, key string, body io.Reader) error {
+func uploadToS3(
+	ctx context.Context, client *s3.Client, bucket, key string, body io.Reader,
+) error {
 	uploader := manager.NewUploader(client)
 	_, err := uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(bucket),
@@ -120,8 +126,9 @@ func streamingUploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if part.FormName() == "file" {
 			hash := sha256.New()
-			io.Copy(hash, part) // process as it streams, never fully buffered
-			log.Printf("uploaded %s: sha256=%x", part.FileName(), hash.Sum(nil))
+			io.Copy(hash, part) // streams through, never fully buffered
+			log.Printf("uploaded %s: sha256=%x",
+				part.FileName(), hash.Sum(nil))
 		}
 	}
 	w.WriteHeader(http.StatusCreated)

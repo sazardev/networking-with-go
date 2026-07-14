@@ -47,7 +47,9 @@ func main() {
 	}
 	defer peerConnection.Close()
 
-	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+	peerConnection.OnICEConnectionStateChange(func(
+		state webrtc.ICEConnectionState,
+	) {
 		fmt.Println("ICE connection state changed:", state.String())
 	})
 }

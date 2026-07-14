@@ -146,8 +146,12 @@ Frontend clients and mobile apps often need to know which flags apply to the cur
 func flagsHandler(w http.ResponseWriter, r *http.Request) {
 	userID := currentUserID(r)
 	active := map[string]bool{
-		"new-checkout-flow": isEnabledForUser("new-checkout-flow", userID, 25),
-		"dark-mode-default":  isEnabledForUser("dark-mode-default", userID, 100),
+		"new-checkout-flow": isEnabledForUser(
+			"new-checkout-flow", userID, 25,
+		),
+		"dark-mode-default": isEnabledForUser(
+			"dark-mode-default", userID, 100,
+		),
 	}
 	writeJSON(w, http.StatusOK, active)
 }

@@ -75,7 +75,8 @@ func (lb *loadBalancer) healthCheckLoop() {
 	for {
 		for _, b := range lb.backends {
 			resp, err := http.Get(b.url.String() + "/health")
-			b.healthy.Store(err == nil && resp.StatusCode == http.StatusOK)
+			ok := err == nil && resp.StatusCode == http.StatusOK
+			b.healthy.Store(ok)
 			if resp != nil {
 				resp.Body.Close()
 			}

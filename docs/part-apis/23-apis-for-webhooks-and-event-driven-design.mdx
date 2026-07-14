@@ -70,7 +70,8 @@ func webhookHandler(secret string) http.HandlerFunc {
 		mac := hmac.New(sha256.New, []byte(secret))
 		mac.Write(body)
 		expected := hex.EncodeToString(mac.Sum(nil))
-		received := strings.TrimPrefix(r.Header.Get("X-Webhook-Signature"), "sha256=")
+		sigHeader := r.Header.Get("X-Webhook-Signature")
+		received := strings.TrimPrefix(sigHeader, "sha256=")
 
 		if !hmac.Equal([]byte(expected), []byte(received)) {
 			http.Error(w, "invalid signature", http.StatusUnauthorized)

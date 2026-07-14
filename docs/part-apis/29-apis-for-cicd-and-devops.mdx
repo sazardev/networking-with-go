@@ -26,7 +26,9 @@ func newGitHubClient(ctx context.Context, token string) *github.Client {
 	return github.NewClient(oauth2.NewClient(ctx, ts))
 }
 
-func triggerDeployWorkflow(ctx context.Context, client *github.Client, owner, repo string) error {
+func triggerDeployWorkflow(
+	ctx context.Context, client *github.Client, owner, repo string,
+) error {
 	_, err := client.Actions.CreateWorkflowDispatchEventByFileName(
 		ctx, owner, repo, "deploy.yml",
 		github.CreateWorkflowDispatchEventRequest{Ref: "main"},
@@ -103,7 +105,8 @@ Internal tools built around CI/CD usually need a unified view across many pipeli
 type DeploymentStatus struct {
 	Service   string    `json:"service"`
 	Version   string    `json:"version"`
-	State     string    `json:"state"` // "pending", "running", "succeeded", "failed"
+	// State is one of: "pending", "running", "succeeded", "failed".
+	State     string    `json:"state"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -135,8 +138,12 @@ func rollbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Warn("rolled back", "service", service, "version", previous, "actor", currentUser(r))
-	writeJSON(w, http.StatusOK, map[string]string{"status": "rolled back", "version": previous})
+	logger.Warn("rolled back",
+		"service", service, "version", previous, "actor", currentUser(r))
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "rolled back",
+		"version": previous,
+	})
 }
 ```
 

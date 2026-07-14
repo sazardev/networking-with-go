@@ -40,7 +40,9 @@ func main() {
 	const snapshotLen int32 = 1600
 	const promiscuous = false
 
-	handle, err := pcap.OpenLive(device, snapshotLen, promiscuous, pcap.BlockForever)
+	handle, err := pcap.OpenLive(
+		device, snapshotLen, promiscuous, pcap.BlockForever,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,7 +76,8 @@ func inspect(packet gopacket.Packet) {
 	appLayer := packet.ApplicationLayer()
 	if appLayer != nil {
 		payload := appLayer.Payload()
-		fmt.Printf("  payload (%d bytes): %q\n", len(payload), truncate(payload, 80))
+		fmt.Printf("  payload (%d bytes): %q\n",
+			len(payload), truncate(payload, 80))
 	}
 }
 

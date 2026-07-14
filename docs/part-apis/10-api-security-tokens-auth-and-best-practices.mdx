@@ -65,9 +65,11 @@ func issueToken(userID, role string) (string, error) {
 		UserID: userID,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "api.example.com",
+			ExpiresAt: jwt.NewNumericDate(
+				time.Now().Add(15 * time.Minute),
+			),
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+			Issuer:   "api.example.com",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -84,12 +86,14 @@ Embedding your own fields (`UserID`, `Role`) alongside `jwt.RegisteredClaims` gi
 ```go
 func parseToken(tokenString string) (*Claims, error) {
 	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
+	keyFunc := func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			return nil, fmt.Errorf(
+				"unexpected signing method: %v", t.Header["alg"])
 		}
 		return signingKey, nil
-	})
+	}
+	token, err := jwt.ParseWithClaims(tokenString, claims, keyFunc)
 	if err != nil || !token.Valid {
 		return nil, fmt.Errorf("invalid token: %w", err)
 	}
@@ -117,7 +121,8 @@ func requireAuth(next http.Handler) http.Handler {
 
 		claims, err := parseToken(token)
 		if err != nil {
-			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+			http.Error(w,
+				"invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 

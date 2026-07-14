@@ -40,7 +40,8 @@ func main() {
 
 	slog.Info("server starting", "addr", ":8080")
 	slog.Warn("slow response", "path", "/api/users", "duration_ms", 842)
-	slog.Error("connection failed", "remote_addr", "203.0.113.5:51234", "error", "timeout")
+	slog.Error("connection failed",
+		"remote_addr", "203.0.113.5:51234", "error", "timeout")
 }
 ```
 
@@ -102,7 +103,8 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := generateRequestID()
 		ctx := context.WithValue(r.Context(), requestIDKey, id)
-		slog.InfoContext(ctx, "request started", "request_id", id, "path", r.URL.Path)
+		slog.InfoContext(ctx, "request started",
+			"request_id", id, "path", r.URL.Path)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

@@ -63,7 +63,8 @@ func NewLoadBalancer(rawURLs []string) (*LoadBalancer, error) {
 			return nil, err
 		}
 		b := &Backend{URL: u, Proxy: httputil.NewSingleHostReverseProxy(u)}
-		b.healthy.Store(true) // assume healthy until the checker says otherwise
+		// assume healthy until the checker says otherwise
+		b.healthy.Store(true)
 		lb.backends = append(lb.backends, b)
 	}
 	return lb, nil

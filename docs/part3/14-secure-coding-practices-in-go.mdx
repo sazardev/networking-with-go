@@ -86,9 +86,10 @@ Any code that builds a file path from user input needs to guard against `../` se
 
 ```go
 func safeOpen(baseDir, requestedName string) (*os.File, error) {
-	cleaned := filepath.Clean("/" + requestedName) // Clean collapses "../" traversal
+	cleaned := filepath.Clean("/" + requestedName) // collapses "../" traversal
 	full := filepath.Join(baseDir, cleaned)
-	if !strings.HasPrefix(full, filepath.Clean(baseDir)+string(os.PathSeparator)) {
+	base := filepath.Clean(baseDir) + string(os.PathSeparator)
+	if !strings.HasPrefix(full, base) {
 		return nil, fmt.Errorf("invalid path: %s", requestedName)
 	}
 	return os.Open(full)
@@ -135,7 +136,8 @@ An error message returned to a client should be useful to the client, not to an 
 ```go
 if err != nil {
 	log.Printf("db query failed: %v", err) // detail goes to your own logs
-	http.Error(w, "internal server error", http.StatusInternalServerError) // generic to the caller
+	// generic message to the caller; no internal details leaked
+	http.Error(w, "internal server error", http.StatusInternalServerError)
 	return
 }
 ```

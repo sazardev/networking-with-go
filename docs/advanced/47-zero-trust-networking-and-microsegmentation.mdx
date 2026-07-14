@@ -67,7 +67,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	clientCN := r.TLS.PeerCertificates[0].Subject.CommonName
 
 	if !allowed(clientCN, r.URL.Path) {
-		http.Error(w, "forbidden: zero trust policy denied this identity/resource pair", http.StatusForbidden)
+		msg := "forbidden: zero trust policy denied this identity/resource"
+		http.Error(w, msg, http.StatusForbidden)
 		return
 	}
 	fmt.Fprintf(w, "hello %s, access to %s granted\n", clientCN, r.URL.Path)

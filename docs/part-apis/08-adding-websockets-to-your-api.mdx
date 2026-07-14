@@ -114,7 +114,8 @@ func (h *Hub) run() {
 		case msg := <-h.broadcast:
 			h.mu.Lock()
 			for conn := range h.clients {
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				err := conn.WriteMessage(websocket.TextMessage, msg)
+				if err != nil {
 					conn.Close()
 					delete(h.clients, conn)
 				}
@@ -216,7 +217,9 @@ The WebSocket protocol has a proper close handshake — don't just let the TCP c
 
 ```go
 conn.WriteMessage(websocket.CloseMessage,
-	websocket.FormatCloseMessage(websocket.CloseNormalClosure, "server shutting down"))
+	websocket.FormatCloseMessage(
+		websocket.CloseNormalClosure, "server shutting down",
+	))
 ```
 
 Sending a close frame lets the client distinguish a graceful shutdown from a network failure, which matters for reconnection logic on the client side.

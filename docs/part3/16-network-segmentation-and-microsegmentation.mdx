@@ -73,13 +73,14 @@ func allowed(source, destination string) bool {
 
 func main() {
 	attempts := []struct{ Source, Destination string }{
-		{"web-frontend", "orders-db"},      // should be denied: no direct path
+		{"web-frontend", "orders-db"},      // denied: no direct path
 		{"orders-service", "orders-db"},    // should be allowed
 		{"web-frontend", "auth-service"},   // should be allowed
 	}
 
 	for _, a := range attempts {
-		fmt.Printf("%s -> %s: allowed=%v\n", a.Source, a.Destination, allowed(a.Source, a.Destination))
+		fmt.Printf("%s -> %s: allowed=%v\n",
+			a.Source, a.Destination, allowed(a.Source, a.Destination))
 	}
 }
 ```

@@ -53,7 +53,8 @@ func runCommand(addr, user, password, cmd string) (string, error) {
 	config := &ssh.ClientConfig{
 		User:            user,
 		Auth:            []ssh.AuthMethod{ssh.Password(password)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // demo only: verify real host keys in production
+		// demo only: verify real host keys in production
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         5 * time.Second,
 	}
 

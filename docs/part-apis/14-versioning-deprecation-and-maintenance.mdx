@@ -122,7 +122,8 @@ A reasonable default policy, adjusted to your API's actual usage patterns:
 ```go
 func sunset(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "this API version has been retired; see /v2", http.StatusGone)
+		http.Error(w,
+			"this API version has been retired; see /v2", http.StatusGone)
 	})
 }
 ```

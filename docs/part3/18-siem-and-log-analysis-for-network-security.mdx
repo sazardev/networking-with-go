@@ -86,10 +86,10 @@ func normalizeFirewallLog(line string) (NormalizedEvent, bool) {
 
 func main() {
 	raw := strings.NewReader(
-		"2024-03-01 08:15:03 BLOCK src=203.0.113.55 dst=10.0.0.4:22\n" +
-			"not a log line we understand\n" +
-			"2024-03-01 08:15:07 BLOCK src=203.0.113.55 dst=10.0.0.5:22\n",
-	)
+		`2024-03-01 08:15:03 BLOCK src=203.0.113.55 dst=10.0.0.4:22
+not a log line we understand
+2024-03-01 08:15:07 BLOCK src=203.0.113.55 dst=10.0.0.5:22
+`)
 
 	scanner := bufio.NewScanner(raw)
 	for scanner.Scan() {

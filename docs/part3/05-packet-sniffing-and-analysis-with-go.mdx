@@ -44,7 +44,7 @@ import (
 
 func main() {
 	const (
-		device      = "lo0"              // change to your loopback/test interface
+		device      = "lo0"              // your loopback/test interface
 		snapshotLen = 1600
 		promiscuous = false
 		timeout     = pcap.BlockForever
@@ -52,7 +52,10 @@ func main() {
 
 	handle, err := pcap.OpenLive(device, snapshotLen, promiscuous, timeout)
 	if err != nil {
-		log.Fatalf("open capture: %v (try running with elevated privileges)", err)
+		log.Fatalf(
+			"open capture: %v (try running with elevated privileges)",
+			err,
+		)
 	}
 	defer handle.Close()
 

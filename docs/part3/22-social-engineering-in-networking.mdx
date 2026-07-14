@@ -57,7 +57,8 @@ func checkEmailAuthRecords(domain string) {
 
 	dmarcRecords, err := net.LookupTXT("_dmarc." + domain)
 	if err != nil || len(dmarcRecords) == 0 {
-		fmt.Println("no DMARC record found - failed SPF/DKIM mail has no defined handling")
+		fmt.Println("no DMARC record found -" +
+			" failed SPF/DKIM mail has no defined handling")
 		return
 	}
 	for _, record := range dmarcRecords {

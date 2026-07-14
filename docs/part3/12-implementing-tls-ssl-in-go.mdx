@@ -48,7 +48,8 @@ func main() {
 		Addr:    ":8443",
 		Handler: mux,
 		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12, // reject anything older than TLS 1.2
+			// reject anything older than TLS 1.2
+			MinVersion: tls.VersionTLS12,
 		},
 	}
 
@@ -82,7 +83,8 @@ func main() {
 	// verifying the server's certificate chain against the system trust store.
 	conn, err := tls.Dial("tcp", "example.com:443", &tls.Config{
 		MinVersion: tls.VersionTLS12,
-		ServerName: "example.com", // used for SNI and certificate hostname verification
+		// used for SNI and certificate hostname verification
+		ServerName: "example.com",
 	})
 	if err != nil {
 		log.Fatalf("tls dial: %v", err)
@@ -93,7 +95,8 @@ func main() {
 	fmt.Printf("negotiated TLS version: %x, cipher suite: %x\n",
 		state.Version, state.CipherSuite)
 
-	fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+	fmt.Fprintf(conn,
+		"GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
 	if _, err := io.Copy(os.Stdout, conn); err != nil {
 		log.Fatalf("read response: %v", err)
 	}

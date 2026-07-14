@@ -117,13 +117,16 @@ func main() {
 		DNSNames:     []string{"localhost"},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		KeyUsage: x509.KeyUsageDigitalSignature |
+			x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
 	// Self-signed: the certificate is signed with its own key, so template
 	// is passed as both the certificate to create and the "parent" signer.
-	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	der, err := x509.CreateCertificate(
+		rand.Reader, &template, &template, &key.PublicKey, key,
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -133,7 +136,10 @@ func main() {
 	certOut.Close()
 
 	keyOut, _ := os.Create("key.pem")
-	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	pem.Encode(keyOut, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
 	keyOut.Close()
 }
 ```

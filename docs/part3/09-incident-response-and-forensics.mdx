@@ -85,7 +85,8 @@ func triage(path string) error {
 		line := scanner.Text()
 		for _, pattern := range suspiciousPatterns {
 			if strings.Contains(line, pattern) {
-				fmt.Printf("line %d: matched %q: %s\n", lineNum, pattern, line)
+				fmt.Printf("line %d: matched %q: %s\n",
+					lineNum, pattern, line)
 			}
 		}
 	}

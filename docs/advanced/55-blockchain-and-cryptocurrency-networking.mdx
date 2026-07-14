@@ -41,7 +41,8 @@ type Block struct {
 }
 
 func (b *Block) computeHash() string {
-	record := fmt.Sprintf("%d%d%s%s%d", b.Index, b.Timestamp, b.Data, b.PrevHash, b.Nonce)
+	record := fmt.Sprintf("%d%d%s%s%d",
+		b.Index, b.Timestamp, b.Data, b.PrevHash, b.Nonce)
 	sum := sha256.Sum256([]byte(record))
 	return hex.EncodeToString(sum[:])
 }
@@ -64,7 +65,12 @@ func (b *Block) mine(difficulty int) {
 }
 
 func NewBlock(index int, data, prevHash string, difficulty int) *Block {
-	b := &Block{Index: index, Timestamp: time.Now().Unix(), Data: data, PrevHash: prevHash}
+	b := &Block{
+		Index:     index,
+		Timestamp: time.Now().Unix(),
+		Data:      data,
+		PrevHash:  prevHash,
+	}
 	b.mine(difficulty)
 	return b
 }

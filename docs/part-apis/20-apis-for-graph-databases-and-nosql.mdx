@@ -74,15 +74,21 @@ Graphs shine when the *relationships* are the interesting part of the query — 
 ```go
 import "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 
-func recommendFriends(ctx context.Context, driver neo4j.DriverWithContext, userID string) ([]string, error) {
-	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+func recommendFriends(
+	ctx context.Context,
+	driver neo4j.DriverWithContext,
+	userID string,
+) ([]string, error) {
+	session := driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode: neo4j.AccessModeRead,
+	})
 	defer session.Close(ctx)
 
-	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+	txFunc := func(tx neo4j.ManagedTransaction) (any, error) {
 		res, err := tx.Run(ctx, `
-			MATCH (me:User {id: $id})-[:FOLLOWS]->(:User)-[:FOLLOWS]->(fof:User)
-			WHERE NOT (me)-[:FOLLOWS]->(fof) AND me <> fof
-			RETURN DISTINCT fof.id AS id LIMIT 10`,
+		MATCH (me:User {id: $id})-[:FOLLOWS]->(:User)-[:FOLLOWS]->(fof:User)
+		WHERE NOT (me)-[:FOLLOWS]->(fof) AND me <> fof
+		RETURN DISTINCT fof.id AS id LIMIT 10`,
 			map[string]any{"id": userID})
 		if err != nil {
 			return nil, err
@@ -93,7 +99,9 @@ func recommendFriends(ctx context.Context, driver neo4j.DriverWithContext, userI
 			ids = append(ids, id.(string))
 		}
 		return ids, res.Err()
-	})
+	}
+
+	result, err := session.ExecuteRead(ctx, txFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +148,9 @@ Whichever backend you pick, the same discipline applies: your HTTP handlers shou
 Relational APIs often paginate with `OFFSET`/`LIMIT` or a numeric ID cursor, but neither maps cleanly onto MongoDB's ObjectIDs or a graph's internal node identifiers, and `OFFSET` in particular degrades badly at scale because the database still has to walk past every skipped document. Cursor-based pagination using a field you already sort by avoids both problems:
 
 ```go
-func listProducts(ctx context.Context, afterID string, limit int64) ([]Product, error) {
+func listProducts(
+	ctx context.Context, afterID string, limit int64,
+) ([]Product, error) {
 	filter := bson.M{}
 	if afterID != "" {
 		filter["_id"] = bson.M{"$gt": afterID}

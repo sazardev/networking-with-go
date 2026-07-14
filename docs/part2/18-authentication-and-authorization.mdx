@@ -122,7 +122,8 @@ func verifyToken(token string) (userID string, ok bool) {
 	mac.Write(payloadBytes)
 	expectedSig := base64.URLEncoding.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(expectedSig), []byte(parts[1])) {
-		return "", false // signature mismatch — token was tampered with or forged
+		// signature mismatch — token was tampered with or forged
+		return "", false
 	}
 
 	fields := strings.SplitN(string(payloadBytes), "|", 2)

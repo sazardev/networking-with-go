@@ -113,7 +113,8 @@ Because a task can be retried, `handleEmailDelivery` might run twice for the sam
 `asynq` also supports delayed and periodic tasks without a separate cron system:
 
 ```go
-_, err := asynqClient.Enqueue(task, asynq.ProcessIn(24*time.Hour)) // reminder email tomorrow
+// reminder email tomorrow
+_, err := asynqClient.Enqueue(task, asynq.ProcessIn(24*time.Hour))
 ```
 
 For recurring jobs (nightly reports, hourly cache warmups), `asynq`'s companion scheduler (`asynq.NewScheduler`) accepts a cron expression and enqueues a task on that schedule, which is usually simpler than running a separate `cron` binary alongside your API.
@@ -135,7 +136,10 @@ func queueHealthHandler(inspector *asynq.Inspector) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		info, err := inspector.GetQueueInfo("default")
 		if err != nil {
-			http.Error(w, "could not inspect queue", http.StatusInternalServerError)
+			http.Error(
+				w, "could not inspect queue",
+				http.StatusInternalServerError,
+			)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]int{
@@ -159,7 +163,10 @@ func retryArchivedHandler(inspector *asynq.Inspector) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		taskID := r.PathValue("id")
 		if err := inspector.RunTask("default", taskID); err != nil {
-			http.Error(w, "could not requeue task", http.StatusInternalServerError)
+			http.Error(
+				w, "could not requeue task",
+				http.StatusInternalServerError,
+			)
 			return
 		}
 		w.WriteHeader(http.StatusOK)

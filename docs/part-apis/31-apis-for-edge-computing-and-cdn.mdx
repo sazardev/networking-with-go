@@ -21,7 +21,9 @@ import (
 )
 
 func main() {
-	fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {
+	fsthttp.ServeFunc(func(
+		ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request,
+	) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(fsthttp.StatusOK)
 			io.WriteString(w, "ok")
@@ -53,7 +55,9 @@ func main() {
 Edge functions excel at request/response transformations that don't need your full application: rewriting a URL before it reaches origin, adding security headers, serving a cached response entirely from the edge without a round trip to origin at all, running A/B test bucket assignment based on a cookie, or rejecting obviously malicious requests before they cost your origin anything. All of these share a property: they need little or no state beyond what's in the request itself, and they benefit enormously from running physically close to the user rather than in one central region.
 
 ```go
-fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {
+fsthttp.ServeFunc(func(
+	ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request,
+) {
 	bucket := abTestBucket(r.Header.Get("Cookie"))
 	r.Header.Set("X-AB-Bucket", bucket)
 
@@ -78,7 +82,8 @@ CDNs have always cached static assets; edge compute lets you cache dynamic API r
 ```go
 func productHandler(w http.ResponseWriter, r *http.Request) {
 	product := fetchProduct(r.PathValue("id"))
-	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+	w.Header().Set("Cache-Control",
+		"public, max-age=60, stale-while-revalidate=300")
 	writeJSON(w, http.StatusOK, product)
 }
 ```
@@ -98,7 +103,9 @@ Edge computing doesn't replace your Go API running in a data center — it sits 
 Edge functions are also the cheapest place to reject traffic your origin should never have to process at all — malformed requests, obviously abusive patterns, or requests missing a required header your API always needs. Doing this at the edge means the rejection happens close to the attacker or misbehaving client, not after a round trip across the globe to your origin and back:
 
 ```go
-fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {
+fsthttp.ServeFunc(func(
+	ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request,
+) {
 	if r.Header.Get("X-Api-Key") == "" {
 		w.WriteHeader(fsthttp.StatusUnauthorized)
 		io.WriteString(w, `{"error":"missing api key"}`)

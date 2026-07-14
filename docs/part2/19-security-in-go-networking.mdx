@@ -79,7 +79,8 @@ For an HTTP server, `http.ListenAndServeTLS(addr, certFile, keyFile, handler)` d
 For local testing, you can generate a self-signed certificate and key with the OpenSSL CLI:
 
 ```
-openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -days 365 -subj "/CN=localhost"
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout server.key -out server.crt -days 365 -subj "/CN=localhost"
 ```
 
 ---

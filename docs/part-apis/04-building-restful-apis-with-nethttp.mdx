@@ -116,7 +116,9 @@ func (a *API) createTask(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil || body.Text == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "text is required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "text is required",
+		})
 		return
 	}
 	task := a.store.Create(body.Text)
@@ -130,12 +132,16 @@ func (a *API) listTasks(w http.ResponseWriter, r *http.Request) {
 func (a *API) getTask(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid id",
+		})
 		return
 	}
 	task, err := a.store.Get(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "task not found",
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
@@ -144,19 +150,25 @@ func (a *API) getTask(w http.ResponseWriter, r *http.Request) {
 func (a *API) updateTask(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid id",
+		})
 		return
 	}
 	var body struct {
 		Done bool `json:"done"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid body",
+		})
 		return
 	}
 	task, err := a.store.Update(id, body.Done)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "task not found",
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
@@ -165,11 +177,15 @@ func (a *API) updateTask(w http.ResponseWriter, r *http.Request) {
 func (a *API) deleteTask(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid id",
+		})
 		return
 	}
 	if err := a.store.Delete(id); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "task not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "task not found",
+		})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -226,7 +242,8 @@ func recoverMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if err := recover(); err != nil {
 				log.Printf("panic recovered: %v", err)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
+				http.Error(w, "internal server error",
+					http.StatusInternalServerError)
 			}
 		}()
 		next.ServeHTTP(w, r)
