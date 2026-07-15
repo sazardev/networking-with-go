@@ -1,4 +1,56 @@
 User-agent: *
 Allow: /
 
+# Explicit allows for AI/LLM crawlers and answer engines. Redundant with the
+# wildcard rule above, but listed by name so it's unambiguous this site wants
+# to be read, indexed, grounded on, and cited by AI search and assistants
+# (including Gemini via Google-Extended, ChatGPT, Claude, and Perplexity).
+User-agent: Google-Extended
+Allow: /
+
+User-agent: GoogleOther
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
 Sitemap: https://sazardev.github.io/networking-with-go/sitemap.xml

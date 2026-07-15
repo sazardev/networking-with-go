@@ -1,7 +1,8 @@
 # Networking with Go, Made Easy
 
 [![Go Version](https://img.shields.io/badge/Go-1.22-blue?logo=go)](https://golang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code License: MIT](https://img.shields.io/badge/Code-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Book License: CC BY-NC 4.0](https://img.shields.io/badge/Book%20text-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://makeapullrequest.com)
 [![Awesome](https://img.shields.io/badge/awesome-yes-orange)](https://github.com/sindresorhus/awesome)
 [![Website](https://img.shields.io/badge/website-sazardev.github.io%2Fnetworking--with--go-black)](https://sazardev.github.io/networking-with-go/)
@@ -231,6 +232,11 @@ pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
 
 ## Contributing
 PRs, issues, and suggestions are welcome — new labs, corrections, clearer explanations, or entirely new chapters. See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the basics, and `.claude/skills/mdx-pdf-format/SKILL.md` if you're adding or editing a chapter file, for the exact format the build expects.
+
+## License
+This repository uses two licenses:
+- **Code** (`exercises/`, `website/`, build tooling) — [MIT](LICENSE). Use it freely, no attribution required.
+- **Book text** (`docs/**/*.mdx`, and any PDF/EPUB/HTML rendered from it) — [CC BY-NC 4.0](LICENSE-CONTENT). Free to read, share, and adapt for non-commercial use, as long as you credit Omar Flores Salazar.
 
 ## Star this repo if you find it useful!
 

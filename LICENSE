@@ -1,6 +1,11 @@
 MIT License
 
-Copyright (c) 2025
+Scope: this license covers the source code in this repository only —
+`exercises/`, `website/`, build configuration, and tooling. The book text
+under `docs/**/*.mdx` is licensed separately under CC BY-NC 4.0; see
+LICENSE-CONTENT.
+
+Copyright (c) 2025 Omar Flores Salazar
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

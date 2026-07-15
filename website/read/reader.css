@@ -1,0 +1,248 @@
+:root {
+  --bg: #ffffff;
+  --fg: #0a0a0a;
+  --muted: #5c5c5c;
+  --line: #0a0a0a;
+  --line-soft: #d9d9d9;
+  --card: #fafafa;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0a0a;
+    --fg: #f5f5f5;
+    --muted: #a6a6a6;
+    --line: #f5f5f5;
+    --line-soft: #333333;
+    --card: #111111;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --fg: #0a0a0a;
+  --muted: #5c5c5c;
+  --line: #0a0a0a;
+  --line-soft: #d9d9d9;
+  --card: #fafafa;
+}
+:root[data-theme="dark"] {
+  --bg: #0a0a0a;
+  --fg: #f5f5f5;
+  --muted: #a6a6a6;
+  --line: #f5f5f5;
+  --line-soft: #333333;
+  --card: #111111;
+}
+
+/* Map go-pretty-pdf's theme variable contract onto the site's own palette so
+   the book content participates in the same light/dark toggle. Fonts are
+   deliberately left alone here — those come from the theme's own <style>
+   block (go-pretty-pdf.yml's pinned font stack) and are what should match
+   the PDF. */
+:root {
+  --pdf-bg: var(--bg);
+  --pdf-text: var(--fg);
+  --pdf-muted: var(--muted);
+  --pdf-primary: var(--fg);
+  --pdf-accent: var(--fg);
+  --pdf-surface: var(--card);
+  --pdf-surface-2: var(--card);
+  --pdf-border: var(--line-soft);
+  --pdf-info: var(--fg);
+  --pdf-warn: var(--fg);
+  --pdf-success: var(--fg);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  /* Deliberately no font-family here: the book content's font comes from
+     go-pretty-pdf's own theme <style> block (loaded before this file),
+     matching the PDF. Only the UI chrome below opts into var(--sans). */
+}
+a { color: inherit; }
+
+.reader-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--sans);
+}
+.brand {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+}
+.brand span { color: var(--muted); }
+.reader-top-actions { display: flex; align-items: center; gap: 14px; }
+.reader-top-actions a {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-decoration: none;
+}
+#search-open, #theme-toggle {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+#search-open kbd {
+  font-family: var(--mono);
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  padding: 0 4px;
+  margin-left: 4px;
+  font-size: 10px;
+}
+
+.reader-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: calc(100vh - 56px);
+}
+
+.reader-sidebar {
+  border-right: 1px solid var(--line-soft);
+  padding: 20px 16px;
+  overflow-y: auto;
+  max-height: calc(100vh - 56px);
+  position: sticky;
+  top: 56px;
+  align-self: start;
+  font-family: var(--sans);
+}
+.toc-part { margin-bottom: 18px; }
+.toc-part-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.toc-part ul { list-style: none; margin: 0; padding: 0; }
+.toc-part li { margin: 0; }
+.toc-part a {
+  display: block;
+  padding: 4px 6px;
+  margin: 1px 0;
+  font-size: 13px;
+  text-decoration: none;
+  border-radius: 2px;
+}
+.toc-part a:hover { background: var(--card); }
+body[data-current-part] .toc-part { opacity: 0.55; }
+body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
+.toc-part[data-part].current-part { opacity: 1; }
+.toc-part[data-part].current-part .toc-part-title { color: var(--fg); }
+
+.reader-content {
+  padding: 40px clamp(20px, 4vw, 64px);
+  max-width: 860px;
+}
+.reader-content :first-child { margin-top: 0; }
+
+/* go-pretty-pdf's own stylesheet sets @page/print rules that are harmless
+   on screen; only the print-oriented forced-page-break behavior on H1 is
+   worth softening for continuous scrolling. */
+.reader-content h1 {
+  page-break-before: avoid;
+  break-before: avoid;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 40px;
+  margin-top: 40px;
+}
+.reader-content section:first-of-type h1 {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.part-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--line-soft);
+  border: 1px solid var(--line-soft);
+  margin-top: 28px;
+}
+.part-card {
+  background: var(--card);
+  color: var(--fg);
+  text-decoration: none;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--sans);
+}
+.part-card:hover { background: var(--bg); }
+.part-idx { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.part-card h2 { font-size: 17px; margin: 0; }
+.part-card p { font-size: 13.5px; color: var(--muted); margin: 0; flex: 1; }
+.part-count { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.palette {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+.palette[hidden] { display: none; }
+.palette-box {
+  width: min(560px, 90vw);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--sans);
+}
+#palette-input {
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--fg);
+  outline: none;
+}
+#palette-results { overflow-y: auto; }
+.palette-result {
+  display: block;
+  padding: 10px 16px;
+  text-decoration: none;
+  color: var(--fg);
+  border-bottom: 1px solid var(--line-soft);
+}
+.palette-result:hover, .palette-result.active { background: var(--card); }
+.palette-result .pr-title { font-size: 13.5px; font-weight: 600; }
+.palette-result .pr-meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin: 2px 0; }
+.palette-result .pr-excerpt { font-size: 12px; color: var(--muted); }
+.palette-empty { padding: 16px; font-size: 13px; color: var(--muted); font-family: var(--mono); }
+
+@media (max-width: 900px) {
+  .reader-layout { grid-template-columns: 1fr; }
+  .reader-sidebar { display: none; }
+  .part-grid { grid-template-columns: 1fr; }
+}

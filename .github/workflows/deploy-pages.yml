@@ -1,16 +1,20 @@
 name: Deploy Pages
 
-# Publishes website/ as the project's GitHub Pages site. The page itself is
-# self-updating: it reads the book's cover straight from raw.githubusercontent.com
-# and fetches version/PDF-download info live from the GitHub Releases API on
-# every page load, so a new release or a new cover.jpg shows up automatically
-# without needing a redeploy. A redeploy is only needed when website/ itself
-# changes.
+# Publishes website/ as the project's GitHub Pages site. The landing page
+# itself is self-updating: it reads the book's cover straight from
+# raw.githubusercontent.com and fetches version/PDF-download info live from
+# the GitHub Releases API on every page load. The web reader under
+# website/read/ is different -- it's generated from docs/**/*.mdx by
+# website/tools/buildreader, so THAT needs an actual rebuild any time a
+# chapter changes, which is why docs/** and go-pretty-pdf.yml are also in
+# this workflow's trigger paths, not just website/**.
 on:
   push:
     branches: [master]
     paths:
       - "website/**"
+      - "docs/**"
+      - "go-pretty-pdf.yml"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -31,6 +35,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      # Same pinned commit used by release-pdf.yml -- see that workflow for
+      # why @latest is avoided (a known Chrome-rendering bug in the last
+      # tagged release). buildreader only uses the "serve" subcommand
+      # (no headless Chrome involved), but pinning to the same known-good
+      # commit keeps both workflows using one validated version.
+      - name: Install pretty-pdf
+        run: go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@63fbcda3684c8b6274f7f662cf93d04b2a39863c
+
+      - name: Build web reader from docs/
+        run: go run website/tools/buildreader/main.go
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

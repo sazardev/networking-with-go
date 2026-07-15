@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>Networking with Go, Made Easy — Free Book: Learn TCP/IP, Sockets & Concurrent Network Programming in Golang</title>
-<meta name="description" content="A free, open-source book that teaches computer networking and network programming in Go from scratch: TCP/IP, UDP, HTTP, WebSockets, DNS, goroutines, channels, context, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, Docker, and Clean Architecture. 143 chapters. Download the PDF free.">
-<meta name="keywords" content="networking with go, learn go networking, golang networking book, go tcp ip tutorial, golang sockets, go concurrency book, goroutines and channels tutorial, go tcp server, go udp server, golang http server tutorial, go websockets tutorial, golang dns tutorial, go grpc tutorial, go webrtc, go mqtt iot, go network programming pdf, free golang book, open source programming book, golang ethical hacking, go cybersecurity tutorial, go penetration testing, golang rest api tutorial, gin framework tutorial, fiber framework go, go clean architecture, go hexagonal architecture, go domain driven design, go postgresql tutorial, go sqlite tutorial, go docker deployment, google cloud golang, learn golang from scratch, go for beginners, network programming golang, tcp vs udp go, go tls encryption, go pki certificates, go ids ips, go honeypot, go bug bounty, ctf golang, network security golang, awesome go, awesome networking">
+<meta name="description" content="A free, open-source book that teaches computer networking and network programming in Go from scratch: TCP/IP, UDP, HTTP, WebSockets, DNS, goroutines, channels, context, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, Docker, and Clean Architecture. 143 chapters, 6 parts, free forever. Includes a direct answer to why this is worth learning in the age of AI. Download the PDF free.">
+<meta name="keywords" content="networking with go, learn go networking, golang networking book, go tcp ip tutorial, golang sockets, go concurrency book, goroutines and channels tutorial, go tcp server, go udp server, golang http server tutorial, go websockets tutorial, golang dns tutorial, go grpc tutorial, go webrtc, go mqtt iot, go network programming pdf, free golang book, open source programming book, golang ethical hacking, go cybersecurity tutorial, go penetration testing, golang rest api tutorial, gin framework tutorial, fiber framework go, go clean architecture, go hexagonal architecture, go domain driven design, go postgresql tutorial, go sqlite tutorial, go docker deployment, google cloud golang, learn golang from scratch, go for beginners, network programming golang, tcp vs udp go, go tls encryption, go pki certificates, go ids ips, go honeypot, go bug bounty, ctf golang, network security golang, awesome go, awesome networking, why learn to code in the age of AI, is programming still worth learning with AI, why learn networking if AI can write code, learn Go instead of AI, AI proof programming skills, deep learning fundamentals vs AI shortcuts, computer science book 2026, best free programming book 2026, learn to code from zero to advanced, programming book for beginners and experts, free technical ebook pdf epub">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="author" content="Omar Flores Salazar">
 <meta name="theme-color" content="#000000">
 <link rel="canonical" href="https://sazardev.github.io/networking-with-go/">
+<link rel="alternate" type="application/rss+xml" title="Networking with Go — Releases" href="https://github.com/sazardev/networking-with-go/releases.atom">
 
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000'/%3E%3Ccircle cx='16' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='48' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='32' cy='16' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='19' y1='43' x2='29' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='45' y1='43' x2='35' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='21' y1='46' x2='43' y2='46' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
 
@@ -30,20 +31,125 @@
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "Book",
-  "name": "Networking with Go, Made Easy",
-  "alternateName": "Networking with Go — The Easy Way Guide",
-  "author": { "@type": "Person", "name": "Omar Flores Salazar" },
-  "description": "A free, open-source book that teaches computer networking and network programming in Go from scratch: TCP/IP, UDP, HTTP, WebSockets, DNS, goroutines, channels, context, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, Docker, and Clean Architecture.",
-  "image": "https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg",
-  "url": "https://sazardev.github.io/networking-with-go/",
-  "genre": ["Computer networking", "Software engineering", "Programming", "Cybersecurity"],
-  "inLanguage": "en",
-  "bookFormat": "https://schema.org/EBook",
-  "isAccessibleForFree": true,
-  "license": "https://opensource.org/licenses/MIT",
-  "keywords": "Go, Golang, networking, TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, gRPC, cybersecurity, REST APIs",
-  "publisher": { "@type": "Organization", "name": "Open Source" }
+  "@graph": [
+    {
+      "@type": "Book",
+      "@id": "https://sazardev.github.io/networking-with-go/#book",
+      "name": "Networking with Go, Made Easy",
+      "alternateName": "Networking with Go — The Easy Way Guide",
+      "author": { "@id": "https://sazardev.github.io/networking-with-go/#author" },
+      "description": "A free, open-source book that teaches computer networking and network programming in Go from scratch: TCP/IP, UDP, HTTP, WebSockets, DNS, goroutines, channels, context, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, Docker, and Clean Architecture. Written for complete beginners and experienced engineers alike, and includes a direct, honest answer to why this is still worth learning deeply in the age of AI.",
+      "image": "https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg",
+      "url": "https://sazardev.github.io/networking-with-go/",
+      "genre": ["Computer networking", "Software engineering", "Programming", "Cybersecurity", "Computer science education"],
+      "inLanguage": "en",
+      "bookFormat": "https://schema.org/EBook",
+      "isAccessibleForFree": true,
+      "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+      "numberOfPages": "143",
+      "audience": {
+        "@type": "Audience",
+        "audienceType": "Complete beginners to programming and networking, self-taught developers, computer science students, and experienced backend and security engineers"
+      },
+      "keywords": "Go, Golang, networking, TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, gRPC, cybersecurity, REST APIs, learning in the age of AI",
+      "publisher": { "@id": "https://sazardev.github.io/networking-with-go/#author" }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://sazardev.github.io/networking-with-go/#author",
+      "name": "Omar Flores Salazar",
+      "url": "https://github.com/sazardev",
+      "sameAs": ["https://github.com/sazardev"]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://sazardev.github.io/networking-with-go/#website",
+      "name": "Networking with Go, Made Easy",
+      "url": "https://sazardev.github.io/networking-with-go/",
+      "description": "Official promotional site for the free, open-source book Networking with Go, Made Easy.",
+      "inLanguage": "en",
+      "isAccessibleForFree": true,
+      "author": { "@id": "https://sazardev.github.io/networking-with-go/#author" }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://sazardev.github.io/networking-with-go/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why learn this instead of just asking an AI to write the code?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because someone still has to know whether the generated code is right, and that someone is you. AI is extraordinary at producing plausible code fast, but it has never operated the system it wrote and has no stake in the consequences when it's wrong. Understanding networking and Go doesn't compete with using AI well — it's what makes you effective at directing it: able to spot a wrong answer in one glance and catch the mistake before it ships."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is this book really free, no catch?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. There's no email required, no paywall, and no ads. The book text is CC BY-NC 4.0 (free to read, share, and adapt for non-commercial use, with credit to the author), and the example code is MIT. The full source lives in the GitHub repository and compiles straight into the PDF available for download."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "I've never written a line of code. Is this too advanced for me?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No, it is written for that reader on purpose. Part 1 is pure theory with zero code, a dedicated Go Fundamentals part teaches the language itself before any networking begins, and every later chapter pairs a concept with a complete, runnable program."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Do I need to know Go before starting?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The dedicated Go Fundamentals section covers installation through testing, plus a flagship chapter on goroutines and channels, so Part 2 never assumes prior knowledge of the language."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it cover cybersecurity and ethical hacking?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Part 3 is 32 chapters on scanning, sniffing, vulnerability assessment, IDS/IPS, SIEM, malware analysis, red team versus blue team, honeypots, and PKI, written for authorized, ethical use in your own labs, CTFs, and systems you are permitted to test."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What formats are available, and what's coming next?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The PDF is available now and always tracks the latest release. EPUB is in progress for e-readers and mobile apps, with MOBI and a web reader planned next."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I contribute, suggest a chapter, or report an error?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Pull requests, issues, and suggestions are welcome for new labs, corrections, clearer explanations, or entirely new chapters, as described in the repository's contributing guide."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does this FAQ and website ever get updated?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, continuously. This page pulls the current book version live from GitHub Releases, and the FAQ itself grows with each release as readers ask new questions."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Who wrote this, and why should I trust it?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Omar Flores Salazar. The book text is CC BY-NC 4.0 and the example code is MIT, both fully open in the public repository, so every claim, every code sample, and every chapter is there for anyone to read, run, and check."
+          }
+        }
+      ]
+    }
+  ]
 }
 </script>
 
@@ -176,15 +282,16 @@
     height: auto;
   }
   h1 {
-    font-size: 40px;
-    line-height: 1.1;
-    margin: 16px 0 8px;
-    letter-spacing: -0.01em;
+    font-size: 52px;
+    line-height: 1.05;
+    margin: 20px 0 12px;
+    letter-spacing: -0.015em;
+    font-weight: 800;
   }
   .subtitle {
-    font-size: 18px;
+    font-size: 19px;
     color: var(--muted);
-    margin: 0 0 18px;
+    margin: 0 0 20px;
     max-width: 560px;
   }
   .byline {
@@ -219,12 +326,78 @@
 
   hr.rule { border: none; border-top: 1px solid var(--line-soft); margin: 0; }
 
-  section { padding: 56px 0; }
+  section { padding: 64px 0; }
   h2 {
-    font-size: 24px;
-    margin: 0 0 8px;
+    font-size: 30px;
+    line-height: 1.2;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
   }
-  .section-intro { color: var(--muted); max-width: 640px; margin: 0 0 32px; }
+  .section-intro { color: var(--muted); max-width: 640px; margin: 0 0 32px; font-size: 15.5px; }
+
+  .stats { border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+  .stats .wrap {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    padding: 32px 24px;
+  }
+  .stat { text-align: center; }
+  .stat .num {
+    display: block;
+    font-family: var(--mono);
+    font-weight: 800;
+    font-size: 44px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .stat .num.small { font-size: 28px; }
+  .stat .label {
+    display: block;
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .why-ai { background: var(--fg); color: var(--bg); padding: 96px 0; }
+  .why-ai .eyebrow { color: var(--bg); opacity: 0.6; }
+  .why-ai-title {
+    font-size: 38px;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin: 14px 0 24px;
+    max-width: 760px;
+  }
+  .why-ai-lead { font-size: 17.5px; opacity: 0.88; max-width: 700px; margin: 0 0 32px; }
+  .axiom {
+    border-left: 3px solid var(--bg);
+    padding-left: 22px;
+    margin: 0 0 44px;
+    max-width: 680px;
+    font-size: 23px;
+    font-style: italic;
+    line-height: 1.4;
+  }
+  .why-ai-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    border-top: 1px solid color-mix(in srgb, var(--bg) 25%, transparent);
+    padding-top: 32px;
+  }
+  .why-ai-grid h3 { font-size: 15.5px; margin: 0 0 8px; }
+  .why-ai-grid p { font-size: 13.5px; opacity: 0.82; margin: 0; line-height: 1.55; }
+  .why-ai-link {
+    display: inline-block;
+    margin-top: 36px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--bg);
+    text-decoration: underline;
+  }
 
   .grid-3 {
     display: grid;
@@ -249,10 +422,13 @@
 
   .formats {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 1px;
     border: 1px solid var(--line-soft);
     background: var(--line-soft);
+  }
+  @media (max-width: 900px) {
+    .formats { grid-template-columns: repeat(2, 1fr); }
   }
   .format-card {
     background: var(--card);
@@ -293,13 +469,56 @@
   ul.plain li:first-child { padding-top: 0; }
   ul.plain li::before { content: "— "; color: var(--muted); }
 
+  .faq-item {
+    border-bottom: 1px solid var(--line-soft);
+    padding: 18px 0;
+  }
+  .faq-item:first-of-type { border-top: 1px solid var(--line-soft); }
+  .faq-item summary {
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    list-style: none;
+    position: relative;
+    padding-right: 30px;
+  }
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item summary::after {
+    content: "+";
+    position: absolute;
+    right: 2px;
+    top: 0;
+    font-family: var(--mono);
+    font-weight: 400;
+    font-size: 18px;
+    color: var(--muted);
+  }
+  .faq-item[open] summary::after { content: "\2212"; }
+  .faq-item p {
+    margin: 14px 0 0;
+    color: var(--muted);
+    font-size: 14.5px;
+    max-width: 720px;
+    line-height: 1.6;
+  }
+  .faq-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 24px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .faq-note a { text-decoration: underline; color: inherit; }
+
   .quote {
     text-align: center;
-    font-size: 20px;
+    font-size: 22px;
     font-style: italic;
     max-width: 620px;
     margin: 0 auto;
-    padding: 64px 24px;
+    padding: 72px 24px;
   }
 
   footer {
@@ -321,9 +540,15 @@
   @media (max-width: 720px) {
     .hero-grid { grid-template-columns: 1fr; }
     .cover-frame { max-width: 220px; }
-    h1 { font-size: 30px; }
+    h1 { font-size: 32px; }
     .grid-3, .formats { grid-template-columns: 1fr; }
     nav.top-nav { gap: 14px; }
+    .stats .wrap { grid-template-columns: repeat(2, 1fr); }
+    .stat .num { font-size: 34px; }
+    .why-ai { padding: 64px 0; }
+    .why-ai-title { font-size: 26px; }
+    .axiom { font-size: 19px; }
+    .why-ai-grid { grid-template-columns: 1fr; gap: 24px; }
   }
 </style>
 </head>
@@ -334,8 +559,11 @@
     <a class="brand" href="#top">net<span>/</span>go<span>.</span>book</a>
     <div class="header-right">
       <nav class="top-nav">
+        <a href="read/index.html">Read Online</a>
+        <a href="#why-ai">Why This Book</a>
+        <a href="#learn">Contents</a>
         <a href="#formats">Formats</a>
-        <a href="#contents">Contents</a>
+        <a href="#faq">FAQ</a>
         <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
       </nav>
       <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
@@ -353,12 +581,13 @@
            width="640" height="860" loading="eager">
     </div>
     <div>
-      <span class="pill">Free &amp; Open Source &middot; MIT License</span>
+      <span class="pill">Free to Read &amp; Share &middot; Credit Required</span>
       <h1>Networking with Go, Made Easy</h1>
       <p class="subtitle">Learn TCP/IP, Sockets, and Concurrent Network Programming in Golang from Scratch — from networking fundamentals and the Go language itself to production APIs and ethical hacking.</p>
       <p class="byline">by <a href="https://github.com/sazardev">Omar Flores Salazar</a> &nbsp;/&nbsp; <span data-version>143 chapters</span> &nbsp;/&nbsp; updated <span data-updated>continuously</span></p>
       <div class="btn-row">
-        <a id="download-pdf" class="btn btn-primary" href="https://github.com/sazardev/networking-with-go/releases/latest">Download Free PDF</a>
+        <a class="btn btn-primary" href="read/index.html">Read Online</a>
+        <a id="download-pdf" class="btn btn-secondary" href="https://github.com/sazardev/networking-with-go/releases/latest">Download Free PDF</a>
         <a class="btn btn-secondary" href="https://github.com/sazardev/networking-with-go">View on GitHub</a>
       </div>
       <p class="fineprint">No signup. No paywall. <span data-stars>★ open source on GitHub</span>.</p>
@@ -366,7 +595,14 @@
   </div>
 </section>
 
-<hr class="rule">
+<div class="stats">
+  <div class="wrap">
+    <div class="stat"><span class="num">143</span><span class="label">Chapters</span></div>
+    <div class="stat"><span class="num">6</span><span class="label">Parts</span></div>
+    <div class="stat"><span class="num">$0</span><span class="label">Price, always</span></div>
+    <div class="stat"><span class="num small">CC BY-NC</span><span class="label">Book License</span></div>
+  </div>
+</div>
 
 <section id="about">
   <div class="wrap">
@@ -380,6 +616,36 @@
       deep, practical reference. Theory comes first, in a warm, story-driven voice with real history and
       analogies; every hands-on example is a complete, runnable Go program, not a fragment.
     </p>
+  </div>
+</section>
+
+<section id="why-ai" class="why-ai">
+  <div class="wrap">
+    <span class="eyebrow">A question worth asking honestly</span>
+    <h2 class="why-ai-title">Why read a 143-chapter book in 2026, when AI can already write a TCP server?</h2>
+    <p class="why-ai-lead">
+      Because someone still has to know whether the code is right — and that someone is going to be you.
+      An AI model produces plausible code fast; it has never watched a server leak connections at 3 a.m.,
+      and it has no stake in what happens when it's wrong. The gap between "code that compiles" and "a system
+      that survives contact with the real internet" is exactly what this book closes — and that gap gets more
+      valuable, not less, the more first drafts get written by something that doesn't understand what it built.
+    </p>
+    <blockquote class="axiom">AI changes who writes the first draft of the code. It has not changed who is responsible for understanding it.</blockquote>
+    <div class="why-ai-grid">
+      <div>
+        <h3>It makes you better at AI, not obsolete</h3>
+        <p>The people most effective at directing AI tools aren't the ones who know the least — they're the ones who can spot a wrong answer in one glance and push back when a generated solution is subtly broken.</p>
+      </div>
+      <div>
+        <h3>Networking isn't going anywhere</h3>
+        <p>Every model you've ever talked to is itself served over a network, to a datacenter, on protocols invented decades before it existed. Learning this is a prerequisite for building the future, not competition for it.</p>
+      </div>
+      <div>
+        <h3>Built for every level, on purpose</h3>
+        <p>Whether this is your first program ever or your two-hundredth production deploy, this book starts each topic at zero and earns its way up — no assumed background, no skipped steps, no age or experience floor.</p>
+      </div>
+    </div>
+    <a class="why-ai-link" href="https://github.com/sazardev/networking-with-go/blob/master/docs/part1/01-introduction-to-networking.mdx">Read the book's full case for this, in Chapter 1 &rarr;</a>
   </div>
 </section>
 
@@ -430,6 +696,11 @@
     <p class="section-intro">The book is free and always will be. New formats ship as they're ready — this page always points at the latest.</p>
     <div class="formats">
       <div class="format-card">
+        <h3>Web Reader <span class="status-tag">Available</span></h3>
+        <p>Every chapter, right in the browser, with a search command palette and always in sync with the latest edit — no download needed.</p>
+        <a class="btn btn-primary" href="read/index.html">Start Reading</a>
+      </div>
+      <div class="format-card">
         <h3>PDF <span class="status-tag" data-version-tag>Available</span></h3>
         <p>Print-ready, built straight from the book's source with go-pretty-pdf. Always the current release.</p>
         <a id="download-pdf-card" class="btn btn-primary" href="https://github.com/sazardev/networking-with-go/releases/latest">Download PDF</a>
@@ -448,10 +719,15 @@
   </div>
 </section>
 
-<section id="contents">
+<section id="levels">
   <div class="wrap">
-    <span class="eyebrow">Who it's for</span>
-    <h2>Read it however you already work</h2>
+    <span class="eyebrow">Every level, on purpose</span>
+    <h2>From your first "go run" to your two-hundredth deploy</h2>
+    <p class="section-intro">
+      No level is left out. This book was written so that someone who has never opened a terminal and someone
+      who already ships production systems can both start reading today and both get something they can't get
+      from a prompt.
+    </p>
     <ul class="plain">
       <li>Beginners who want networking concepts, and Go itself, explained clearly from the ground up.</li>
       <li>Developers who already know Go but want a deep, practical reference for networked systems.</li>
@@ -466,14 +742,70 @@
   </div>
 </section>
 
+<section id="faq">
+  <div class="wrap">
+    <span class="eyebrow">Frequently asked questions</span>
+    <h2>Straight answers, growing with every release</h2>
+    <p class="section-intro">
+      This FAQ isn't static. It grows as readers ask better questions and new chapters ship — currently
+      reflecting book version <span data-version-tag>latest</span>.
+    </p>
+
+    <details class="faq-item">
+      <summary>Why learn this instead of just asking an AI to write the code?</summary>
+      <p>Because someone still has to know whether the generated code is right, and that someone is you. AI is extraordinary at producing plausible code fast, but it has never operated the system it wrote and has no stake in the consequences when it's wrong. Understanding networking and Go doesn't compete with using AI well — it's what makes you effective at directing it: able to spot a wrong answer in one glance and catch the mistake before it ships.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Is this book really free, no catch?</summary>
+      <p>Yes. No email required, no paywall, no ads. The book text is <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a> — free to read, share, and adapt for non-commercial use, as long as you credit the author — and the example code is MIT. The full source lives in the GitHub repository and compiles straight into the PDF you can download above.</p>
+    </details>
+    <details class="faq-item">
+      <summary>I've never written a line of code. Is this too advanced for me?</summary>
+      <p>No — it's written for that reader on purpose. Part 1 is pure theory with zero code, a dedicated Go Fundamentals part teaches the language itself before any networking begins, and every later chapter pairs a concept with a complete, runnable program.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Do I need to know Go before starting?</summary>
+      <p>No. The dedicated Go Fundamentals section covers installation through testing, plus a flagship chapter on goroutines and channels, so Part 2 never assumes you already know the language.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Is it only theory, or does it include real code?</summary>
+      <p>Both, deliberately separated: Part 1 is theory-only so the mental model comes first, and starting with Go Fundamentals, every chapter pairs the concept with a complete, runnable Go program — not a fragment.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Does it cover cybersecurity and ethical hacking?</summary>
+      <p>Yes — Part 3 is 32 chapters on scanning, sniffing, vulnerability assessment, IDS/IPS, SIEM, malware analysis, red team vs blue team, honeypots, and PKI, written for authorized, ethical use: your own labs, CTFs, and systems you're allowed to test.</p>
+    </details>
+    <details class="faq-item">
+      <summary>What formats are available, and what's coming next?</summary>
+      <p>The PDF is available now and always tracks the latest release. EPUB is in progress for e-readers and mobile apps, with MOBI and a web reader planned after that.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Can I contribute, suggest a chapter, or report an error?</summary>
+      <p>Yes — pull requests, issues, and suggestions are welcome for new labs, corrections, clearer explanations, or entirely new chapters. See the contributing guide in the repository for the basics.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Who wrote this, and why should I trust it?</summary>
+      <p>Omar Flores Salazar. The book text is <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a> and the example code is MIT, both fully open in the public repository, so every claim, every code sample, and every chapter is there for anyone to read, run, and check.</p>
+    </details>
+
+    <p class="faq-note">Missing your question? <a href="https://github.com/sazardev/networking-with-go/issues/new">Open an issue on GitHub</a> — it may show up here next release.</p>
+  </div>
+</section>
+
 <blockquote class="quote">"The best way to learn networking is to build, break, and secure it."</blockquote>
 
 </main>
 
 <footer>
   <div class="wrap">
-    <span>&copy; <span id="year"></span> Omar Flores Salazar &middot; MIT License</span>
-    <span><a href="https://github.com/sazardev/networking-with-go">github.com/sazardev/networking-with-go</a></span>
+    <span>&copy; <span id="year"></span> Omar Flores Salazar &middot; Book: CC BY-NC 4.0 &middot; Code: MIT</span>
+    <span>
+      <a href="https://github.com/sazardev/networking-with-go">Repository</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/blob/master/.github/CONTRIBUTING.md">Contributing</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/issues">Issues</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/blob/master/LICENSE-CONTENT">Book License</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/blob/master/LICENSE">Code License</a>
+    </span>
   </div>
 </footer>
 
