@@ -1,13 +1,17 @@
-# Networking with Go - The Easy Way Guide
+# Networking with Go, Made Easy
 
 [![Go Version](https://img.shields.io/badge/Go-1.22-blue?logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://makeapullrequest.com)
 [![Awesome](https://img.shields.io/badge/awesome-yes-orange)](https://github.com/sindresorhus/awesome)
 
+<p align="center">
+  <img src="assets/cover.jpg" alt="Networking with Go, Made Easy — book cover" width="320">
+</p>
+
 ---
 
-**Networking with Go - The Easy Way Guide** is a free, hands-on book that teaches computer networking and network programming in Go, end to end: how networks actually work, how to write real networking code in Go, and how to use that code for building production-grade APIs and doing offensive/defensive security work.
+**Networking with Go, Made Easy** is a free, hands-on book that teaches computer networking and network programming in Go, end to end: how networks actually work, how to write real networking code in Go, and how to use that code for building production-grade APIs and doing offensive/defensive security work.
 
 It is written for three audiences at once:
 
@@ -228,6 +232,8 @@ pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
 PRs, issues, and suggestions are welcome — new labs, corrections, clearer explanations, or entirely new chapters. See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the basics, and `.claude/skills/mdx-pdf-format/SKILL.md` if you're adding or editing a chapter file, for the exact format the build expects.
 
 ## Star this repo if you find it useful!
+
+[![Star History Chart](https://api.star-history.com/svg?repos=sazardev/networking-with-go&type=Date)](https://star-history.com/#sazardev/networking-with-go&Date)
 
 ---
 
