@@ -514,6 +514,7 @@ func pageHeader(ctx linkCtx) string {
       <button id="font-dec" type="button" aria-label="Decrease text size">A&minus;</button>
       <button id="font-inc" type="button" aria-label="Increase text size">A+</button>
     </div>
+    <button id="justify-toggle" type="button">Justify</button>
     <button id="focus-toggle" type="button">Focus</button>
     <button id="search-open" type="button">Search <kbd>Ctrl K</kbd></button>
     <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>

@@ -221,6 +221,28 @@
 })();
 
 (function () {
+  var toggle = document.getElementById('justify-toggle');
+  if (!toggle) return;
+  var root = document.documentElement;
+
+  function render() {
+    var on = root.classList.contains('justify-text');
+    toggle.classList.toggle('active', on);
+    toggle.textContent = on ? 'Justify' : 'Justify';
+  }
+
+  if (localStorage.getItem('justifyText') === '1') root.classList.add('justify-text');
+  render();
+
+  toggle.addEventListener('click', function () {
+    var on = !root.classList.contains('justify-text');
+    root.classList.toggle('justify-text', on);
+    localStorage.setItem('justifyText', on ? '1' : '0');
+    render();
+  });
+})();
+
+(function () {
   var dec = document.getElementById('font-dec');
   var inc = document.getElementById('font-inc');
   if (!dec || !inc) return;
@@ -321,4 +343,85 @@
       }
     }
   }
+})();
+
+(function () {
+  var AUTHOR = 'Flores Salazar, O.';
+  var YEAR = '2025';
+  var BOOK_TITLE = 'Networking with Go, Made Easy';
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function nearestHeadingElement() {
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return null;
+    var node = sel.anchorNode;
+    var el = node && node.nodeType === 3 ? node.parentElement : node;
+    if (!el) return null;
+    if (el.matches && el.matches('h2, h3')) return el;
+    var parentHeading = el.closest('h2, h3');
+    if (parentHeading) return parentHeading;
+    var section = el.closest('section[id^="section-"]');
+    if (!section) return null;
+    var headings = section.querySelectorAll('h2, h3');
+    var nearest = null;
+    for (var i = 0; i < headings.length; i++) {
+      if (headings[i].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) {
+        nearest = headings[i];
+      }
+    }
+    return nearest;
+  }
+
+  document.addEventListener('copy', function (e) {
+    var text = window.getSelection().toString().trim();
+    if (!text) return;
+
+    var node = window.getSelection().anchorNode;
+    var el = node && node.nodeType === 3 ? node.parentElement : node;
+    if (!el || !el.closest('.reader-content')) return;
+
+    var h1 = document.querySelector('.reader-content section h1');
+    if (!h1) return;
+    var chapter = h1.textContent.trim();
+
+    var headingEl = nearestHeadingElement();
+    var heading = headingEl ? headingEl.textContent.trim() : '';
+    var link = document.querySelector('link[rel="canonical"]');
+    var url = link ? link.getAttribute('href') : '';
+    if (url && headingEl && headingEl.id) {
+      url += '#' + headingEl.id;
+    }
+
+    var source = AUTHOR + ' (' + YEAR + '). ' + chapter;
+    if (heading) source += ' (' + heading + ')';
+    source += '. In ' + BOOK_TITLE + '. ' + url;
+
+    var plain = '\u201c' + text + '\u201d\n\n\u2014 ' + source;
+
+    var eChapter = esc(chapter);
+    var eHeading = esc(heading);
+    var eURL = esc(url);
+    var html = '<blockquote style="margin:0 0 6px 0;padding:8px 16px;border-left:3px solid #999;color:var(--pdf-muted,#666);font-family:system-ui,sans-serif;font-size:10.5pt;line-height:1.6;"><p style="margin:0;">' + esc(text) + '</p></blockquote><p style="margin:0;font-family:system-ui,sans-serif;font-size:10pt;line-height:1.5;color:var(--pdf-muted,#444);">\u2014 ' + eChapter + (eHeading ? ' <span style="color:#888;">(' + eHeading + ')</span>' : '') + '. In <em>' + BOOK_TITLE + '</em>. <a href="' + eURL + '">' + eURL + '</a></p>';
+
+    e.clipboardData.setData('text/plain', plain);
+    e.clipboardData.setData('text/html', html);
+    e.preventDefault();
+
+    var toast = document.getElementById('copy-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'copy-toast';
+      toast.className = 'copy-toast';
+      toast.textContent = 'Copied with APA citation';
+      document.body.appendChild(toast);
+    }
+    toast.classList.add('visible');
+    clearTimeout(toast._hide);
+    toast._hide = setTimeout(function () { toast.classList.remove('visible'); }, 2000);
+  });
 })();

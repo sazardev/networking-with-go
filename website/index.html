@@ -585,6 +585,125 @@
     footer .wrap { flex-direction: column; align-items: flex-start; gap: 10px; font-size: 11px; }
   }
 
+  .about-author {
+    border-top: 1px solid var(--line-soft);
+  }
+  .about-author-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .author-avatar {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    border: 2px solid var(--line);
+    object-fit: cover;
+  }
+  .author-name {
+    font-size: 28px;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .author-tagline {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 20px;
+  }
+  .author-bio {
+    font-size: 15.5px;
+    line-height: 1.7;
+    margin: 0 0 16px;
+    max-width: 640px;
+  }
+  .author-bio strong { color: var(--fg); }
+  .author-books {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 28px 0;
+    max-width: 640px;
+  }
+  .book-card {
+    border: 1px solid var(--line-soft);
+    padding: 16px;
+    background: var(--card);
+  }
+  .book-card .book-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .book-card h4 {
+    font-size: 15px;
+    margin: 0 0 6px;
+  }
+  .book-card p {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 10px;
+    line-height: 1.5;
+  }
+  .book-card a {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-decoration: underline;
+  }
+  .author-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 24px;
+  }
+  .author-links a {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    text-decoration: none;
+  }
+  .author-links a:hover { opacity: 0.75; }
+  .author-quote {
+    margin-top: 32px;
+    padding: 20px 24px;
+    border-left: 3px solid var(--fg);
+    max-width: 640px;
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .author-quote cite {
+    display: block;
+    margin-top: 8px;
+    font-style: normal;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  @media (max-width: 720px) {
+    .about-author-grid { grid-template-columns: 1fr; gap: 24px; justify-items: center; text-align: center; }
+    .author-avatar { width: 150px; height: 150px; }
+    .author-books { grid-template-columns: 1fr; }
+    .author-links { justify-content: center; }
+    .author-quote { text-align: left; }
+    .author-bio { text-align: left; margin-left: auto; margin-right: auto; }
+  }
+
+  @media (max-width: 560px) {
+    .author-avatar { width: 120px; height: 120px; }
+    .author-name { font-size: 22px; }
+    .author-bio { font-size: 14px; }
+    .book-card { padding: 14px; }
+  }
+
   @media (max-width: 560px) {
     .menu-toggle { display: block; }
     .header-right nav.top-nav {
@@ -637,6 +756,7 @@
         <a href="#learn">Contents</a>
         <a href="#formats">Formats</a>
         <a href="#faq">FAQ</a>
+        <a href="#author">About</a>
         <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
       </nav>
       <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
@@ -867,6 +987,57 @@
 </section>
 
 <blockquote class="quote">"The best way to learn networking is to build, break, and secure it."</blockquote>
+
+<section id="author" class="about-author">
+  <div class="wrap">
+    <span class="eyebrow">About the author</span>
+    <h2>The person behind the packets</h2>
+    <div class="about-author-grid">
+      <img class="author-avatar"
+           src="https://avatars.githubusercontent.com/u/66286300?v=4"
+           alt="Omar Flores Salazar"
+           width="200" height="200"
+           loading="lazy">
+      <div>
+        <h3 class="author-name">Omar Flores Salazar</h3>
+        <p class="author-tagline">Full-Stack &amp; DevOps Engineer &middot; Mexicali, Mexico</p>
+        <p class="author-bio">
+          I'm a self-taught developer who fell in love with programming the way some people fall in love with music &mdash; early, loudly, and without looking back. I learn with every sense I have: reading, building, breaking, debugging at 3 a.m., and then teaching what I just learned to anyone willing to listen.
+        </p>
+        <p class="author-bio">
+          I believe education is the single most powerful tool we have, and I've spent my career building software, writing books, and sharing knowledge &mdash; not because it's expected, but because I genuinely can't help it. Every project I've shipped, every collaboration I've had, and every line of code I've written has taught me something new. This book is just the latest attempt to pass that forward.
+        </p>
+        <p class="author-bio">
+          I don't know your name, your age, or your story. But if you're reading this, you're already on the path. And I want you to know: I'm rooting for you. If you ever need help, have a question, or just want to say hi &mdash; my inbox is always open.
+        </p>
+        <div class="author-books">
+          <div class="book-card">
+            <span class="book-label">This book</span>
+            <h4>Networking with Go</h4>
+            <p>143 chapters, from zero to production APIs and ethical hacking. Free and open source.</p>
+            <a href="https://github.com/sazardev/networking-with-go">GitHub &rarr;</a>
+          </div>
+          <div class="book-card">
+            <span class="book-label">Also by the author</span>
+            <h4>Codigo Magico</h4>
+            <p>A magical adventure that teaches programming to kids and young adults, available on Amazon.</p>
+            <a href="https://codigo-magico.netlify.app/">Learn more &rarr;</a>
+          </div>
+        </div>
+        <div class="author-links">
+          <a href="https://github.com/sazardev">GitHub</a>
+          <a href="https://www.linkedin.com/in/sazardev/">LinkedIn</a>
+          <a href="https://sazardev.netlify.app/">Portfolio</a>
+          <a href="mailto:sazardev@gmail.com">Email</a>
+        </div>
+        <blockquote class="author-quote">
+          "Reading allows us to travel through time and space, to know new cultures and to learn from the experiences of others. Reading is an open door to a world full of possibilities."
+          <cite>&mdash; Carl Sagan</cite>
+        </blockquote>
+      </div>
+    </div>
+  </div>
+</section>
 
 </main>
 
