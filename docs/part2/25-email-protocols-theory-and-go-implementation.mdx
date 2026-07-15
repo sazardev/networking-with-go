@@ -1,0 +1,313 @@
+---
+id: "[3.25.0]"
+title: "Email Protocols: Theory and Go Implementation"
+---
+
+# Email Protocols: Theory and Go Implementation
+
+> "Back in the DNS chapter, `net.LookupMX("example.com")` returned the mail servers responsible for a domain, and the chapter moved on without explaining what those servers actually do with a message once it arrives. This is that explanation — and, from the other end, how a Go program builds a message worth sending in the first place."
+
+---
+
+## Recap: Three Protocols, Three Jobs
+
+Part 1's chapter on common protocols already laid out why email needs three separate protocols instead of one: SMTP only ever sends, POP3 downloads and deletes, IMAP synchronizes. This chapter takes that division of labor for granted and gives each side actual Go code, plus enough of the wire format — headers, MIME — to make sense of what that code is actually doing.
+
+A quick refresher, now with the detail that matters once you start writing code:
+
+- **SMTP** (port 25 between servers, 587 for a client submitting new mail, 465 historically for implicit TLS) — a **push** protocol. It only ever moves a message toward its next hop; it never fetches anything back.
+- **POP3** (port 110, 995 with implicit TLS) — downloads messages to one device and typically deletes them from the server afterward. Simple, and built for a world where "one device" was a safe assumption.
+- **IMAP** (port 143, 993 with implicit TLS) — keeps mail on the server and synchronizes read/unread state and folder structure across every device that connects.
+
+Go's standard library mirrors that division unevenly, and on purpose: `net/smtp` ships a full SMTP client, because *sending* a notification email is common enough that the standard library covers it directly. Reading structure out of a message you already have is `net/mail`'s job. Neither POP3 nor IMAP gets a standard-library client at all — a gap this chapter explains rather than papers over.
+
+<Axiom>Go's standard library will help you send a letter and read one that's already on your desk — it won't walk to the mailbox for you.</Axiom>
+
+---
+
+## Anatomy of an Email Message
+
+Every email, regardless of which protocol carried it, is one blob of text following RFC 5322 (the header/body rules) and, for anything beyond plain text, MIME (RFC 2045-2049) layered on top.
+
+**Headers** come first, one per line, `Name: value`:
+
+```
+From: "Ada Lovelace" <ada@example.com>
+To: alan@example.com
+Subject: Re: the analytical engine
+Date: Tue, 14 Jul 2026 10:15:00 -0500
+Message-ID: <20260714151500.GA1234@example.com>
+Content-Type: text/plain; charset=utf-8
+```
+
+then a **blank line**, then the **body** — the same header/blank-line/body shape as an HTTP request from the HTTP chapter, and not a coincidence: both protocols descend from the same era of simple, line-oriented, text-based wire formats.
+
+`Content-Type` is where MIME takes over. A plain-text message declares `text/plain`; anything richer — HTML, an inline image, an attachment — needs `multipart/*`, which nests several sub-bodies inside one message, each separated by a boundary string the top-level header declares:
+
+```
+Content-Type: multipart/mixed; boundary="sep123"
+
+--sep123
+Content-Type: text/plain; charset=utf-8
+
+Here's the file you asked for.
+
+--sep123
+Content-Type: application/pdf; name="report.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJ...
+--sep123--
+```
+
+Binary attachments are encoded as base64 text precisely because SMTP, born in 1982 (RFC 821), only ever promised safe transport of 7-bit ASCII — a constraint MIME worked around rather than removed.
+
+<DeepDive title="Why not just widen SMTP to carry raw bytes?">Later extensions (8BITMIME, SMTPUTF8) do let a modern server accept 8-bit and UTF-8 content directly, but a message can still cross servers that don't support them, and there was never a practical way to force every mail server on earth to upgrade at once. Base64 sidesteps the whole question: it re-encodes arbitrary binary data as plain 7-bit ASCII text, so it survives being relayed through any SMTP server ever built, old or new, without either side needing to know or care about the extension.</DeepDive>
+
+<Axiom>MIME didn't change what SMTP could carry — it just taught every attachment to disguise itself as plain text.</Axiom>
+
+---
+
+## Go Implementation: Sending Mail with net/smtp
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/smtp"
+)
+
+func main() {
+	from := "sender@example.com"
+	to := []string{"recipient@example.com"}
+	msg := []byte(
+		"From: sender@example.com\r\n" +
+			"To: recipient@example.com\r\n" +
+			"Subject: Hello from Go\r\n" +
+			"\r\n" +
+			"This is a plain-text email sent from net/smtp.\r\n")
+
+	auth := smtp.PlainAuth(
+		"", from, "app-password", "smtp.example.com")
+	err := smtp.SendMail(
+		"smtp.example.com:587", auth, from, to, msg)
+	if err != nil {
+		fmt.Println("send error:", err)
+		return
+	}
+	fmt.Println("sent")
+}
+```
+
+Notice the message carries its own `From`/`To`/`Subject` headers, entirely separate from the `from`/`to` arguments passed to `SendMail`. Those arguments control the SMTP-level envelope (`MAIL FROM`/`RCPT TO`), which is what actually routes the message; the headers are just text a mail client displays. A message can legally have a `From` header that doesn't match its envelope sender at all — exactly the gap SPF and DKIM, covered later in this chapter, exist to police.
+
+<DeepDive title="What SendMail actually negotiates">`smtp.SendMail` connects in plaintext, sends `EHLO`, and — only if the server advertises the `STARTTLS` extension in its reply — upgrades that same TCP connection to TLS before anything else happens. This is why port 587 works over a socket that starts out unencrypted: STARTTLS turns it into an encrypted one mid-conversation, unlike port 465 (`smtps`), which is encrypted from the very first byte. `smtp.PlainAuth` goes a step further on its own: its `Start` method refuses to hand over credentials at all unless the connection is already TLS-protected (or the server is literally `localhost`), returning an "unencrypted connection" error instead of ever emitting `AUTH PLAIN` in the clear.</DeepDive>
+
+[Exercise: Send Email](../../exercises/part2/25-email-send/main.go)
+
+<Warning title="net/smtp is intentionally minimal">`net/smtp` has no retry logic, no connection pooling, and no MIME construction helpers — it hands you a `Client` that speaks raw SMTP commands and a `SendMail` convenience wrapper around the common case. For anything beyond a simple, occasional notification email, most Go programs either build MIME messages by hand (shown next) or reach for a maintained third-party mail library rather than driving `net/smtp` directly against a real provider's quirks.</Warning>
+
+---
+
+## Building a MIME Message with an Attachment
+
+`net/smtp` only ever takes raw bytes for the message — building anything beyond plain text means constructing the MIME structure yourself, which is exactly what `mime/multipart` is for:
+
+```go
+func buildMessage(
+	from, to, subject, bodyText, filename string, attachment []byte,
+) []byte {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	fmt.Fprintf(&buf, "From: %s\r\n", from)
+	fmt.Fprintf(&buf, "To: %s\r\n", to)
+	fmt.Fprintf(&buf, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&buf, "MIME-Version: 1.0\r\n")
+	fmt.Fprintf(&buf,
+		"Content-Type: multipart/mixed; boundary=%q\r\n\r\n",
+		writer.Boundary())
+
+	textPart, _ := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Type": {"text/plain; charset=utf-8"},
+	})
+	textPart.Write([]byte(bodyText))
+
+	attachPart, _ := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {"application/octet-stream"},
+		"Content-Transfer-Encoding": {"base64"},
+		"Content-Disposition": {
+			fmt.Sprintf(`attachment; filename=%q`, filename),
+		},
+	})
+	encoded := make(
+		[]byte, base64.StdEncoding.EncodedLen(len(attachment)))
+	base64.StdEncoding.Encode(encoded, attachment)
+	attachPart.Write(encoded)
+
+	writer.Close()
+	return buf.Bytes()
+}
+```
+
+[Exercise: Send Email with Attachment](../../exercises/part2/25-email-send/main.go)
+
+`multipart.NewWriter` generates its own random boundary at creation time; calling `writer.Boundary()` retrieves that exact string so the header and the actual separators in the body always agree — hand-picking your own boundary string risks it accidentally colliding with something already inside the body text. `writer.Close()` at the end writes the closing `--boundary--` marker; forgetting it leaves the last part technically unterminated.
+
+<Warning title="Real MIME wraps base64 at 76 characters">This example writes the entire base64 blob on one unbroken line for readability. RFC 2045 actually requires encoded lines no longer than 76 characters, and while most modern clients tolerate longer ones anyway, a strict server or an older client might not. `base64.NewEncoder` wrapped around a line-splitting `io.Writer` (or a library like `gomail`) gets you fully spec-compliant line wrapping without hand-rolling it.</Warning>
+
+---
+
+## Go Implementation: Parsing Mail with net/mail
+
+```go
+package main
+
+import (
+	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
+	"net/mail"
+	"strings"
+)
+
+const raw = "From: \"Ada Lovelace\" <ada@example.com>\r\n" +
+	"To: alan@example.com\r\n" +
+	"Subject: Re: the analytical engine\r\n" +
+	"MIME-Version: 1.0\r\n" +
+	"Content-Type: multipart/mixed; boundary=\"sep123\"\r\n" +
+	"\r\n" +
+	"--sep123\r\n" +
+	"Content-Type: text/plain; charset=utf-8\r\n" +
+	"\r\n" +
+	"Looking forward to your notes.\r\n" +
+	"--sep123--\r\n"
+
+func main() {
+	msg, err := mail.ReadMessage(strings.NewReader(raw))
+	if err != nil {
+		fmt.Println("parse error:", err)
+		return
+	}
+
+	from, err := mail.ParseAddress(msg.Header.Get("From"))
+	if err == nil {
+		fmt.Printf("From: %s <%s>\n", from.Name, from.Address)
+	}
+	fmt.Println("Subject:", msg.Header.Get("Subject"))
+
+	mediaType, params, err := mime.ParseMediaType(
+		msg.Header.Get("Content-Type"))
+	if err != nil {
+		fmt.Println("content-type error:", err)
+		return
+	}
+	if !strings.HasPrefix(mediaType, "multipart/") {
+		body, _ := io.ReadAll(msg.Body)
+		fmt.Println("Body:", string(body))
+		return
+	}
+
+	reader := multipart.NewReader(msg.Body, params["boundary"])
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		data, _ := io.ReadAll(part)
+		fmt.Printf("part %q: %d bytes\n",
+			part.Header.Get("Content-Type"), len(data))
+	}
+}
+```
+
+[Exercise: Parse Email](../../exercises/part2/25-email-parse/main.go)
+
+`mail.ReadMessage` splits headers from body and nothing more — `msg.Body` is just the raw bytes after the blank line, boundary markers included if the original message was multipart. It has no idea whether that body is structured, base64-encoded, or plain text; `mime.ParseMediaType` and `mime/multipart` are the separate step that actually walks that structure, and decoding a given part's own `Content-Transfer-Encoding` (base64, quoted-printable) is a further step still, usually with `encoding/base64` or `mime/quotedprintable`.
+
+<Warning title="net/mail never decodes MIME for you">Treating `msg.Body` as the finished, human-readable message body is a common first mistake: for any `multipart/*` message, that raw body still contains every part's own headers and the boundary lines separating them, completely undecoded. Always check `Content-Type` first and route to `mime/multipart` when it says `multipart/*`, exactly as the example above does, rather than assuming `msg.Body` alone is ever the whole story.</Warning>
+
+---
+
+## Receiving Mail: Why There's No net/imap
+
+Go's standard library gives you exactly one email capability without any external dependency: sending a message. Actually reading a mailbox's contents over IMAP or POP3 needs a stateful, long-lived client — mailbox selection, message UIDs, search, and (for anything responsive) a way to be notified the instant new mail arrives — complex enough that the standard library authors evidently judged it didn't belong next to `net/smtp`'s comparatively small surface area.
+
+In practice, almost every Go program that reads a mailbox reaches for a third-party library instead:
+
+- **`github.com/emersion/go-imap`** — the most complete, actively maintained IMAP client for Go, covering mailbox selection, search, fetching messages, and the `IDLE` command described below.
+- **`github.com/knadh/go-pop3`** — a small, focused POP3 client, useful for the increasingly rare mail service that still only speaks POP3.
+
+The shape of working with either is the same regardless of which one you pick: dial a TLS connection to the mail server, authenticate, select a mailbox (IMAP only — POP3 has no concept of folders), then search or list messages and fetch the ones you want by their ID.
+
+<DeepDive title="IDLE: how a mail client learns about new mail instantly">Without it, checking for new mail means polling — reconnecting and re-issuing a search on a timer, wasting round trips and missing anything that arrives between polls. IMAP's `IDLE` command (RFC 2177) lets a client hold one connection open and receive an unsolicited notification the moment new mail lands in the selected mailbox — the closest email gets to a long-poll or WebSocket-style push, built on a protocol extension from 1997, decades before either of those became common web patterns.</DeepDive>
+
+---
+
+## Security: STARTTLS, SPF, DKIM, and DMARC
+
+The DNS chapter's table of record types mentioned TXT records being used for "SPF/DKIM email policy" without explaining what that policy actually does. Here's the rest of that story:
+
+- **SPF (Sender Policy Framework):** a DNS TXT record listing which mail servers are allowed to send mail claiming to come from a domain. A receiving server checks the connecting server's IP address against that list.
+- **DKIM (DomainKeys Identified Mail):** the sending server cryptographically signs each outgoing message with a private key; the matching public key needed to verify that signature is published as — again — a DNS TXT record. A valid signature proves the message wasn't altered in transit and really passed through a server the domain's owner trusts.
+- **DMARC:** builds on both, published as yet another TXT record, telling a receiving server what to do when SPF or DKIM checks fail for mail claiming to be from this domain — quarantine it, reject it outright, or just report the failure back to the domain owner.
+
+All three exist because SMTP's original design happily accepts a `From` header claiming to be anyone at all — the protocol itself has no concept of proving who's actually sending.
+
+<Warning title="STARTTLS's plaintext start is a real, historically exploited weak point">Because a STARTTLS connection begins in plaintext and only upgrades to TLS mid-conversation, a network attacker positioned on the path can attempt to interfere with that upgrade — for instance injecting or stripping the response that announces STARTTLS support — to trick an unwary client into falling back to sending credentials or mail in the clear. Security researchers have demonstrated exactly this class of command-injection weakness against real-world mail software in the past. Modern clients treat a missing or malformed STARTTLS response as a hard failure instead of a silent downgrade, but it's a good reminder that "encrypted, eventually" is a strictly weaker guarantee than "encrypted from the first byte" — which is exactly why implicit-TLS ports (465, 993, 995) still exist alongside their STARTTLS counterparts.</Warning>
+
+<Axiom>Every layer of email security added since 1982 exists to answer one question SMTP itself never thought to ask: are you actually who you say you are?</Axiom>
+
+---
+
+## Try It Yourself: A Notification Mailer with Retry
+
+Extend the `net/smtp` sender from this chapter into something closer to
+production use:
+
+1. Wrap the `smtp.SendMail` call in a retry loop with exponential
+   backoff — the same pattern used by the DNS resolver-with-fallback
+   exercise and the retrying TCP file-transfer client earlier in this
+   book. A mail server rejecting a connection under momentary load is
+   common enough that a single failed attempt shouldn't be the end of
+   the story.
+2. After all retries are exhausted, write the failed message to disk
+   instead of losing it silently — a minimal version of the same
+   "dead letter" idea message queues use for deliveries that never
+   succeed.
+3. Check specifically for `smtp.PlainAuth`'s "unencrypted connection"
+   error, and fail fast without retrying when you see it — retrying a
+   connection that refuses to authenticate for security reasons only
+   wastes time chasing a failure that will never resolve itself.
+
+---
+
+## Frequently Asked Questions
+
+**Can I use Go's standard library to read my inbox the same way `net/smtp` lets me send mail?**
+No — the standard library covers sending (`net/smtp`) and parsing a message you already have (`net/mail`), but nothing for actually connecting to a mailbox over IMAP or POP3. That gap is deliberate rather than an oversight; reach for a maintained third-party client like `github.com/emersion/go-imap` for anything that needs to fetch or search real mailbox contents.
+
+**Why doesn't a message's `From` header always match who actually sent it?**
+Because SMTP's envelope (the `MAIL FROM` address `smtp.SendMail` uses to route the message) and the `From` header inside the message body are two entirely separate things, and nothing stops them from disagreeing. That gap between "who really sent this" and "who the message claims sent it" is precisely the problem SPF, DKIM, and DMARC exist to close, by checking the sending server's identity and a cryptographic signature against DNS records the real domain owner published.
+
+**Is STARTTLS on port 587 really as safe as the implicit TLS on port 465?**
+In a fully up-to-date client and server, effectively yes — but STARTTLS carries an extra step implicit TLS doesn't: the connection briefly exists in plaintext before upgrading, which is exactly the moment a network attacker has historically tried to interfere with. Implicit TLS sidesteps that entire class of problem by being encrypted from the very first byte, which is why it's still offered as an alternative rather than being fully retired in favor of STARTTLS.
+
+**Why does my base64-encoded attachment display fine in some mail clients but look broken in others?**
+Most likely because the encoded data isn't wrapped at 76 characters per line the way RFC 2045 actually requires — plenty of modern clients tolerate a single unbroken line, as the example earlier in this chapter does for simplicity, but a stricter client or an older one may not. Wrapping through `base64.NewEncoder` and a line-splitting writer (or a full-featured mail library) produces output that's compliant everywhere, not just in the client you happened to test with.
+
+**Do I need a full mail library just to build a multipart message with an attachment?**
+Not necessarily — `mime/multipart` from the standard library, combined with `net/textproto.MIMEHeader` for each part's headers, is enough to build a correct `multipart/mixed` message by hand, exactly as shown in this chapter. A third-party library earns its keep once you need things the standard library doesn't provide out of the box, like RFC 2045-compliant base64 line wrapping or higher-level helpers for HTML bodies with inline images.
+
+---
+
+## Key Takeaways
+
+- SMTP sends, POP3 downloads-and-deletes, IMAP synchronizes — Go's standard library only ships a client for the first of the three.
+- Every email is headers, a blank line, then a body; `Content-Type: multipart/*` nests several sub-bodies behind a boundary string, which is what makes attachments possible.
+- `net/smtp.SendMail` automatically negotiates STARTTLS when the server offers it, and `smtp.PlainAuth` refuses to authenticate over a connection it doesn't believe is encrypted.
+- Build MIME messages with `mime/multipart` and `net/textproto.MIMEHeader`; parse them back with `net/mail` for headers and `mime`/`mime/multipart` for the body — `net/mail` alone never decodes multipart structure.
+- Reading a real mailbox needs a third-party IMAP or POP3 client (`emersion/go-imap`, `knadh/go-pop3`); IMAP's `IDLE` command is what lets a client learn about new mail instantly instead of polling.
+- SPF, DKIM, and DMARC — all published as DNS TXT records — exist to answer the one question SMTP itself never asks: is this sender who they claim to be?

@@ -1,0 +1,291 @@
+---
+id: "[6.46.0]"
+title: "Caching and Redis for Go APIs"
+---
+
+# Caching and Redis for Go APIs
+
+Every database chapter so far assumed each request earns its own round
+trip to PostgreSQL or SQLite. For a lot of endpoints that's perfectly
+fine -- but some queries get asked thousands of times a minute for data
+that barely changes: a product catalog, a user's profile, a leaderboard.
+Hitting the database fresh for every one of those requests is work the
+database didn't need to redo. Caching is the practice of remembering an
+answer somewhere much faster than the database, for exactly as long as
+that answer is allowed to be a little stale -- and Redis is the default
+place most Go services keep that memory.
+
+### Why an In-Memory Cache, Not Just a Bigger Database
+
+Redis keeps its entire dataset in RAM, which is what makes a lookup take
+microseconds instead of the milliseconds a disk-backed query costs, even
+a fast one. That speed comes with a trade you should make on purpose, not
+by accident: RAM is smaller and pricier than disk, and by default nothing
+in Redis is guaranteed to survive a restart. Redis is not a second
+database competing with Postgres -- it's a deliberately disposable,
+extremely fast layer sitting in front of one, whose entire job is to
+answer a question before the real database ever has to.
+
+<Axiom>A cache that can never be safely thrown away and rebuilt from the real data source isn't a cache -- it's an undocumented second database.</Axiom>
+
+### Connecting with go-redis
+
+`github.com/redis/go-redis/v9` is the standard Go client for Redis --
+already previewed in the networking packages overview chapter as
+`go-redis/redis`, the project has since moved under Redis's own GitHub
+organization, but the import path and API described here are current.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+func newRedisClient(addr string) *redis.Client {
+	return redis.NewClient(&redis.Options{
+		Addr:         addr,
+		Password:     "",
+		DB:           0,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 2 * time.Second,
+	})
+}
+
+func main() {
+	rdb := newRedisClient("localhost:6379")
+	ctx := context.Background()
+
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		fmt.Println("redis unreachable:", err)
+		return
+	}
+	fmt.Println("connected to redis")
+}
+```
+
+Every `go-redis` call takes a `context.Context` as its first argument,
+exactly like the database calls in the PostgreSQL and SQLite chapters --
+the same cancellation and deadline propagation you already rely on there
+works identically here.
+
+<Warning title="A cache call is still a network round trip">It's easy to reach for Redis assuming it's effectively free, but every `Get` or `Set` still crosses the network and pays real, if small, latency -- typically far less than a SQL query, but never zero. `DialTimeout`, `ReadTimeout`, and `WriteTimeout` above matter for the same reason `http.Client.Timeout` mattered in the HTTP chapter: an unreachable or overloaded Redis instance should fail fast, not hang every request that touches the cache.</Warning>
+
+### The Cache-Aside Pattern
+
+The most common way to use a cache is **cache-aside**: on a read, check
+the cache first; on a miss, fall back to the database, then populate the
+cache so the next request is faster.
+
+```go
+func getUser(
+	ctx context.Context, rdb *redis.Client, db *pgxpool.Pool, id int64,
+) (User, error) {
+	key := fmt.Sprintf("user:%d", id)
+
+	cached, err := rdb.Get(ctx, key).Result()
+	if err == nil {
+		var u User
+		if err := json.Unmarshal([]byte(cached), &u); err == nil {
+			return u, nil // cache hit
+		}
+	}
+
+	var u User
+	row := db.QueryRow(ctx,
+		"SELECT id, name, email FROM users WHERE id = $1", id)
+	if err := row.Scan(&u.ID, &u.Name, &u.Email); err != nil {
+		return User{}, fmt.Errorf("query: %w", err)
+	}
+
+	data, _ := json.Marshal(u)
+	rdb.Set(ctx, key, data, 5*time.Minute)
+
+	return u, nil
+}
+```
+
+Two failure paths are handled deliberately here rather than ignored:
+`rdb.Get` returning `redis.Nil` (the key doesn't exist) or any other
+error both fall through to the database query, and a corrupted or
+unexpected cached value fails its `json.Unmarshal` and falls through the
+same way. A cache is allowed to fail; the request it's serving isn't.
+
+<DeepDive title="Why check err == nil instead of err == redis.Nil specifically">`redis.Nil` is the sentinel `go-redis` returns for "key not found," and a stricter version of this function would check for it explicitly to distinguish "cache miss" from "Redis is down." In practice both cases want the same fallback -- read from the database -- so treating any error as a reason to fall through keeps the happy path simple. The distinction matters more for observability (you'd want a metric that specifically counts real Redis errors, separate from ordinary misses) than for correctness here.</DeepDive>
+
+[Exercise: extend this into a small HTTP handler that serves `GET /users/{id}` through this exact cache-aside path, then use `curl` twice in a row and watch the second response return meaningfully faster -- the same before/after comparison the Performance Optimization chapter's benchmarking section teaches you to look for.]
+
+### TTL and Why Redis Isn't the Source of Truth
+
+The `5*time.Minute` passed to `Set` above is a **TTL** (time to live) --
+after it elapses, Redis deletes the key on its own, and the very next
+read simply repeats the cache-aside miss path. TTL is the primary tool
+for bounding staleness: a shorter TTL means fresher data and more
+database load; a longer one means less load but a longer window where a
+cached answer might not match reality anymore.
+
+Redis also enforces a `maxmemory` limit in production, and once the
+dataset hits that ceiling, an eviction policy decides what gets discarded
+to make room for new writes -- commonly `allkeys-lru` (evict the least
+recently used key, regardless of whether it has a TTL) or
+`volatile-lru` (only evict keys that have a TTL set, leaving anything
+meant to be permanent untouched). Either way, the lesson is the same one
+as the axiom above: anything you put in Redis has to be reconstructible
+from somewhere else, because Redis itself may decide to forget it before
+your TTL even expires.
+
+<Warning title="Redis persistence (RDB/AOF) is not a backup strategy for this use case">Redis can be configured to snapshot to disk (RDB) or log every write (AOF) so a restart doesn't lose everything. That's valuable for workloads that treat Redis as more than a cache -- job queues, real-time counters -- but for the cache-aside pattern in this chapter, don't lean on it. Losing the entire cache on restart should be a non-event: the next request for each key just takes the slow, database-backed path once and repopulates it.</Warning>
+
+### Invalidating a Cache on Write
+
+TTL alone means a write to the database can leave a stale cached value
+sitting around for however long the TTL still has left. Whenever a write
+path is known -- an update endpoint, not some external process touching
+the database directly -- invalidate the cached key explicitly instead of
+waiting it out:
+
+```go
+func updateUserEmail(
+	ctx context.Context, rdb *redis.Client, db *pgxpool.Pool,
+	id int64, email string,
+) error {
+	_, err := db.Exec(ctx,
+		"UPDATE users SET email = $1 WHERE id = $2", email, id)
+	if err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+
+	key := fmt.Sprintf("user:%d", id)
+	if err := rdb.Del(ctx, key).Err(); err != nil {
+		// Not fatal: the stale entry just lives until its TTL expires.
+		fmt.Println("cache invalidation failed:", err)
+	}
+	return nil
+}
+```
+
+Deleting the key rather than trying to update it in place is the safer
+default: recomputing and re-caching the new value inline couples the
+write path to the exact same serialization logic the read path uses, and
+any drift between the two becomes a subtle bug. Deleting just forces the
+next read to take the normal cache-aside miss path and rebuild the entry
+correctly from scratch.
+
+<Axiom>There really are only two hard problems in caching: invalidation, and convincing yourself you don't need to think about invalidation.</Axiom>
+
+### The Cache Stampede Problem
+
+Picture a cached value with a five-minute TTL that backs a genuinely
+expensive query, sitting behind an endpoint getting hundreds of requests
+per second. The instant that key expires, every one of those in-flight
+requests misses at the same moment and all of them hit the database
+simultaneously, trying to recompute the identical answer -- a **cache
+stampede** (also called a thundering herd or dogpile). The cache, whose
+entire purpose was protecting the database, briefly makes things worse
+than having no cache at all.
+
+`golang.org/x/sync/singleflight` fixes this directly: it collapses
+multiple concurrent callers asking for the same key into a single
+underlying call, and hands the one result back to all of them.
+
+```go
+var group singleflight.Group
+
+func getUserSingleflight(
+	ctx context.Context, rdb *redis.Client, db *pgxpool.Pool, id int64,
+) (User, error) {
+	key := fmt.Sprintf("user:%d", id)
+
+	cached, err := rdb.Get(ctx, key).Result()
+	if err == nil {
+		var u User
+		if err := json.Unmarshal([]byte(cached), &u); err == nil {
+			return u, nil
+		}
+	}
+
+	v, err, _ := group.Do(key, func() (interface{}, error) {
+		var u User
+		row := db.QueryRow(ctx,
+			"SELECT id, name, email FROM users WHERE id = $1", id)
+		if err := row.Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return User{}, fmt.Errorf("query: %w", err)
+		}
+		if data, err := json.Marshal(u); err == nil {
+			rdb.Set(ctx, key, data, 5*time.Minute)
+		}
+		return u, nil
+	})
+	if err != nil {
+		return User{}, err
+	}
+	return v.(User), nil
+}
+```
+
+Every goroutine that calls `group.Do` with the same key while a call for
+that key is already in flight blocks and receives the same result,
+instead of launching a redundant query of its own -- turning a hundred
+simultaneous cache misses for the same key into exactly one database
+query, with ninety-nine goroutines waiting on it instead of duplicating
+it.
+
+<DeepDive title="singleflight only collapses calls within one process">`singleflight.Group` deduplicates concurrent calls inside a single Go process -- it does nothing across multiple replicas of your API running behind a load balancer, each with their own `Group`. A stampede that spans replicas (all ten of them missing the same key within the same second) needs a different tool, typically a short-lived "lock" key in Redis itself (`SET key value NX PX 5000`) that only one replica successfully acquires, with the rest either waiting briefly or serving a slightly stale value while the winner repopulates the cache.</DeepDive>
+
+### Beyond Caching: Sessions and Rate Limiting
+
+Redis's speed and simple data structures make it the usual backing store
+for more than read-through caching:
+
+- **Sessions:** storing a session token as a key mapping to a user ID,
+  with a TTL matching the session's lifetime, is a common alternative to
+  the JWT-based approach from the API Security chapter -- trading a
+  Redis round trip per request for the ability to revoke a session
+  instantly, something a signed, stateless JWT can't do on its own.
+- **Rate limiting:** the Rate Limiting and Advanced Rate Limiting
+  chapters' token-bucket and sliding-window counters need somewhere fast
+  and shared across replicas to keep count; Redis's atomic `INCR` and key
+  expiration are exactly the primitives that pattern is built on.
+- **Feature flags:** the Feature Flags chapter's dynamic configuration
+  benefits from the same low-latency lookup this chapter builds for user
+  data -- a flag check on every request only stays cheap if it's an
+  in-memory lookup, not a database query.
+
+None of these are "more caching" exactly -- they're the same fast,
+shared, TTL-aware key-value store solving a different problem than the
+one this chapter led with.
+
+---
+
+## Frequently Asked Questions
+
+**Should I cache absolutely everything I query from the database?**
+No -- caching pays off for data that's read far more often than it changes and expensive enough to compute that skipping the recomputation actually matters. Highly unique per-request data (a one-time computed report, something already fast to query) gains little from a cache and just adds another thing that can go stale or fail. Reach for caching when you can point at a specific, repeated, expensive query, not as a default over every code path.
+
+**If Redis loses all my data on restart, why isn't that a disaster?**
+Because in the cache-aside pattern this chapter builds, nothing in Redis is the only copy of anything -- every cached value is reconstructible from the database on the very next request that needs it. Losing the whole cache on restart just means the next request for each key takes the slower, database-backed path once and repopulates it, exactly like an ordinary cache miss. The moment you start storing something in Redis that *isn't* reconstructible elsewhere, that axiom stops holding and you've quietly built a second, less durable database.
+
+**Is deleting a cache key on write always better than updating it in place?**
+Almost always, yes, for the same reason it's easier to reason about: recomputing and re-caching a value inline duplicates the exact serialization logic the read path already has, and any drift between the two becomes a subtle, hard-to-spot bug. Deleting the key just forces the next read to take the ordinary cache-aside miss path and rebuild the entry the same way it always does, with no second code path to keep in sync.
+
+**Does `singleflight` fully solve the cache stampede problem?**
+Only within one process. It collapses duplicate concurrent calls inside a single replica of your API, which handles the common case well, but if your API runs behind a load balancer with several replicas, each has its own independent `singleflight.Group` and none of them know about the others. A stampede that spans replicas needs a cross-process mechanism instead, typically a short-lived Redis lock key that only one replica acquires while the rest wait or serve a slightly stale value.
+
+**Can I use Redis as my only database instead of pairing it with Postgres or SQLite?**
+You can, for workloads that are genuinely fine with Redis's persistence guarantees and data-structure trade-offs, but that's a different design decision than anything in this chapter -- this chapter's entire cache-aside pattern assumes Redis is disposable and Postgres or SQLite remains the durable source of truth. Using Redis as a primary store means taking its RDB/AOF persistence seriously and accepting its trade-offs (in-memory dataset size limits, a simpler query model) as your database's, not just your cache's.
+
+---
+
+## Key Takeaways
+
+- Redis is fast because it's in-memory, and disposable by design -- treat anything you store there as reconstructible from a real source of truth, not as the only copy.
+- The cache-aside pattern (check cache, fall back to the database on a miss, then populate the cache) is the default shape of application-level caching.
+- TTL bounds staleness automatically; explicit invalidation (deleting a key on write) closes the gap TTL alone leaves open.
+- A cache stampede happens when a hot key's expiration causes many concurrent misses to hit the database at once; `singleflight` collapses those within one process, and a Redis-based lock is needed across replicas.
+- Every `go-redis` call takes a `context.Context` and a real network round trip -- set explicit timeouts, the same way you would for an HTTP client or a database pool.
+- Redis's speed also makes it the usual backing store for sessions, rate limiting, and feature flags -- the same primitive, applied to different problems than caching a database read.

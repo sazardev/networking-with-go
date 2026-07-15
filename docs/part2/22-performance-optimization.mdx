@@ -159,6 +159,8 @@ Raising `MaxIdleConnsPerHost` above its conservative default matters specificall
 
 <DeepDive title="Why connection reuse matters at the OS level">A closed TCP connection leaves its local (ephemeral) port in the `TIME_WAIT` state for a couple of minutes, so the OS can be sure no delayed packet from the old connection reaches whatever reuses that port next. A client opening and closing thousands of short-lived connections per second can exhaust its pool of ephemeral ports, or redo TCP and TLS handshakes it didn't need to. Reusing connections — exactly what `http.Transport`'s idle pool does — sidesteps both costs.</DeepDive>
 
+<DeepDive title="HTTP/3 sidesteps the handshake cost differently">Everything above optimizes *reuse* of an existing TCP/TLS connection, but HTTP/3's QUIC transport (introduced back in the TCP vs UDP chapter) attacks the same cost from another angle: a returning client can resume a previous QUIC session with **0-RTT**, sending its first request in the very same packet that reconnects, with no separate handshake round trip at all. QUIC connections also survive a network change — a phone switching from Wi-Fi to cellular keeps the same connection alive instead of forcing a fresh TCP handshake, something no amount of `http.Transport` tuning can do for a plain HTTPS connection. Go's standard library doesn't speak QUIC yet, so this is a benefit you get today only through a third-party module like `quic-go`, not a free upgrade to existing `net/http` code.</DeepDive>
+
 ---
 
 ## Buffered I/O

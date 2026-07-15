@@ -1,6 +1,6 @@
 # Part APIs: Building Modern APIs & Backends with Go
 
-Esta sección cubre el diseño, implementación y despliegue de APIs modernas y backends en Go, incluyendo REST, GraphQL, WebSockets, seguridad, patrones avanzados y más. Cada capítulo incluye teoría, ejemplos y soluciones prácticas.
+Esta sección cubre el diseño, implementación y despliegue de APIs modernas y backends en Go, incluyendo REST, WebSockets, caching, seguridad, patrones avanzados y más. Cada capítulo incluye teoría, ejemplos y soluciones prácticas.
 
 ---
 
@@ -56,6 +56,7 @@ Chapters 35-42 build a single coherent order-management API across all of them (
 43. [Deploying to Google Cloud](43-deploying-to-google-cloud.mdx)
 44. [Orchestration, Replicas, and Graceful Shutdown](44-orchestration-replicas-and-graceful-shutdown.mdx)
 45. [Thinking Like an Attacker: API Security](45-thinking-like-an-attacker-api-security.mdx)
+46. [Caching and Redis for Go APIs](46-caching-and-redis-for-go-apis.mdx)
 
 ---
 
