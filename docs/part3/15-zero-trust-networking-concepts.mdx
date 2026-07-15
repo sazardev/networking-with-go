@@ -13,7 +13,7 @@ title: "Zero Trust Networking Concepts"
 
 Traditional network security draws a hard line between "inside" (trusted) and "outside" (untrusted), enforced by a firewall at the boundary. Once a device or user is inside that boundary — on the corporate VPN, on the office network — it's often granted broad access on the assumption that getting inside was itself the hard part.
 
-That assumption breaks down constantly in practice: a phished employee's laptop, a compromised internal server, a misconfigured VPN — any of these put an attacker *inside* the perimeter, and a purely perimeter-based model has very little left to stop them once they're there. Chapter 4.9's incident-response material exists largely because this exact scenario happens.
+That assumption breaks down constantly in practice: a phished employee's laptop, a compromised internal server, a misconfigured VPN — any of these put an attacker *inside* the perimeter, and a purely perimeter-based model has very little left to stop them once they're there. Chapter 5.9's incident-response material exists largely because this exact scenario happens.
 
 **Zero trust** is the architectural response: stop trusting *location* (being on the internal network) as a proxy for trust, and instead verify every request, from every source, every time, based on identity and context rather than which side of a firewall it originated from.
 
@@ -21,7 +21,7 @@ That assumption breaks down constantly in practice: a phished employee's laptop,
 
 ## Core Principles
 
-<DeepDive title="What zero trust actually requires">**Verify explicitly** — every request is authenticated and authorized based on all available signals (identity, device health, location), not granted implicitly because of network position. **Least privilege access** — grant exactly the access a given identity needs for a specific task, scoped tightly and often just-in-time rather than standing broad access. **Assume breach** — design as though an attacker is already present somewhere in the environment, and minimize what they could reach from any single foothold — the same mindset introduced in Chapter 4.1. **Microsegmentation** — divide the network into small, tightly controlled zones so that compromising one segment doesn't grant access to the rest (the full subject of Chapter 4.16).</DeepDive>
+<DeepDive title="What zero trust actually requires">**Verify explicitly** — every request is authenticated and authorized based on all available signals (identity, device health, location), not granted implicitly because of network position. **Least privilege access** — grant exactly the access a given identity needs for a specific task, scoped tightly and often just-in-time rather than standing broad access. **Assume breach** — design as though an attacker is already present somewhere in the environment, and minimize what they could reach from any single foothold — the same mindset introduced in Chapter 5.1. **Microsegmentation** — divide the network into small, tightly controlled zones so that compromising one segment doesn't grant access to the rest (the full subject of Chapter 5.16).</DeepDive>
 
 None of these principles require a single specific vendor product — zero trust is an architectural philosophy, described in vendor-neutral terms in publications like NIST SP 800-207, and it can be approached incrementally rather than as an all-or-nothing rewrite.
 
@@ -31,7 +31,7 @@ None of these principles require a single specific vendor product — zero trust
 
 In a zero trust model, the question a service asks is never "did this request come from inside the network?" — it's "who, or what, is making this request, and are they authorized for this specific action?" That shift has concrete implications for how Go services are built:
 
-- **Every service-to-service call authenticates**, typically via mutual TLS (Chapter 4.12) or short-lived tokens, even between services on the same internal subnet.
+- **Every service-to-service call authenticates**, typically via mutual TLS (Chapter 5.12) or short-lived tokens, even between services on the same internal subnet.
 - **Authorization is checked per request**, not assumed from network placement — a service behind three layers of internal firewalls still validates the caller's identity and permissions on every call.
 - **Device and workload identity matters as much as user identity** — a request from a legitimate user's compromised laptop should be distinguishable from a request from that user's known-healthy device where possible.
 
@@ -39,7 +39,7 @@ In a zero trust model, the question a service asks is never "did this request co
 
 ## Mutual TLS as a Zero Trust Building Block
 
-Chapter 4.12 showed `ClientAuth: tls.RequireAndVerifyClientCert` as a single field enabling mutual TLS. In a zero trust architecture, this pattern is often applied uniformly, service to service, so that network position alone never grants a connection:
+Chapter 5.12 showed `ClientAuth: tls.RequireAndVerifyClientCert` as a single field enabling mutual TLS. In a zero trust architecture, this pattern is often applied uniformly, service to service, so that network position alone never grants a connection:
 
 ```go
 config := &tls.Config{
@@ -50,7 +50,7 @@ config := &tls.Config{
 }
 ```
 
-With this configuration, a connection succeeds only if the caller presents a valid certificate issued by a CA the service explicitly trusts — reachability on the network is no longer sufficient on its own. This is exactly the kind of internal PKI Chapter 4.13 covers issuing and rotating certificates for.
+With this configuration, a connection succeeds only if the caller presents a valid certificate issued by a CA the service explicitly trusts — reachability on the network is no longer sufficient on its own. This is exactly the kind of internal PKI Chapter 5.13 covers issuing and rotating certificates for.
 
 ---
 
@@ -77,11 +77,11 @@ That's precisely the assumption zero trust exists to retire. Being on the intern
 No — the chapter is explicit that the firewall doesn't disappear, it simply stops being the *only* control, and eventually stops being the primary one. Most organizations adopt zero trust incrementally, starting with the most sensitive systems and requiring mTLS and strong authentication there first, then expanding outward rather than attempting an all-or-nothing rewrite.
 
 **We already use mutual TLS between two services — does that mean we've "done" zero trust?**
-Not by itself. Mutual TLS, as shown with `ClientAuth: tls.RequireAndVerifyClientCert` from Chapter 4.12, is one building block that satisfies the "verify explicitly" principle for a single connection, but zero trust also asks for least-privilege access, an assume-breach design posture, and microsegmentation. One authenticated connection is a good start, not the whole architecture.
+Not by itself. Mutual TLS, as shown with `ClientAuth: tls.RequireAndVerifyClientCert` from Chapter 5.12, is one building block that satisfies the "verify explicitly" principle for a single connection, but zero trust also asks for least-privilege access, an assume-breach design posture, and microsegmentation. One authenticated connection is a good start, not the whole architecture.
 
 **What's the actual division of labor between the policy decision point and the policy enforcement point?**
 The decision point is the brain: it evaluates identity, device posture, the requested resource, and context, then decides yes or no. The enforcement point is the hands: it's the thing actually sitting on the connection allowing or blocking traffic based on that decision, without needing to understand the reasoning behind it — a separation of concerns similar to how an authentication service and a reverse proxy divide responsibility in a typical web architecture.
 
 ## Where This Leads
 
-Zero trust and network segmentation are two sides of the same coin: zero trust is the *policy* philosophy (verify everyone, trust no default position), and segmentation, covered next in Chapter 4.16, is the *structural* tool that makes enforcing that policy practical at scale — by making sure there are fewer, smaller, more controllable boundaries to enforce it at in the first place.
+Zero trust and network segmentation are two sides of the same coin: zero trust is the *policy* philosophy (verify everyone, trust no default position), and segmentation, covered next in Chapter 5.16, is the *structural* tool that makes enforcing that policy practical at scale — by making sure there are fewer, smaller, more controllable boundaries to enforce it at in the first place.

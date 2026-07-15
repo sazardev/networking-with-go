@@ -29,7 +29,7 @@ Notice the cycle closes back on itself — a good post-incident review directly 
 
 For network-facing incidents specifically, a few categories of evidence recur constantly:
 
-- **Packet captures** — a full or filtered capture (Chapter 4.5) around the suspected timeframe can show exactly what was sent and received, which is often the only unambiguous record of what actually happened on the wire.
+- **Packet captures** — a full or filtered capture (Chapter 5.5) around the suspected timeframe can show exactly what was sent and received, which is often the only unambiguous record of what actually happened on the wire.
 - **NetFlow/connection logs** — even without full packet content, records of who talked to whom, when, and how much data moved, can reveal a data-exfiltration pattern or an unexpected internal-to-external connection.
 - **Application and system logs** — authentication attempts, error logs, and access logs often show the earliest signs of an intrusion, well before it becomes an obvious outage.
 - **DNS query logs** — malware frequently reaches out to a command-and-control domain before doing anything else; DNS logs can catch this even when the payload itself is encrypted.

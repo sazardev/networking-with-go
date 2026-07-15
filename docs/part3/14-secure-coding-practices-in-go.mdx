@@ -17,7 +17,7 @@ Everything covered earlier in Part 3 — scanning, sniffing, assessing, testing 
 
 ## Validate Input at the Trust Boundary
 
-Chapter 4.2 introduced trust boundaries — the points where data crosses from untrusted to trusted. Every one of those crossings deserves explicit validation, not an assumption that the data looks like what you expect:
+Chapter 5.2 introduced trust boundaries — the points where data crosses from untrusted to trusted. Every one of those crossings deserves explicit validation, not an assumption that the data looks like what you expect:
 
 ```go
 func parseAge(input string) (int, error) {
@@ -140,7 +140,7 @@ if err != nil {
 }
 ```
 
-A raw database error returned directly to an HTTP response can reveal schema details, file paths, or library versions — small pieces of reconnaissance (Chapter 4.4) that an attacker didn't have to work for.
+A raw database error returned directly to an HTTP response can reveal schema details, file paths, or library versions — small pieces of reconnaissance (Chapter 5.4) that an attacker didn't have to work for.
 
 ---
 
@@ -156,7 +156,7 @@ Safer, but not automatically finished — `exec.Command` with separate slice ele
 Because "random-looking" and "unpredictable to an attacker" are different properties. `math/rand` is a deterministic pseudo-random generator designed for simulations, and its future output can be predicted by anyone who observes enough samples or knows its seed. Anything security-sensitive — a session token, a password reset code, an API key — needs `crypto/rand`, whose output is designed specifically to resist that kind of prediction.
 
 **A raw database error message seems harmless to return to a client — why treat it as a security issue?**
-Because "harmless" from the developer's chair looks very different from an attacker's chair — a raw database error can quietly reveal schema details, internal file paths, or library versions, which is exactly the kind of reconnaissance detail covered in Chapter 4.4 that an attacker would otherwise have to work to discover. Logging the detail for yourself while returning a generic message to the caller keeps that information on your side of the trust boundary.
+Because "harmless" from the developer's chair looks very different from an attacker's chair — a raw database error can quietly reveal schema details, internal file paths, or library versions, which is exactly the kind of reconnaissance detail covered in Chapter 5.4 that an attacker would otherwise have to work to discover. Logging the detail for yourself while returning a generic message to the caller keeps that information on your side of the trust boundary.
 
 ## A Habit, Not a Checklist
 

@@ -103,7 +103,7 @@ func main() {
 
 ## Designing the API around asynchronous work
 
-Once work is asynchronous, your API's response contract has to change to match. Returning `201 Created` for the order is fine, but if the client needs to know when the email actually sent, you need a way to check status — either a `GET /orders/{id}` that includes a `notification_status` field updated by the worker, or a webhook fired when the task completes (the subject of the next chapter). What you should not do is make the client poll the task queue directly; the queue is an internal implementation detail, not part of your public API surface.
+Once work is asynchronous, your API's response contract has to change to match. Returning `201 Created` for the order is fine, but if the client needs to know when the email actually sent, you need a way to check status — either a `GET /orders/{id}` that includes a `notification_status` field updated by the worker, or a webhook fired when the task completes (the subject of an upcoming chapter). What you should not do is make the client poll the task queue directly; the queue is an internal implementation detail, not part of your public API surface.
 
 <DeepDive title="Idempotency matters more with queues than without them">Because a task can be retried, `handleEmailDelivery` might run twice for the same order if the first attempt succeeded but the worker crashed before acknowledging it to Redis. Design task handlers so running them twice is safe — check whether the email was already marked sent before sending it again, the same way you'd design a webhook receiver.</DeepDive>
 

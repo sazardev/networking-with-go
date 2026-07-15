@@ -13,7 +13,7 @@ title: "Packet Sniffing and Analysis with Go"
 
 Every network interface sees far more traffic pass by than the frames addressed to it — normally the network card discards anything not meant for its own address. **Promiscuous mode** disables that filtering, handing every frame on the segment up to whatever software asked for it. A **packet sniffer** is that software: it captures raw frames off the wire and lets you inspect their headers and payloads, layer by layer.
 
-This is invaluable for legitimate work: debugging why a TCP handshake never completes, verifying that a service really is using TLS instead of falling back to plaintext, or investigating unusual traffic during incident response (Chapter 4.9). It's also, unsurprisingly, a tool an attacker uses to harvest credentials from unencrypted traffic — which is itself the strongest argument for encrypting everything (Chapter 4.12).
+This is invaluable for legitimate work: debugging why a TCP handshake never completes, verifying that a service really is using TLS instead of falling back to plaintext, or investigating unusual traffic during incident response (Chapter 5.9). It's also, unsurprisingly, a tool an attacker uses to harvest credentials from unencrypted traffic — which is itself the strongest argument for encrypting everything (Chapter 5.12).
 
 <Warning title="Capture only what you're authorized to capture">Sniffing traffic on a network segment captures everyone's packets on that segment, not just your own — on shared media or a hub, that can include other people's data. Only run packet capture on networks and interfaces you own or are explicitly authorized to monitor, and be aware that in many places, intercepting communications you're not a party to is a separate offense from unauthorized access.</Warning>
 
@@ -110,7 +110,7 @@ A few things worth understanding in this code:
 
 A raw stream of packets is noisy. Turning it into analysis usually means asking a specific question and filtering toward it:
 
-- **Is a handshake completing?** Watch for SYN, SYN-ACK, ACK in sequence between two hosts; a SYN with no reply suggests a filtered port or a SYN-flood pattern (Chapter 4.3).
+- **Is a handshake completing?** Watch for SYN, SYN-ACK, ACK in sequence between two hosts; a SYN with no reply suggests a filtered port or a SYN-flood pattern (Chapter 5.3).
 - **Is traffic actually encrypted?** Inspect the payload of a supposedly-HTTPS connection; a plaintext HTTP request where TLS was expected is a serious finding.
 - **Is something talking that shouldn't be?** Unexpected destination IPs or ports on an internal segment are a classic indicator during incident response.
 
@@ -147,4 +147,4 @@ Efficiency and focus — `SetBPFFilter` discards uninteresting traffic before it
 Not at all — it's actually the more common real-world workflow. `pcap.OpenOffline` feeds the exact same `gopacket.NewPacketSource` loop used for live capture, which means the SYN-flood detection, encryption checks, and unexpected-destination analysis described above all work identically on a file you (or an authorized colleague) captured earlier.
 
 **How does spotting a SYN with no reply here connect back to the DoS chapter?**
-Directly — a lone SYN that never gets a SYN-ACK is one of the signatures of a SYN flood covered in Chapter 4.3, where an attacker exhausts a server's half-open connection table by never completing handshakes. Sniffing is often how you'd first notice that pattern in practice, turning an abstract attack description into something you can actually see crossing the wire.
+Directly — a lone SYN that never gets a SYN-ACK is one of the signatures of a SYN flood covered in Chapter 5.3, where an attacker exhausts a server's half-open connection table by never completing handshakes. Sniffing is often how you'd first notice that pattern in practice, turning an abstract attack description into something you can actually see crossing the wire.

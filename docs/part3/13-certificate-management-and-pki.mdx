@@ -11,7 +11,7 @@ title: "Certificate Management and PKI"
 
 ## Why TLS Needs Certificates at All
 
-Chapter 4.12 showed that TLS encrypts and authenticates a connection — but authenticates it *to whom*? Encryption alone doesn't prove you're talking to the right server; an attacker performing a man-in-the-middle attack (Chapter 4.3) can happily encrypt traffic too, just with themselves in the middle. A **certificate** is what closes that gap: a signed statement binding a public key to an identity (typically a domain name), issued by a party the client already trusts.
+Chapter 5.12 showed that TLS encrypts and authenticates a connection — but authenticates it *to whom*? Encryption alone doesn't prove you're talking to the right server; an attacker performing a man-in-the-middle attack (Chapter 5.3) can happily encrypt traffic too, just with themselves in the middle. A **certificate** is what closes that gap: a signed statement binding a public key to an identity (typically a domain name), issued by a party the client already trusts.
 
 **PKI (Public Key Infrastructure)** is the whole surrounding system that makes certificates meaningful: certificate authorities (CAs) that issue and sign them, the chain-of-trust model that lets a client verify a certificate it's never seen before, and the mechanisms (expiry, revocation) that limit how long a compromised or mis-issued certificate stays dangerous.
 
@@ -142,7 +142,7 @@ func main() {
 }
 ```
 
-This produces exactly the `cert.pem`/`key.pem` pair the TLS server in Chapter 4.12 expects. A self-signed certificate like this will fail normal chain verification for anyone but you — which is correct and expected. It's meant for local testing, not for anything a real client should trust without deliberately adding it to a custom root pool.
+This produces exactly the `cert.pem`/`key.pem` pair the TLS server in Chapter 5.12 expects. A self-signed certificate like this will fail normal chain verification for anyone but you — which is correct and expected. It's meant for local testing, not for anything a real client should trust without deliberately adding it to a custom root pool.
 
 ---
 
@@ -155,7 +155,7 @@ Certificates expire on purpose — `NotAfter` bounds how long a mis-issued or co
 ## Frequently Asked Questions
 
 **If TLS already encrypts the connection, why do I still need a certificate at all?**
-Because encryption alone doesn't tell you who you're encrypting *to* — an attacker running a man-in-the-middle attack can encrypt traffic too, just with themselves sitting in the middle of it. A certificate is what closes that specific gap: a signed statement binding a public key to an identity, which is why Chapter 4.12's TLS handshake is only as trustworthy as the certificate chain backing it.
+Because encryption alone doesn't tell you who you're encrypting *to* — an attacker running a man-in-the-middle attack can encrypt traffic too, just with themselves sitting in the middle of it. A certificate is what closes that specific gap: a signed statement binding a public key to an identity, which is why Chapter 5.12's TLS handshake is only as trustworthy as the certificate chain backing it.
 
 **Why bother with intermediate CAs — why can't every server certificate just be signed directly by the root?**
 Because that would mean the root's private key, the single most sensitive key in the entire chain of trust, would need to be online and in active use constantly, turning it into a huge and tempting attack surface. Intermediates let the root stay offline almost all the time, brought out rarely just to sign new intermediates, while the day-to-day work of issuing certificates happens through keys that are far easier to rotate or revoke if one is ever compromised.

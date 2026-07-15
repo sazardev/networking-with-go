@@ -11,7 +11,7 @@ title: "Network Scanning and Enumeration with Go"
 
 ## What Scanning and Enumeration Actually Mean
 
-**Scanning** answers the question "what's reachable?" — which hosts are alive, which ports are open on them. **Enumeration** goes one level deeper: "what's actually running there?" — grabbing service banners, protocol versions, and other details that turn a bare port number into something you can assess for known weaknesses (Chapter 4.6).
+**Scanning** answers the question "what's reachable?" — which hosts are alive, which ports are open on them. **Enumeration** goes one level deeper: "what's actually running there?" — grabbing service banners, protocol versions, and other details that turn a bare port number into something you can assess for known weaknesses (Chapter 5.6).
 
 Both are the first phase of nearly every security engagement, offensive or defensive. Attackers scan to find a way in. Defenders scan their own networks for the same reason: to find the way in before an attacker does, and to notice when something is listening that shouldn't be.
 
@@ -144,13 +144,13 @@ func grabBanner(host string, port int, timeout time.Duration) (string, error) {
 
 Not every service announces itself on connect — HTTP servers wait for a request first — so a thorough enumeration step sends a minimal protocol-appropriate probe (an HTTP `HEAD /`, for example) and reads the response headers rather than assuming a banner will just appear.
 
-DNS enumeration is another common technique, using `net.LookupHost`, `net.LookupMX`, or `net.LookupTXT` from the standard library to map out a domain's associated infrastructure — useful during reconnaissance in an authorized penetration test (Chapter 4.8).
+DNS enumeration is another common technique, using `net.LookupHost`, `net.LookupMX`, or `net.LookupTXT` from the standard library to map out a domain's associated infrastructure — useful during reconnaissance in an authorized penetration test (Chapter 5.8).
 
 ---
 
 ## From Raw Results to Findings
 
-A scan produces a list of open ports and banners. On its own, that's just data. Chapter 4.6 covers how to turn "port 21 open, running vsftpd 2.3.4" into an actual assessed finding — checking that version against known weaknesses and deciding whether it matters in context. Scanning tells you what's there; assessment tells you whether it's a problem.
+A scan produces a list of open ports and banners. On its own, that's just data. Chapter 5.6 covers how to turn "port 21 open, running vsftpd 2.3.4" into an actual assessed finding — checking that version against known weaknesses and deciding whether it matters in context. Scanning tells you what's there; assessment tells you whether it's a problem.
 
 <DeepDive title="Why not just use nmap?">`nmap` is the industry-standard scanner and you should absolutely use it for real engagements — it has SYN scanning, OS fingerprinting, and a huge script library that would take years to reimplement. Building a scanner in Go here isn't about competing with it; it's about understanding exactly what a scanner does under the hood, so that when you read `nmap` output — or write Go code that needs to probe its own dependencies at startup — you know precisely what's happening on the wire.</DeepDive>
 
@@ -170,5 +170,5 @@ In many jurisdictions, yes — the Warning at the top of this chapter isn't boil
 **My banner grab against an HTTP server just hangs or returns nothing — what's going on?**
 That's normal, not a bug: unlike SSH, which announces itself the moment a connection opens, HTTP servers sit quietly waiting for the client to speak first. The fix is to send a minimal request yourself — an HTTP `HEAD /` is enough — and then read the response headers, rather than assuming a banner will arrive unprompted.
 
-**How does today's scanning tie into the "assessment" step Chapter 4.6 covers?**
-Scanning and enumeration answer "what's reachable and what's running there," which produces raw data like "port 21 open, running vsftpd 2.3.4" — but that data isn't a finding on its own. Chapter 4.6 picks up exactly where this chapter stops, showing how to check that version against known weaknesses and decide whether it's actually a problem worth acting on.
+**How does today's scanning tie into the "assessment" step Chapter 5.6 covers?**
+Scanning and enumeration answer "what's reachable and what's running there," which produces raw data like "port 21 open, running vsftpd 2.3.4" — but that data isn't a finding on its own. Chapter 5.6 picks up exactly where this chapter stops, showing how to check that version against known weaknesses and decide whether it's actually a problem worth acting on.

@@ -330,10 +330,10 @@ concrete type (interfaces), and write logic that works uniformly across a
 family of types (generics). That's the whole toolkit Go offers instead of
 object orientation, and by this point you have all four pieces.
 
-Every one of these pieces, though, has quietly assumed something in the
-background: that a piece of code doing the "wrong" thing gets caught
-loudly, immediately, by the compiler. The next chapter breaks that
-assumption open on purpose. Go has no exceptions, which means failure has
-to be handled some other way — and that "some other way" turns out to be
-one of the most opinionated, and most argued-about, decisions in the
-entire language.
+There's one more piece of everyday Go you've been quietly relying on
+throughout every code example in this chapter, without it ever being
+named directly: slices like `[]Rectangle` and `[]T`, and the maps you'll
+lean on constantly from here forward, both deserve a much closer look
+than "looks like an array" gives them credit for. The next chapter takes
+them apart properly, because a surprising number of famous Go bugs — and
+famous Go interview questions — live entirely inside those two types.

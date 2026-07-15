@@ -19,15 +19,15 @@ The previous ten chapters covered the core of network security thinking: modelin
 
 - **OWASP (Open Web Application Security Project)** — the OWASP Top 10 is the most widely referenced summary of common web application weaknesses, and the broader OWASP project publishes testing guides, cheat sheets, and tools, nearly all freely available.
 - **MITRE ATT&CK** — a knowledge base of real-world adversary tactics and techniques, organized so defenders can map their own detection and defense coverage against known attacker behavior.
-- **NIST Cybersecurity Framework and NIST SP 800-series** — US government publications that are, in practice, referenced globally; SP 800-61 (incident handling) and SP 800-207 (zero trust, relevant to Chapter 4.15) are particularly useful starting points.
-- **CVE and NVD (National Vulnerability Database)** — the canonical public catalog of known vulnerabilities referenced throughout Chapter 4.6.
+- **NIST Cybersecurity Framework and NIST SP 800-series** — US government publications that are, in practice, referenced globally; SP 800-61 (incident handling) and SP 800-207 (zero trust, relevant to Chapter 5.15) are particularly useful starting points.
+- **CVE and NVD (National Vulnerability Database)** — the canonical public catalog of known vulnerabilities referenced throughout Chapter 5.6.
 - **CVSS (Common Vulnerability Scoring System)** — the scoring standard behind most severity ratings you'll encounter.
 
 ---
 
 ## Practice Platforms
 
-Building real skill in this field benefits enormously from hands-on, legally unambiguous practice (Chapter 4.10's point about practicing legally applies fully here):
+Building real skill in this field benefits enormously from hands-on, legally unambiguous practice (Chapter 5.10's point about practicing legally applies fully here):
 
 - **Dedicated vulnerable-by-design lab platforms** — environments built specifically to be attacked, ranging from single downloadable VMs to full online lab subscriptions with guided learning paths.
 - **CTF (Capture the Flag) competitions** — both live, time-boxed events and large archives of past challenges you can work through at your own pace.
@@ -41,9 +41,9 @@ Building real skill in this field benefits enormously from hands-on, legally una
 Sticking with the language this book teaches:
 
 - **The Go security policy and advisory process** — the Go team publishes security advisories for the standard library and toolchain; keeping a project's Go version current matters as much as keeping any other dependency current.
-- **`govulncheck`** — a Go team tool that scans a module's dependency graph against the Go vulnerability database and reports only the vulnerabilities that are actually reachable from your code, rather than every match by version alone (directly relevant to the verification step from Chapter 4.6).
+- **`govulncheck`** — a Go team tool that scans a module's dependency graph against the Go vulnerability database and reports only the vulnerabilities that are actually reachable from your code, rather than every match by version alone (directly relevant to the verification step from Chapter 5.6).
 - **The `crypto/` and `net/http` package documentation** — genuinely worth reading end to end at least once; the standard library's own doc comments frequently explain *why* an API is shaped the way it is from a security standpoint, not just what it does.
-- **`gopacket`** — the packet-capture library used in Chapter 4.5, useful well beyond security work for any protocol-level debugging.
+- **`gopacket`** — the packet-capture library used in Chapter 5.5, useful well beyond security work for any protocol-level debugging.
 
 ---
 
@@ -53,9 +53,9 @@ Certifications aren't required to do security work well, but they provide a stru
 
 - **Practical, hands-on-exam certifications** (built around live lab environments and a required written report) are generally considered the strongest evidence of applied offensive skill.
 - **Broader, multiple-choice-style certifications** cover wide conceptual ground efficiently and are often used as an entry point or a hiring-screen baseline.
-- **Defensive and management-track certifications** exist as well, covering security operations, risk management, and governance — worth considering if your interest leans toward the blue-team and process side covered in Chapters 4.8–4.9.
+- **Defensive and management-track certifications** exist as well, covering security operations, risk management, and governance — worth considering if your interest leans toward the blue-team and process side covered in Chapters 5.8–5.9.
 
-Treat any certification as a supplement to hands-on practice, not a replacement for it — the skills tested in Chapters 4.4 through 4.7 of this book are built by writing and running code, not by reading alone.
+Treat any certification as a supplement to hands-on practice, not a replacement for it — the skills tested in Chapters 5.4 through 5.7 of this book are built by writing and running code, not by reading alone.
 
 ---
 
@@ -70,10 +70,10 @@ Treat any certification as a supplement to hands-on practice, not a replacement 
 ## Frequently Asked Questions
 
 **Do I need a certification before I can get taken seriously in security work?**
-No — the chapter is deliberately blunt about this: certifications are a supplement, not a prerequisite. A structured curriculum helps some people learn faster, and a certification can be a useful signal to an employer scanning resumes, but the actual skill is built the same way you built it across Chapters 4.4 through 4.7 of this book — by writing and running code against real, legally sanctioned targets.
+No — the chapter is deliberately blunt about this: certifications are a supplement, not a prerequisite. A structured curriculum helps some people learn faster, and a certification can be a useful signal to an employer scanning resumes, but the actual skill is built the same way you built it across Chapters 5.4 through 5.7 of this book — by writing and running code against real, legally sanctioned targets.
 
 **Is it legal to practice against the vulnerable-by-design labs and CTFs mentioned here?**
-Yes, and that's exactly why they're worth seeking out — they exist specifically to be attacked, with explicit permission baked into their design, unlike a random server you happen to find on the internet. The legal line from Chapter 4.10 is about scope and authorization, and these platforms are built to give you unambiguous scope: you own the environment, or the organizer has explicitly granted you access to it.
+Yes, and that's exactly why they're worth seeking out — they exist specifically to be attacked, with explicit permission baked into their design, unlike a random server you happen to find on the internet. The legal line from Chapter 5.10 is about scope and authorization, and these platforms are built to give you unambiguous scope: you own the environment, or the organizer has explicitly granted you access to it.
 
 **Why does the chapter point to `govulncheck` specifically instead of just "keep dependencies updated"?**
 Because reachability matters more than raw version mismatches — `govulncheck` cross-references the Go vulnerability database against your module's actual dependency graph and reports only the vulnerabilities your code can actually reach, which is a far more actionable signal than a blanket "37 known CVEs in your dependency tree" report that buries the two that matter among dozens that don't apply to how you're using the library.

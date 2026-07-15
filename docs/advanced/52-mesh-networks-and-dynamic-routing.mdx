@@ -18,7 +18,7 @@ This is the same problem the internet's core routers solve with protocols like O
 
 ## Distance-Vector vs. Link-State, Briefly
 
-Real mesh routing protocols (AODV, OLSR, B.A.T.M.A.N.) are variations on two classic strategies you likely met in Part 1 of this book:
+Real mesh routing protocols (AODV, OLSR, B.A.T.M.A.N.) are variations on two classic strategies:
 
 - **Distance-vector**: each node tells its neighbors "here's my best-known cost to reach every destination I know about." Neighbors use that to update their own tables (a Bellman-Ford-style relaxation). Simple to implement, can be slow to converge after a topology change.
 - **Link-state**: each node floods the entire network with "here are my direct neighbors and link costs," and every node independently computes shortest paths from the full picture (Dijkstra). Converges faster, costs more bandwidth and memory per node.

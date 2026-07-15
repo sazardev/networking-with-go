@@ -11,9 +11,9 @@ title: "Network Segmentation and Microsegmentation"
 
 ## Limiting the Blast Radius
 
-Chapter 4.15 introduced zero trust as a policy philosophy: never trust a connection just because of where it came from. **Segmentation** is the structural tool that makes enforcing that policy practical — dividing a network into smaller zones with controlled boundaries between them, so that a compromise in one zone doesn't automatically grant access to every other zone.
+Chapter 5.15 introduced zero trust as a policy philosophy: never trust a connection just because of where it came from. **Segmentation** is the structural tool that makes enforcing that policy practical — dividing a network into smaller zones with controlled boundaries between them, so that a compromise in one zone doesn't automatically grant access to every other zone.
 
-The core benefit is containment. If an attacker compromises one host, the question that matters most afterward is: what else can they reach *from there*? A flat network answers "everything." A well-segmented network answers "almost nothing" — which directly limits the scope of the incident response described in Chapter 4.9.
+The core benefit is containment. If an attacker compromises one host, the question that matters most afterward is: what else can they reach *from there*? A flat network answers "everything." A well-segmented network answers "almost nothing" — which directly limits the scope of the incident response described in Chapter 5.9.
 
 ---
 
@@ -38,7 +38,7 @@ This is usually implemented through:
 
 - **Host-based firewalls** enforcing rules per machine rather than relying solely on a network device upstream.
 - **Software-defined networking (SDN) policies** that travel with a workload regardless of which physical host or subnet it's scheduled onto — essential in dynamic, container-orchestrated environments where IP addresses are not stable identifiers.
-- **Service mesh sidecars**, common in Kubernetes environments, which enforce per-service authorization and encryption (often via mutual TLS, tying directly back to Chapter 4.12 and 4.15) at the level of individual service calls rather than network segments.
+- **Service mesh sidecars**, common in Kubernetes environments, which enforce per-service authorization and encryption (often via mutual TLS, tying directly back to Chapter 5.12 and 5.15) at the level of individual service calls rather than network segments.
 
 The practical difference from traditional segmentation: a traditional firewall rule might say "the app tier can reach the database tier on port 5432." A microsegmentation policy says "*this specific service* can reach *this specific database service*, and nothing else in the database tier can be reached by it at all" — a much tighter, per-relationship model of trust.
 
@@ -55,7 +55,7 @@ import "fmt"
 
 // policy maps a source service to the set of destination services
 // it is explicitly permitted to reach. Anything not listed is denied
-// by default — the "fail closed" habit from Chapter 4.1.
+// by default — the "fail closed" habit from Chapter 5.1.
 var policy = map[string][]string{
 	"web-frontend":  {"auth-service", "api-gateway"},
 	"api-gateway":   {"orders-service", "inventory-service"},
@@ -85,7 +85,7 @@ func main() {
 }
 ```
 
-Notice that `web-frontend` cannot reach `orders-db` directly even though it can reach services that eventually do — exactly the kind of containment that limits how far a single compromised service can pivot, since a real policy enforcement point (Chapter 4.15) would block that connection attempt entirely rather than letting a compromised frontend probe the database tier directly.
+Notice that `web-frontend` cannot reach `orders-db` directly even though it can reach services that eventually do — exactly the kind of containment that limits how far a single compromised service can pivot, since a real policy enforcement point (Chapter 5.15) would block that connection attempt entirely rather than letting a compromised frontend probe the database tier directly.
 
 ---
 
@@ -106,7 +106,7 @@ It looks that way from a distance, but the granularity is the whole point. A VLA
 Both, and which one depends entirely on how tight the policy is. A traditional "app tier can reach database tier" rule mostly slows an attacker down — they still have a path, just a coarser one to abuse. A true microsegmentation policy, like the allow-list in this chapter's Go example, can stop lateral movement outright: `web-frontend` has no listed path to `orders-db`, so the connection attempt is refused at the enforcement point, not merely logged and permitted anyway.
 
 **Why does the sample policy deny by default instead of listing what's forbidden?**
-Because a deny-list has to anticipate every bad path in advance, and attackers are good at finding the one nobody thought to write down. An allow-list only has to get the legitimate paths right, and anything else — including a path nobody imagined yet — is refused automatically. That's the same "fail closed" habit Chapter 4.1 introduced, just applied at the segmentation layer instead of the firewall rule layer.
+Because a deny-list has to anticipate every bad path in advance, and attackers are good at finding the one nobody thought to write down. An allow-list only has to get the legitimate paths right, and anything else — including a path nobody imagined yet — is refused automatically. That's the same "fail closed" habit Chapter 5.1 introduced, just applied at the segmentation layer instead of the firewall rule layer.
 
 **We segmented aggressively and now legitimate deploys keep breaking. What went wrong?**
 Almost always it's policy drift: the segmentation rules were hand-written for the architecture as it existed on day one, and the services evolved without anyone updating the rules alongside them. This is exactly why the chapter points to policy as code — version-controlled, declarative segmentation rules deployed in the same pipeline as the services they govern, so a new service-to-service dependency shows up as a reviewable diff instead of a mystery outage.
@@ -118,4 +118,4 @@ Zero trust is the philosophy — never grant trust based on network location alo
 
 ## Closing Part 3's First Arc
 
-Chapters 4.1 through 4.16 have moved from fundamentals through hands-on Go tooling to the architectural principles — zero trust and segmentation — that shape how secure networks are actually built and operated. The chapters ahead go deeper into detection, response at scale, and the offensive and defensive disciplines that build on everything covered here.
+Chapters 5.1 through 5.16 have moved from fundamentals through hands-on Go tooling to the architectural principles — zero trust and segmentation — that shape how secure networks are actually built and operated. The chapters ahead go deeper into detection, response at scale, and the offensive and defensive disciplines that build on everything covered here.

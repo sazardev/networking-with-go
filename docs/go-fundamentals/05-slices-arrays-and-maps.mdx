@@ -1,0 +1,397 @@
+---
+id: "[2.5.0]"
+title: "Slices, Arrays, and Maps"
+---
+
+# Slices, Arrays, and Maps
+
+Look back at every code example in the last chapter and a pattern shows
+up you probably didn't stop to question: `[]Rectangle`, `[]T`, and — a
+few chapters from now — things like `map[string]int` showing up as
+casually as `int` or `string` ever did. You've been reading them on
+instinct, the way you'd read a sentence in a language you're only
+starting to learn: close enough to guess the meaning, not close enough
+to notice what's actually happening underneath. That gap is exactly what
+this chapter closes, and it's worth closing properly, because slices and
+maps are involved in more real-world Go bugs — and more Go job interview
+questions — than arguably any other pair of features in the language.
+
+> An array is a shelf built to hold exactly twelve boxes, permanently
+> part of the shelf's own blueprint. A slice is a window someone cut into
+> that shelf — it shows you some of the boxes, it can be resized to show
+> more or fewer, and disturbingly, two completely different windows can
+> sometimes be looking at the exact same boxes without either window
+> knowing the other exists.
+
+## Arrays: Fixed, Rarely Used Directly
+
+An array's length is part of its type, fixed at compile time:
+
+```go
+var nums [5]int
+nums[0] = 10
+fmt.Println(nums) // [10 0 0 0 0]
+
+primes := [5]int{2, 3, 5, 7, 11}
+fmt.Println(len(primes)) // 5
+```
+
+`[5]int` and `[10]int` are two entirely different types — you cannot
+assign one to the other, and a function written to accept `[5]int`
+rejects a `[10]int` at compile time, even though both are "arrays of
+int." This rigidity is exactly why arrays show up rarely in idiomatic Go
+code outside of a few specialized spots (fixed-size buffers, cryptographic
+hashes like `[32]byte`, coordinate types like `[3]float64`) — almost
+everywhere else, you reach for a slice instead.
+
+Arrays are also copied by value, just like the basic types from Chapter
+2 and the structs from Chapter 4:
+
+```go
+a := [3]int{1, 2, 3}
+b := a
+b[0] = 99
+fmt.Println(a, b) // [1 2 3] [99 2 3] — b is a fully independent copy
+```
+
+<Warning title="Passing an array to a function copies the whole thing">Unlike a slice, passing an array as a function argument copies every single element — a `[10000]int` parameter copies ten thousand integers on every call, silently. This surprises people coming from languages where array-like things are always passed by reference. If you want a function to see or modify the caller's original data, pass a slice or a pointer to the array, not the array itself.</Warning>
+
+Arrays of the same length and element type are comparable with `==`,
+which compares every element — another thing slices cannot do at all, as
+you'll see shortly.
+
+## Slices: Go's Real Workhorse
+
+A slice looks like an array with the length omitted from its type
+(`[]int` instead of `[5]int`), but it is a fundamentally different kind
+of value underneath: a small header holding a pointer to some underlying
+array, a length, and a capacity.
+
+```go
+nums := []int{10, 20, 30}
+fmt.Println(len(nums)) // 3
+```
+
+```go
+grid := make([]int, 3)    // length 3, all zero: [0 0 0]
+buf := make([]int, 0, 10) // length 0, capacity 10 — room to grow, no realloc
+```
+
+<DeepDive title="What a slice actually is, underneath">A slice value is a three-word struct: a pointer to the first element it can see in some backing array, a length (how many elements it currently reports), and a capacity (how many elements exist in the backing array from that pointer onward, including ones the slice doesn't currently show). `len(s)` and `cap(s)` read those last two fields directly. This is why passing a slice to a function is cheap — you're copying three words, not the underlying data — and also why two slices can share the same backing array while disagreeing about how much of it they currently expose.</DeepDive>
+
+Slicing an existing slice (or array) with `s[low:high]` produces a new
+slice header pointing at the *same* backing array, starting at `low` and
+stopping just before `high`:
+
+```go
+letters := []string{"a", "b", "c", "d", "e"}
+middle := letters[1:4]
+fmt.Println(middle) // [b c d]
+```
+
+<Axiom>A slice is not a copy of data — it's a window onto data. Two slices can look completely independent while quietly sharing every byte they show you.</Axiom>
+
+## Growing a Slice: append and the Aliasing Trap
+
+`append` adds elements to a slice, returning a (possibly new) slice that
+includes them:
+
+```go
+nums := []int{1, 2, 3}
+nums = append(nums, 4)
+fmt.Println(nums) // [1 2 3 4]
+```
+
+Notice the reassignment: `nums = append(nums, 4)` is required, not
+optional style. If the slice's current capacity has room for the new
+element, `append` writes it directly into the existing backing array and
+returns a slice with the same pointer, just a larger length. If there
+isn't room, `append` allocates a brand-new, larger backing array, copies
+everything over, and returns a slice pointing at that new array instead.
+Ignoring the return value silently discards the appended element in the
+second case, and is a genuine, easy-to-write bug:
+
+```go
+func addOne(s []int) {
+	s = append(s, 1) // reassigns the LOCAL s, caller's slice is unchanged
+}
+
+nums := []int{1, 2, 3}
+addOne(nums)
+fmt.Println(nums) // [1 2 3] — the 1 never made it back to the caller
+```
+
+That capacity-dependent behavior is the source of one of Go's most
+famous gotchas: two slices sharing a backing array can start silently
+interfering with each other the moment one of them appends within its
+existing capacity.
+
+```go
+base := make([]int, 3, 5) // len 3, cap 5 — two spare slots
+base[0], base[1], base[2] = 1, 2, 3
+
+a := base[0:2]        // [1 2], shares base's backing array
+a = append(a, 99)     // fits in base's spare capacity — writes in place
+
+fmt.Println(base) // [1 2 99] — base[2] got silently overwritten!
+fmt.Println(a)    // [1 2 99]
+```
+
+`append(a, 99)` didn't need to allocate anything new, because `a`'s
+underlying array (which is `base`'s array) had a spare slot right after
+where `a` currently ends — so `append` used it, and that slot happened to
+be `base[2]`, which held `3` a moment ago. Nothing in this program is
+buggy Go — every rule was followed exactly as documented — and yet
+`base` changed after a call that only mentioned `a`.
+
+<Warning title="Two slices sharing a backing array is a silent hazard, not an error">Neither slicing an existing slice nor appending to the result ever produces a compiler warning, a runtime panic, or any other visible signal that two slices might now alias the same memory. The only defenses are discipline (don't keep two overlapping slices of the same backing array alive across appends you don't fully control) and the three-index slice expression covered next, which caps a sub-slice's capacity so it can never grow into memory another slice is using.</Warning>
+
+## Full Slice Expressions: Capping Capacity on Purpose
+
+A third index, `s[low:high:max]`, sets not just the new slice's length
+(`high - low`, same as the two-index form) but also its capacity
+(`max - low`). Capping capacity this way forces the *next* `append` on
+that slice to always allocate a fresh backing array instead of possibly
+reusing shared memory:
+
+```go
+base := make([]int, 3, 5)
+base[0], base[1], base[2] = 1, 2, 3
+
+a := base[0:2:2]      // len 2, cap 2 — no spare room borrowed from base
+a = append(a, 99)     // capacity is full, so this allocates a NEW array
+
+fmt.Println(base) // [1 2 3] — completely untouched this time
+fmt.Println(a)    // [1 2 99] — its own independent backing array
+```
+
+<DeepDive title="When to actually reach for the three-index form">Most Go code never needs `s[low:high:max]` — the two-index form is simpler and the aliasing trap above is rare in practice, since most slices don't outlive the function that created them. Reach for the three-index form specifically when you're handing a sub-slice of a larger buffer to code you don't control (or don't want to audit) and need a hard guarantee that its `append` calls can never bleed into your own data.</DeepDive>
+
+## Copying Slices Explicitly with copy
+
+When you need a genuinely independent copy rather than a differently-capped
+view, the built-in `copy` function copies elements from a source slice
+into a destination slice, up to the length of whichever is shorter:
+
+```go
+src := []int{1, 2, 3}
+dst := make([]int, len(src))
+n := copy(dst, src)
+dst[0] = 99
+fmt.Println(src, dst, n) // [1 2 3] [99 2 3] 3
+```
+
+`copy` returns the number of elements actually copied, which is worth
+checking whenever `dst` might be shorter than `src` — a partial copy is
+silent otherwise, with no error and no panic.
+
+## nil Slices vs. Empty Slices
+
+A declared-but-unassigned slice is `nil`, not merely empty — but,
+unusually for Go, a `nil` slice is still perfectly safe to read from and
+append to:
+
+```go
+var s []int
+fmt.Println(s == nil, len(s), cap(s)) // true 0 0
+s = append(s, 1) // works fine — allocates a backing array on first use
+```
+
+| | `var s []int` | `s := []int{}` | `s := make([]int, 0)` |
+|---|---|---|---|
+| Is it `nil`? | Yes | No | No |
+| `len(s)` | 0 | 0 | 0 |
+| Safe to `append` to? | Yes | Yes | Yes |
+| Encodes to JSON as | `null` | `[]` | `[]` |
+
+<Warning title="nil vs. empty matters most at API boundaries">Internally, `len(s) == 0` is almost always the right check — both a nil and an empty slice pass it identically, and both are safe to range over or append to. The distinction becomes visible (and sometimes load-bearing) the moment a slice crosses a boundary that cares about the difference, most commonly `encoding/json`: a `nil` slice marshals to `null`, while an empty-but-non-nil slice marshals to `[]` — a real difference for any API consumer expecting an array back.</Warning>
+
+## Maps: Key-Value Lookups
+
+A map associates keys of one type with values of another, and — like
+slices — is built into the language rather than bolted on as a library
+type:
+
+```go
+ages := map[string]int{
+	"alice": 30,
+	"bob":   25,
+}
+ages["carol"] = 40
+fmt.Println(ages["alice"]) // 30
+```
+
+Looking up a key that doesn't exist returns the value type's zero value,
+silently — which is exactly why the two-value form exists, to distinguish
+"present with a zero value" from "genuinely absent":
+
+```go
+count, ok := ages["dave"]
+if !ok {
+	fmt.Println("dave not found")
+}
+fmt.Println(count) // 0 — the int zero value, whether or not ok was true
+```
+
+`delete(m, key)` removes a key, and is a no-op (not an error) if the key
+was never present:
+
+```go
+delete(ages, "bob")
+```
+
+<Warning title="Writing to a nil map panics — reading from one does not">A declared-but-unassigned map, `var m map[string]int`, is `nil`. Reading from it works exactly like an empty map (`m["x"]` returns the zero value, `ok` is `false`) — but writing to it, `m["x"] = 1`, panics immediately with `assignment to entry in nil map`. Always initialize a map you intend to write to, with either a literal (`map[string]int{}`) or `make(map[string]int)`, before the first write.</Warning>
+
+## Map Iteration Order Is Deliberately Random
+
+Ranging over a map visits its entries, but in an order the language
+explicitly refuses to guarantee — and, since Go 1, the runtime actively
+randomizes that order on every single iteration, on purpose:
+
+```go
+for key, value := range ages {
+	fmt.Println(key, value) // order changes between runs, and even
+	                          // between two loops in the same run
+}
+```
+
+<Axiom>Go didn't leave map order unspecified out of laziness — the runtime actively randomizes it, specifically so no one can accidentally write code that depends on an ordering the spec never promised. A bug that only shows up "sometimes" is far more expensive to find than one that shows up every time; randomizing iteration order turns a rare, environment-dependent bug into one you'll catch in testing almost immediately.</Axiom>
+
+<DeepDive title="Why this is treated as a security property, not just a style choice">Before Go's runtime started randomizing map iteration deliberately, several real-world services were shown to leak information through timing or ordering side-channels tied to hash-map internals — an attacker who could influence which keys got inserted could sometimes infer things about a map's internal layout. Randomized iteration order closes that class of issue by design, at the language level, rather than leaving it to every individual programmer to remember. If you need a specific order, extract the keys into a slice and sort that slice explicitly — never rely on map ranging order to mean anything.</DeepDive>
+
+## Maps Are Reference-Like, and Not Comparable
+
+Passing a map to a function passes the same header a slice would — a
+small internal pointer to the map's actual data — so mutations inside the
+function are visible to the caller, unlike a struct or array argument:
+
+```go
+func addEntry(m map[string]int) {
+	m["z"] = 100 // visible to the caller — no return value needed
+}
+
+scores := map[string]int{}
+addEntry(scores)
+fmt.Println(scores) // map[z:100]
+```
+
+Unlike arrays and most structs, maps cannot be compared with `==` at all
+(except to `nil`) — the compiler rejects it outright:
+
+```go
+a := map[string]int{"x": 1}
+b := map[string]int{"x": 1}
+// a == b // compile error: invalid operation: a == b (map can only be
+//           compared to nil)
+```
+
+For genuine content comparison, use `maps.Equal` (Go 1.21+, from the
+standard library's `maps` package) or `reflect.DeepEqual` for older code:
+
+```go
+import "maps"
+
+fmt.Println(maps.Equal(a, b)) // true — same keys, same values
+```
+
+## The slices and maps Standard Library Packages
+
+Go 1.21 added `slices` and `maps` packages to the standard library, built
+entirely on the generics you met in Chapter 4 — for the everyday
+operations you'd otherwise hand-write a loop for, every time:
+
+```go
+import "slices"
+
+nums := []int{5, 2, 8, 1}
+slices.Sort(nums)
+fmt.Println(nums)                     // [1 2 5 8]
+fmt.Println(slices.Contains(nums, 8)) // true
+fmt.Println(slices.Max(nums))         // 8
+```
+
+```go
+import "maps"
+
+ages := map[string]int{"alice": 30, "bob": 25}
+for k := range maps.Keys(ages) {
+	fmt.Println(k) // still unordered — Keys doesn't change that
+}
+```
+
+<DeepDive title="Why these packages matter beyond convenience">Before Go 1.21, every codebase either wrote its own `Contains`/`Sort`/`Equal` helpers per element type, or reached for `sort.Slice` with a hand-written comparison closure. `slices` and `maps` are the standard library finally providing one correct, well-tested, generic version of each — the same reasoning from Chapter 4's note that `slices`/`maps` are usually the first place to reach for generic behavior rather than writing it yourself.</DeepDive>
+
+## Arrays, Slices, and Maps at a Glance
+
+| | Array | Slice | Map |
+|---|---|---|---|
+| Size | Fixed, part of the type | Dynamic, grows via `append` | Dynamic |
+| Zero value | All elements zeroed | `nil` (safe to read/append) | `nil` (safe to read, NOT write) |
+| Passed to a function as | A full copy | A small header (shared data) | A small header (shared data) |
+| Comparable with `==` | Yes, element-by-element | No — compile error | No — compile error (except to `nil`) |
+| Iteration order | Index order, guaranteed | Index order, guaranteed | Deliberately randomized |
+
+### Try It Yourself
+
+Reproduce the aliasing bug from this chapter, then fix it two different
+ways:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+	base := make([]int, 3, 5)
+	base[0], base[1], base[2] = 1, 2, 3
+
+	a := base[0:2]
+	a = append(a, 99)
+
+	fmt.Println("base:", base)
+	fmt.Println("a:", a)
+}
+```
+
+1. Run it as-is and confirm `base` shows `[1 2 99]` — the silent
+   overwrite described earlier in this chapter.
+2. Fix it using a full slice expression: change `a := base[0:2]` to
+   `a := base[0:2:2]`, re-run, and confirm `base` is now untouched.
+3. Fix it a second, different way: revert to `a := base[0:2]`, but build
+   `a` as an independent copy instead, using `make` and `copy`. Confirm
+   `base` is untouched with this approach too.
+4. **Bonus:** write a small `map[string][]int` (a map whose values are
+   slices), append to one of its slice values in a loop, and print the
+   map afterward to confirm the mutation is visible — since a map's
+   values are ordinary Go values, but a slice value stored in one still
+   behaves exactly like any other slice.
+
+## Frequently Asked Questions
+
+**Why does Go even have both arrays and slices instead of just one flexible type?**
+Arrays exist mostly to give slices something to point at, and for the rare cases (fixed-size hashes, small fixed coordinate types) where a guaranteed, compile-time-fixed size is itself the point. In everyday code, if you're not sure which one you want, you want a slice — arrays are the exception, not the default.
+
+**Is `append` ever unsafe to use without reassigning the result?**
+Not unsafe exactly, but its result is very easy to discard incorrectly. `append` may or may not return a slice pointing at new memory, and the language gives you no way to tell which happened just by looking at the call — so `s = append(s, x)` is the only form that's correct in every case, and the shorter-looking `append(s, x)` alone silently drops the new element whenever growth actually occurred.
+
+**Why can't I compare two slices or two maps with `==`?**
+Because there's no single obviously-correct definition of "equal" that the compiler could pick for you automatically — should two slices sharing a backing array but different lengths be equal? Should map key order matter? Go sidesteps the ambiguity by refusing to compile `==` on these types at all, and hands you explicit tools (`slices.Equal`, `maps.Equal`, or a hand-written loop) to define equality on your own terms instead.
+
+**If map order is random, how do I print a map's contents in a predictable order for logs or tests?**
+Copy the keys into a slice, sort that slice, and range over the sorted slice instead of the map directly — `keys := make([]string, 0, len(m))`, append each key, `slices.Sort(keys)`, then look each one up in `m` as you print it. This is such a common pattern that reaching for it should become close to automatic once you've been burned by a flaky test that assumed map order once.
+
+**Does everything in this chapter apply the same way to strings, since they're sort of like a slice of bytes?**
+Mostly yes for read access — a string can be sliced with `s[low:high]` and shares memory with its source the same way a slice does — but strings are immutable, so there's no `append`-style mutation and no aliasing-write hazard to worry about. The rune-vs-byte indexing subtlety from Chapter 2 is the bigger gotcha with strings specifically; the slicing mechanics here are the same underlying idea, just with the mutation risk removed.
+
+### Where This Goes From Here
+
+Every one of these three types has quietly assumed something in the
+background that's easy to take for granted once you've internalized it:
+that a slice knows its own length, that a map lookup either finds
+something or doesn't, that `append` and `delete` do exactly what their
+names promise with no hidden failure mode to check for. The next chapter
+breaks a much bigger assumption open on purpose — the one about what
+happens when an operation can fail outright. Go has no exceptions, which
+means failure has to be handled some other way, and that "some other
+way" turns out to be one of the most opinionated, and most argued-about,
+decisions in the entire language.

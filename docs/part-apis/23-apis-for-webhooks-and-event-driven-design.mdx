@@ -123,7 +123,7 @@ func sendWithRetry(url, secret string, event any) error {
 }
 ```
 
-Most production webhook senders queue this retry logic through the background job system from the previous chapter rather than blocking the original request — the event that triggers the webhook (an order shipping) shouldn't be delayed by a slow or unreachable receiver.
+Most production webhook senders queue this retry logic through the background job system from an earlier chapter rather than blocking the original request — the event that triggers the webhook (an order shipping) shouldn't be delayed by a slow or unreachable receiver.
 
 <DeepDive title="Give receivers a way to replay history">However good your retry logic is, receivers will occasionally miss events — a deploy during the retry window, a misconfigured endpoint fixed a day later. A `GET /events?since=...` endpoint, or a dashboard listing recent webhook deliveries with a manual "resend" button, turns an unrecoverable gap into a two-minute fix, and every mature webhook provider (Stripe, GitHub) offers exactly this.</DeepDive>
 

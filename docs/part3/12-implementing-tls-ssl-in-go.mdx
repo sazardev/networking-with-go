@@ -11,13 +11,13 @@ title: "Implementing TLS/SSL in Go"
 
 ## What TLS Actually Buys You
 
-**TLS (Transport Layer Security)** — the modern successor to the now-obsolete SSL, though the name "SSL" persists in casual use — sits between the transport layer (TCP) and the application protocol (HTTP, SMTP, or your own custom protocol), providing three guarantees that map directly onto the CIA triad from Chapter 4.1:
+**TLS (Transport Layer Security)** — the modern successor to the now-obsolete SSL, though the name "SSL" persists in casual use — sits between the transport layer (TCP) and the application protocol (HTTP, SMTP, or your own custom protocol), providing three guarantees that map directly onto the CIA triad from Chapter 5.1:
 
-- **Confidentiality** — the connection is encrypted, so a passive observer on the path (Chapter 4.5's sniffer, for instance) sees ciphertext, not your data.
+- **Confidentiality** — the connection is encrypted, so a passive observer on the path (Chapter 5.5's sniffer, for instance) sees ciphertext, not your data.
 - **Integrity** — TLS records include authentication, so tampering in transit is detectable.
-- **Authentication** — the client can verify the server is actually who it claims to be, via a certificate chain (Chapter 4.13), which is what closes the man-in-the-middle door from Chapter 4.3.
+- **Authentication** — the client can verify the server is actually who it claims to be, via a certificate chain (Chapter 5.13), which is what closes the man-in-the-middle door from Chapter 5.3.
 
-Go's `crypto/tls` package implements the protocol directly in the standard library — no external dependency required, and it's actively maintained as part of Go's security process (Chapter 4.11 mentions the Go vulnerability database that tracks issues here).
+Go's `crypto/tls` package implements the protocol directly in the standard library — no external dependency required, and it's actively maintained as part of Go's security process (Chapter 5.11 mentions the Go vulnerability database that tracks issues here).
 
 ---
 
@@ -54,7 +54,7 @@ func main() {
 	}
 
 	// cert.pem/key.pem here would be a real certificate in production
-	// (Chapter 4.13) or a self-signed pair for local testing.
+	// (Chapter 5.13) or a self-signed pair for local testing.
 	log.Fatal(server.ListenAndServeTLS("cert.pem", "key.pem"))
 }
 ```
@@ -105,7 +105,7 @@ func main() {
 
 Note what's *not* in this code: `InsecureSkipVerify`. That field exists on `tls.Config` and disables certificate verification entirely — useful only for narrow, controlled testing scenarios, and one of the most common serious mistakes in Go TLS code. Setting it to `true` in anything reaching a real network makes the client accept a certificate from literally anyone, silently reintroducing the exact man-in-the-middle risk TLS exists to prevent.
 
-<Warning title="Never ship InsecureSkipVerify: true">Code with `tls.Config{InsecureSkipVerify: true}` will work perfectly in testing and then silently accept a forged certificate in production. If you need to trust a private or self-signed CA, add it to a custom `RootCAs` certificate pool (Chapter 4.13) instead of disabling verification altogether.</Warning>
+<Warning title="Never ship InsecureSkipVerify: true">Code with `tls.Config{InsecureSkipVerify: true}` will work perfectly in testing and then silently accept a forged certificate in production. If you need to trust a private or self-signed CA, add it to a custom `RootCAs` certificate pool (Chapter 5.13) instead of disabling verification altogether.</Warning>
 
 ---
 
@@ -117,13 +117,13 @@ For TLS 1.3, Go doesn't allow configuring cipher suites at all — the small, mo
 
 ## Mutual TLS, in One Field
 
-Setting `ClientAuth: tls.RequireAndVerifyClientCert` on a server's `tls.Config` flips the authentication around: the client must also present a valid certificate, verified by the server, before the handshake completes. This pattern — **mutual TLS (mTLS)** — is a cornerstone of zero trust network design, covered fully in Chapter 4.15.
+Setting `ClientAuth: tls.RequireAndVerifyClientCert` on a server's `tls.Config` flips the authentication around: the client must also present a valid certificate, verified by the server, before the handshake completes. This pattern — **mutual TLS (mTLS)** — is a cornerstone of zero trust network design, covered fully in Chapter 5.15.
 
 ---
 
 ## Testing Your Own TLS Configuration
 
-Once a service is serving TLS, it's worth routinely checking what it actually negotiates, not just what you intended to configure — a dependency upgrade or a copy-pasted config can quietly change behavior. The `ConnectionState()` call used in the client example above is one way to do this from Go directly; the header-auditing tool from Chapter 4.7 could just as easily be extended to record the negotiated TLS version and certificate expiry (Chapter 4.13) for every service in a fleet, turning "we think everything is on TLS 1.3" into something you actually verify on a schedule rather than assume.
+Once a service is serving TLS, it's worth routinely checking what it actually negotiates, not just what you intended to configure — a dependency upgrade or a copy-pasted config can quietly change behavior. The `ConnectionState()` call used in the client example above is one way to do this from Go directly; the header-auditing tool from Chapter 5.7 could just as easily be extended to record the negotiated TLS version and certificate expiry (Chapter 5.13) for every service in a fleet, turning "we think everything is on TLS 1.3" into something you actually verify on a schedule rather than assume.
 
 ## Frequently Asked Questions
 
@@ -131,10 +131,10 @@ Once a service is serving TLS, it's worth routinely checking what it actually ne
 In casual conversation, sure, and this chapter uses "TLS/SSL" in its own title for exactly that reason — but technically SSL is the older, now-obsolete protocol family that TLS replaced, and no modern Go code should ever negotiate an actual SSL version. When you write `crypto/tls` in Go, you are always working with TLS; the "SSL" name survives mostly out of habit from products and documentation that predate the rename.
 
 **My server works fine locally with `InsecureSkipVerify: true` but I've heard that's dangerous — why, if it "works"?**
-It works precisely because it's not checking anything — that flag tells the client to accept literally any certificate presented, valid or forged, which defeats the authentication guarantee that closes the man-in-the-middle door from Chapter 4.3. It looks identical to a correctly working connection in every test you'll run yourself, which is exactly what makes it so easy to accidentally ship; the fix from the chapter is to add your private or self-signed CA to a `RootCAs` pool instead of disabling verification.
+It works precisely because it's not checking anything — that flag tells the client to accept literally any certificate presented, valid or forged, which defeats the authentication guarantee that closes the man-in-the-middle door from Chapter 5.3. It looks identical to a correctly working connection in every test you'll run yourself, which is exactly what makes it so easy to accidentally ship; the fix from the chapter is to add your private or self-signed CA to a `RootCAs` pool instead of disabling verification.
 
 **Why does TLS 1.3 not let me choose cipher suites the way TLS 1.2 does?**
 Because most historical TLS misconfigurations came from someone unknowingly leaving a weak or deprecated cipher enabled, so TLS 1.3 removes that entire decision from the table and ships with only a small, modern, carefully vetted set used automatically. It's a deliberate design choice to make the safe configuration the only configuration, rather than trusting every implementer to pick correctly.
 
-**What's the practical difference between the TLS work in this chapter and the mutual TLS mentioned for zero trust in Chapter 4.15?**
-This chapter's examples authenticate one direction — the client verifies the server's certificate, which is the ordinary browser-to-website model. Setting `ClientAuth: tls.RequireAndVerifyClientCert` flips that around so the server also demands and verifies a certificate from the client, and Chapter 4.15 builds on that single field as a cornerstone of verifying every connection by identity rather than by network location.
+**What's the practical difference between the TLS work in this chapter and the mutual TLS mentioned for zero trust in Chapter 5.15?**
+This chapter's examples authenticate one direction — the client verifies the server's certificate, which is the ordinary browser-to-website model. Setting `ClientAuth: tls.RequireAndVerifyClientCert` flips that around so the server also demands and verifies a certificate from the client, and Chapter 5.15 builds on that single field as a cornerstone of verifying every connection by identity rather than by network location.

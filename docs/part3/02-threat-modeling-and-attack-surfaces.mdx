@@ -108,13 +108,13 @@ func main() {
 }
 ```
 
-Running this immediately highlights `admin-panel` as the entry to review first: it's public-facing and has no authentication in this snapshot — exactly the kind of finding a real threat-modeling session is meant to surface before it becomes an incident report in Chapter 4.9.
+Running this immediately highlights `admin-panel` as the entry to review first: it's public-facing and has no authentication in this snapshot — exactly the kind of finding a real threat-modeling session is meant to surface before it becomes an incident report in Chapter 5.9.
 
 ---
 
 ## From Threats to Priorities
 
-Once you've listed threats, you still need to decide what to fix first. Most teams use some variant of **likelihood x impact**: a threat that's easy to pull off and devastating if it succeeds outranks one that's theoretical and low-consequence. This is also where formal vulnerability scoring (CVSS, covered in Chapter 4.6) becomes useful once you move from your own designs to assessing known software.
+Once you've listed threats, you still need to decide what to fix first. Most teams use some variant of **likelihood x impact**: a threat that's easy to pull off and devastating if it succeeds outranks one that's theoretical and low-consequence. This is also where formal vulnerability scoring (CVSS, covered in Chapter 5.6) becomes useful once you move from your own designs to assessing known software.
 
 <Axiom>You cannot secure what you haven't mapped. Every minute spent listing entry points is a minute not spent guessing at your defenses later.</Axiom>
 
@@ -131,7 +131,7 @@ It's a bit more structured than that — the whole point of vocabulary like asse
 Yes, and this chapter calls that out specifically: entry points you didn't intentionally design are still entry points. An admin panel or debug route with no authentication scores as high-risk in the sample inventory above precisely because attackers don't care whether you meant to expose it; they only care that it's reachable.
 
 **How does STRIDE relate to the CVSS scoring mentioned near the end?**
-STRIDE and likelihood-times-impact prioritization are how you find and rank threats in something you're designing yourself; CVSS is a standardized version of that same likelihood/impact judgment applied to already-known vulnerabilities in software you didn't write, which is why Chapter 4.6 picks it up when the conversation shifts to scanning for known issues rather than modeling your own architecture.
+STRIDE and likelihood-times-impact prioritization are how you find and rank threats in something you're designing yourself; CVSS is a standardized version of that same likelihood/impact judgment applied to already-known vulnerabilities in software you didn't write, which is why Chapter 5.6 picks it up when the conversation shifts to scanning for known issues rather than modeling your own architecture.
 
 **Do I need to redo the full threat model every time I ship a small change?**
 Not the whole diagram, but yes to the habit — a new endpoint, dependency, or network path each deserve a quick pass through the same questions (what's the asset, who can reach it, what could go wrong). Treating threat modeling as a living habit rather than a one-time document is exactly what keeps the attack surface from silently growing underneath you.

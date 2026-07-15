@@ -36,9 +36,9 @@ Security work means holding both views in your head simultaneously. You are stil
 
 Chapter 1.10 introduced the CIA triad as a general security model. Applied specifically to networking, it looks like this:
 
-- **Confidentiality:** Can someone on the path between two hosts read data they shouldn't? This is why we encrypt traffic with TLS (Chapter 4.12) instead of sending credentials in plaintext.
+- **Confidentiality:** Can someone on the path between two hosts read data they shouldn't? This is why we encrypt traffic with TLS (Chapter 5.12) instead of sending credentials in plaintext.
 - **Integrity:** Can someone alter data in transit without either side noticing? Checksums, message authentication codes, and TLS record integrity all exist to answer "no."
-- **Availability:** Can someone make the service unusable by flooding it, exhausting its resources, or severing its connectivity? This is the domain of denial-of-service defenses (Chapter 4.3).
+- **Availability:** Can someone make the service unusable by flooding it, exhausting its resources, or severing its connectivity? This is the domain of denial-of-service defenses (Chapter 5.3).
 
 Almost every technique in this part of the book maps back to protecting one or more of these three properties over the network.
 
@@ -50,7 +50,7 @@ Modern network security design leans on a few recurring principles that will res
 
 - **Defense in depth:** no single control is perfect, so layer several (firewall, TLS, authentication, monitoring) so that one failure doesn't mean total compromise.
 - **Least privilege:** a service should only be able to reach — and be reached by — exactly what it needs, nothing more.
-- **Assume breach:** design as if an attacker is already somewhere on your network, and ask what limits the damage they can do from there. This idea reappears fully in Chapter 4.15 (Zero Trust).
+- **Assume breach:** design as if an attacker is already somewhere on your network, and ask what limits the damage they can do from there. This idea reappears fully in Chapter 5.15 (Zero Trust).
 - **Fail closed:** when something goes wrong (a certificate doesn't validate, a permission check errors out), the safe default is to deny, not allow.
 
 None of these principles require exotic tools. They're design habits, and Go's explicit error handling and strong typing make them easier to apply than in languages that let you silently ignore a failed check.
@@ -95,13 +95,13 @@ func main() {
 }
 ```
 
-This is deliberately simple — a real inventory would pull from your infrastructure rather than a hardcoded slice — but the shape of the thinking is exactly what Chapter 4.2 (Threat Modeling) builds on: know what you have, know what's exposed, know what property matters most for each thing.
+This is deliberately simple — a real inventory would pull from your infrastructure rather than a hardcoded slice — but the shape of the thinking is exactly what Chapter 5.2 (Threat Modeling) builds on: know what you have, know what's exposed, know what property matters most for each thing.
 
 ---
 
 ## What "Hacking" Means in This Book
 
-<Warning title="Scope and authorization">Every scanning, sniffing, and exploitation technique in Part 3 is presented for use in environments you own or are explicitly authorized to test: your own lab, a virtual machine, a CTF, or a target covered by a signed penetration-testing agreement. Running these techniques against systems you don't own or lack permission to test is illegal in most jurisdictions and unethical regardless of jurisdiction. Chapter 4.10 covers the legal boundaries in detail — read it before pointing any tool from this book at a network that isn't yours.</Warning>
+<Warning title="Scope and authorization">Every scanning, sniffing, and exploitation technique in Part 3 is presented for use in environments you own or are explicitly authorized to test: your own lab, a virtual machine, a CTF, or a target covered by a signed penetration-testing agreement. Running these techniques against systems you don't own or lack permission to test is illegal in most jurisdictions and unethical regardless of jurisdiction. Chapter 5.10 covers the legal boundaries in detail — read it before pointing any tool from this book at a network that isn't yours.</Warning>
 
 "Hacking" here means the classic, technical sense: understanding a system deeply enough to find where its assumptions break down. That skill is exactly what defenders need, which is why penetration testing, red teaming, and vulnerability research are legitimate, well-paid professions built entirely on authorized versions of the same techniques attackers use.
 
@@ -113,13 +113,13 @@ This is deliberately simple — a real inventory would pull from your infrastruc
 Not at all — this chapter exists precisely because most readers arrive as builders, not breakers. Every technique from here on is taught the way a locksmith teaches lock-picking: understand the mechanism deeply enough to know exactly where it fails, then use that knowledge to build stronger locks. If you can write a TCP server, you already have the foundation this part needs.
 
 **Is it legal for me to try the scanning and sniffing techniques later in Part 3?**
-Only against systems you own or are explicitly authorized to test — your own lab machines, a virtual machine, a CTF environment, or a target covered by a signed penetration-testing agreement. Running the same commands against someone else's network without permission crosses from "learning security" into "committing a crime," regardless of intent. Chapter 4.10 walks through the legal boundaries in full detail before you touch any live target.
+Only against systems you own or are explicitly authorized to test — your own lab machines, a virtual machine, a CTF environment, or a target covered by a signed penetration-testing agreement. Running the same commands against someone else's network without permission crosses from "learning security" into "committing a crime," regardless of intent. Chapter 5.10 walks through the legal boundaries in full detail before you touch any live target.
 
 **Why does this chapter spend so much time on CIA (confidentiality, integrity, availability) instead of jumping straight to tools?**
 Because tools change every year and the properties they protect don't. If you internalize that every attack is ultimately an assault on confidentiality, integrity, or availability, you'll be able to reason about brand-new attack techniques you've never seen before, instead of only recognizing ones you memorized. It's the difference between knowing a checklist and understanding why the checklist exists.
 
 **How does "assume breach" square with also trying to keep attackers out in the first place?**
-The two aren't in tension — they're layers. You still lock the front door (firewalls, TLS, authentication), but you also design as though someone might already be inside, so a single failure doesn't cascade into total compromise. That's the defense-in-depth idea in practice, and it's why Chapter 4.15 revisits it as a full architectural philosophy (zero trust) rather than a single control.
+The two aren't in tension — they're layers. You still lock the front door (firewalls, TLS, authentication), but you also design as though someone might already be inside, so a single failure doesn't cascade into total compromise. That's the defense-in-depth idea in practice, and it's why Chapter 5.15 revisits it as a full architectural philosophy (zero trust) rather than a single control.
 
 ---
 
@@ -127,10 +127,10 @@ The two aren't in tension — they're layers. You still lock the front door (fir
 
 The rest of this part builds up in layers:
 
-- **Foundations** (4.2–4.3): how to model threats and attack surfaces, and the common attack categories you'll defend against.
-- **Hands-on tooling** (4.4–4.7): building scanners, sniffers, and small security tools in Go.
-- **Process** (4.8–4.11): how penetration tests, incident response, and ethical/legal boundaries actually work in practice.
-- **Cryptography and trust** (4.12–4.13): TLS and the PKI that makes it trustworthy.
-- **Secure design** (4.14–4.16): writing safer Go code, and structuring networks around zero trust and segmentation.
+- **Foundations** (5.2–5.3): how to model threats and attack surfaces, and the common attack categories you'll defend against.
+- **Hands-on tooling** (5.4–5.7): building scanners, sniffers, and small security tools in Go.
+- **Process** (5.8–5.11): how penetration tests, incident response, and ethical/legal boundaries actually work in practice.
+- **Cryptography and trust** (5.12–5.13): TLS and the PKI that makes it trustworthy.
+- **Secure design** (5.14–5.16): writing safer Go code, and structuring networks around zero trust and segmentation.
 
 By the end, you'll be able to look at a piece of networking code — yours or someone else's — and ask the right questions before it ships.

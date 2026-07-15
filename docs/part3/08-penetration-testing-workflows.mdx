@@ -13,7 +13,7 @@ title: "Penetration Testing Workflows"
 
 A **penetration test** ("pentest") is an authorized, scoped simulation of a real attack against a system, with the explicit goal of finding and demonstrating exploitable weaknesses before a real adversary does. The key words are *authorized* and *scoped* — everything that follows in this chapter assumes both are in place before any technical work starts.
 
-Unlike a vulnerability assessment (Chapter 4.6), which is broad and largely automated, a penetration test is narrower and manual: a smaller set of targets, explored deeply, often chaining multiple minor findings into one demonstrated, significant impact — the difference between "this port is open" and "an open port led to a shell on the internal network."
+Unlike a vulnerability assessment (Chapter 5.6), which is broad and largely automated, a penetration test is narrower and manual: a smaller set of targets, explored deeply, often chaining multiple minor findings into one demonstrated, significant impact — the difference between "this port is open" and "an open port led to a shell on the internal network."
 
 ---
 
@@ -21,7 +21,7 @@ Unlike a vulnerability assessment (Chapter 4.6), which is broad and largely auto
 
 Most pentesting methodologies (PTES, OWASP Testing Guide, and others) converge on a similar shape:
 
-<DeepDive title="The typical phases of an engagement">**Scoping and rules of engagement** — agreeing in writing exactly what's in scope, what's off-limits, the testing window, and emergency contacts if something goes wrong. **Reconnaissance** — gathering information about the target passively (public records, DNS, job postings) and actively (scanning, per Chapter 4.4). **Vulnerability analysis** — identifying candidate weaknesses (Chapter 4.6) worth pursuing. **Exploitation** — attempting to actually leverage a weakness to gain access or demonstrate impact, carefully and within scope. **Post-exploitation** — assessing what the access is actually worth: what data, systems, or further access it provides, without exceeding the agreed boundaries. **Reporting** — the deliverable that actually matters to the client: findings, evidence, severity, and concrete remediation guidance.</DeepDive>
+<DeepDive title="The typical phases of an engagement">**Scoping and rules of engagement** — agreeing in writing exactly what's in scope, what's off-limits, the testing window, and emergency contacts if something goes wrong. **Reconnaissance** — gathering information about the target passively (public records, DNS, job postings) and actively (scanning, per Chapter 5.4). **Vulnerability analysis** — identifying candidate weaknesses (Chapter 5.6) worth pursuing. **Exploitation** — attempting to actually leverage a weakness to gain access or demonstrate impact, carefully and within scope. **Post-exploitation** — assessing what the access is actually worth: what data, systems, or further access it provides, without exceeding the agreed boundaries. **Reporting** — the deliverable that actually matters to the client: findings, evidence, severity, and concrete remediation guidance.</DeepDive>
 
 It's worth internalizing that **reporting is not an afterthought** — for most clients, the report is the entire value of the engagement. A brilliant exploit chain that never gets written up clearly, with reproducible steps and a fix recommendation, delivers close to zero value.
 
