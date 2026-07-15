@@ -18,14 +18,14 @@
 <meta property="og:type" content="book">
 <meta property="og:site_name" content="Networking with Go, Made Easy">
 <meta property="og:title" content="Networking with Go, Made Easy — Free, Open-Source Book">
-<meta property="og:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — 143 chapters, free PDF, EPUB coming soon.">
+<meta property="og:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — 143 chapters, free PDF and EPUB.">
 <meta property="og:url" content="https://sazardev.github.io/networking-with-go/">
 <meta property="og:image" content="https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg">
 <meta property="og:image:alt" content="Networking with Go, Made Easy — book cover">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Networking with Go, Made Easy — Free, Open-Source Book">
-<meta name="twitter:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — 143 chapters, free PDF, EPUB coming soon.">
+<meta name="twitter:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — 143 chapters, free PDF and EPUB.">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg">
 
 <script type="application/ld+json">
@@ -128,7 +128,7 @@
           "name": "What formats are available, and what's coming next?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The PDF is available now and always tracks the latest release. EPUB is in progress for e-readers and mobile apps, with MOBI and a web reader planned next."
+            "text": "The web reader, PDF, and EPUB are all available now and always track the latest release. MOBI is planned next."
           }
         },
         {
@@ -714,13 +714,13 @@
         <a id="download-pdf-card" class="btn btn-primary" href="https://github.com/sazardev/networking-with-go/releases/latest">Download PDF</a>
       </div>
       <div class="format-card">
-        <h3>EPUB <span class="status-tag soon">Coming soon</span></h3>
-        <p>For e-readers and mobile apps. In progress — watch the repository to get notified the moment it ships.</p>
-        <a class="btn btn-secondary" href="https://github.com/sazardev/networking-with-go/subscription" aria-disabled="true">Watch for updates</a>
+        <h3>EPUB <span class="status-tag" data-version-tag>Available</span></h3>
+        <p>For e-readers and mobile apps. Built straight from the book's source with go-pretty-pdf, same as the PDF.</p>
+        <a id="download-epub-card" class="btn btn-primary" href="https://github.com/sazardev/networking-with-go/releases/latest">Download EPUB</a>
       </div>
       <div class="format-card">
         <h3>Other formats <span class="status-tag soon">Coming soon</span></h3>
-        <p>MOBI and a web reader are planned next. Star the repo to help decide what ships first.</p>
+        <p>MOBI is planned next. Star the repo to help decide what ships first.</p>
         <a class="btn btn-secondary" href="https://github.com/sazardev/networking-with-go/stargazers" aria-disabled="true">Star the repo</a>
       </div>
     </div>
@@ -785,7 +785,7 @@
     </details>
     <details class="faq-item">
       <summary>What formats are available, and what's coming next?</summary>
-      <p>The PDF is available now and always tracks the latest release. EPUB is in progress for e-readers and mobile apps, with MOBI and a web reader planned after that.</p>
+      <p>The web reader, PDF, and EPUB are all available now and always track the latest release. MOBI is planned next.</p>
     </details>
     <details class="faq-item">
       <summary>Can I contribute, suggest a chapter, or report an error?</summary>
@@ -857,6 +857,7 @@
       .then(function (res) { if (!res.ok) throw new Error('release fetch failed'); return res.json(); })
       .then(function (data) {
         var pdfAsset = (data.assets || []).find(function (a) { return a.name.endsWith('.pdf'); });
+        var epubAsset = (data.assets || []).find(function (a) { return a.name.endsWith('.epub'); });
         var version = data.tag_name || 'latest';
         var updated = data.published_at
           ? new Date(data.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -878,6 +879,14 @@
               btn.setAttribute('download', pdfAsset.name);
             }
           });
+        }
+
+        if (epubAsset) {
+          var epubBtn = document.getElementById('download-epub-card');
+          if (epubBtn) {
+            epubBtn.href = epubAsset.browser_download_url;
+            epubBtn.setAttribute('download', epubAsset.name);
+          }
         }
       })
       .catch(function (err) {

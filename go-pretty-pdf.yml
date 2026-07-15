@@ -20,6 +20,11 @@ render:
   margin_bottom: 15mm
   margin_left: 0mm
   margin_right: 0mm
+  # Full-bleed cover built from the book's own cover art, sized to the
+  # image's own pixel dimensions rather than the paper size above (see
+  # go-pretty-pdf v0.8.0). Shared by both `pretty-pdf build` and
+  # `pretty-pdf epub` since both read render.cover_image from this config.
+  cover_image: assets/cover.jpg
 
 # Force an all-monospace look (headings, body, and code) instead of the
 # "default" theme's own mixed proportional-body/monospace-code design,

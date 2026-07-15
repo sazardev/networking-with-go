@@ -25,17 +25,13 @@ jobs:
         with:
           go-version: "stable"
 
-      # go-pretty-pdf's most recent *tagged* release (v0.6.0) predates a real
-      # bug fix: it navigated Chrome to a "data:...;base64,..." URI to render
-      # the page, which silently fails ("net::ERR_ABORTED") once a book's
-      # composed HTML crosses roughly 2MB -- exactly what this book does.
-      # The fix (https://github.com/sazardev/go-pretty-pdf/pull/7) is merged
-      # to master but not yet in a tagged release, so pin to the merge commit
-      # directly instead of `@latest` (which would silently resolve to the
-      # broken v0.6.0). Once a release ships that includes this commit,
-      # switch this back to `@latest`.
+      # v0.8.0 is a tagged release that includes the "data:...;base64,..."
+      # navigation bug fix (https://github.com/sazardev/go-pretty-pdf/pull/7,
+      # previously only available by pinning to a raw commit -- see git
+      # history for that workaround) plus the --cover-image/epub support
+      # this workflow now depends on.
       - name: Install pretty-pdf
-        run: go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@63fbcda3684c8b6274f7f662cf93d04b2a39863c
+        run: go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@v0.8.0
 
       - name: Validate chapters
         run: pretty-pdf check
@@ -52,14 +48,22 @@ jobs:
       - name: Build PDF
         run: pretty-pdf build
 
+      - name: Build EPUB
+        run: pretty-pdf epub --out networking-with-go.epub
+
       - name: Rename PDF with version
         run: mv networking-with-go.pdf "networking-with-go-${{ steps.version.outputs.version }}.pdf"
+
+      - name: Rename EPUB with version
+        run: mv networking-with-go.epub "networking-with-go-${{ steps.version.outputs.version }}.epub"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: networking-with-go-${{ steps.version.outputs.version }}
-          path: networking-with-go-*.pdf
+          path: |
+            networking-with-go-*.pdf
+            networking-with-go-*.epub
           retention-days: 90
 
       - name: Create GitHub Release
@@ -69,5 +73,6 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             networking-with-go-*.pdf \
+            networking-with-go-*.epub \
             --title "Networking with Go - The Easy Way Guide ${{ github.ref_name }}" \
             --generate-notes

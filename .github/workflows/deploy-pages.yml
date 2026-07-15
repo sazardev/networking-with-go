@@ -41,13 +41,12 @@ jobs:
         with:
           go-version: "stable"
 
-      # Same pinned commit used by release-pdf.yml -- see that workflow for
-      # why @latest is avoided (a known Chrome-rendering bug in the last
-      # tagged release). buildreader only uses the "serve" subcommand
-      # (no headless Chrome involved), but pinning to the same known-good
-      # commit keeps both workflows using one validated version.
+      # Same tagged version used by release-pdf.yml -- see that workflow for
+      # why this is pinned explicitly rather than @latest. buildreader only
+      # uses the "serve" subcommand (no headless Chrome involved), but
+      # pinning to the same version keeps both workflows in sync.
       - name: Install pretty-pdf
-        run: go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@63fbcda3684c8b6274f7f662cf93d04b2a39863c
+        run: go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@v0.8.0
 
       - name: Build web reader from docs/
         run: go run website/tools/buildreader/main.go
