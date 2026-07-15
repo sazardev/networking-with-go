@@ -5,15 +5,49 @@ title: "History and Evolution of Computer Networks"
 
 # History and Evolution of Computer Networks
 
-> "Imagine a world where computers are like islands, isolated and alone, unable to share their treasures. Now, picture bridges being built, one by one, until a vast, bustling metropolis emerges—this is the story of computer networks!"
+> "Imagine a world where computers are like islands, isolated and alone, unable to share their treasures. Now, picture bridges being built, one by one, until a vast, bustling metropolis emerges — this is the story of computer networks!"
+
+This chapter is a love letter to that story. Not a dry timeline of standards committees — a real one, with drumbeats crossing miles of jungle, towers signaling across a continent before electricity existed, spies steaming open wax seals, a war that accidentally invented the computer, and a handful of stubborn engineers who decided that machines should talk to each other even though nobody had asked them to. Computer networking, the thing you're about to spend an entire book learning to build, is barely sixty years old. The *need* it satisfies is as old as humanity itself.
+
+---
+
+## Long Before Computers: Humans Have Always Refused to Be Out of Reach
+
+Strip away every wire, radio, and satellite, and networking is really just an answer to one ancient, urgent question: *how do I get information from where I am to where I am not, faster than I could carry it myself?* Every civilization that has ever existed has answered that question, because the alternative — waiting for a person to physically walk the distance — was never fast enough when an army was approaching or a harvest had failed.
+
+West African communities developed **talking drums**: instruments tuned to mimic the tones and rhythms of spoken language itself, capable of relaying an actual sentence, not just a signal, across many miles of terrain far faster than a runner could carry it. In China, a chain of watchtowers strung along and beyond the Great Wall used smoke by day and fire by night to relay warnings of invasion from tower to tower, turning a threat spotted at the frontier into an alert reaching the capital in a fraction of the time a horse would need. The Persian Empire, according to the historian Herodotus, maintained a relay of mounted couriers along the Royal Road so disciplined and fast that a message could cross the length of the empire in days instead of months — a description often credited as the inspiration for the line engraved on New York's General Post Office: "Neither snow nor rain nor heat nor gloom of night stays these couriers from the swift completion of their appointed rounds." Rome ran its own version, the *cursus publicus*, a state-maintained relay of stations, horses, and riders that kept an empire spanning three continents administratively coherent.
+
+<Axiom>Every one of these systems is doing exactly what a modern router does: taking a message it did not create, and relaying it one hop closer to a destination it may never see.</Axiom>
+
+And then, centuries before a single electron was harnessed for communication, France built something that genuinely deserves to be called the first long-distance data network. In 1793, an engineer named Claude Chappe got the French government to build a chain of towers across the country, each one fitted with movable wooden arms whose positions encoded letters and numbers, each tower watching the next through a telescope and repeating what it saw. A message that would have taken a rider days could cross hundreds of kilometers in a matter of hours. It was called the *optical telegraph*, and by the time it was retired in favor of the electrical telegraph decades later, it connected dozens of French cities in a genuine relay network — nodes, links, and a shared protocol (the arm-position code), the exact three ingredients you'll meet again in a few pages, running on wood and human eyesight instead of copper and light.
+
+<DeepDive title="The forgotten first telegraph">Most people assume "telegraph" means Morse code and electricity. The word itself is Greek for "far writer," and it was coined for Chappe's optical system decades before Samuel Morse was born. The electrical telegraph that followed didn't invent long-distance networking — it just swapped out the physical layer, replacing towers and telescopes with wires and electromagnets while keeping the same fundamental idea of a relay network carrying encoded messages. You will see this pattern — new physical medium, same underlying idea — again and again throughout this book, most recently in how Wi-Fi replaced Ethernet cables without changing what a LAN fundamentally is.</DeepDive>
+
+## The Other Half of the Story: Every Message Invites Someone Who Wants to Read It
+
+Here is the part the "networking as pure progress" version of this story usually leaves out: for as long as humans have sent messages they wanted kept private, other humans have tried to intercept them. This isn't a modern problem invented by hackers — it's as old as writing. Julius Caesar reportedly encrypted his military correspondence by shifting every letter three places through the alphabet (so *A* became *D*, and so on), specifically because messengers carrying his orders could be captured by the enemy along the way. Sealed letters were closed with wax stamped by a unique signet ring for the same reason your TLS certificate exists today: not to hide that a message was sent, but to let the recipient detect if it had been opened and tampered with in transit. Royal courts intercepted, decoded, and forged the correspondence of rival monarchs; the deciphered secret letters of Mary, Queen of Scots, plotting from house arrest, ultimately helped send her to the executioner in 1587 — a reminder that codebreaking has been shaping real history for a very long time before it had anything to do with computers.
+
+<Warning title="This is not a historical footnote — it's the whole reason Part 3 of this book exists">Every network you will ever build carries the same two-sided reality that Caesar's messengers did: something worth sending, and someone who might want to intercept, alter, or impersonate it along the way. TLS, authentication, firewalls, and everything in this book's cybersecurity part are the modern, mathematically rigorous descendants of a wax seal and a shifted alphabet — the same problem, solved with vastly sharper tools.</Warning>
+
+## World War II: The War That Accidentally Invented the Computer
+
+If there is a single hinge point where "sending messages secretly" and "the machine you are reading this on" become the same story, it is the Second World War. Nazi Germany encrypted its military communications with the **Enigma machine**, an electromechanical device whose rotating rotors could be configured into a staggering number of possible settings — so many that brute-force guessing by hand was hopeless within any useful timeframe. Breaking it wasn't a matter of a single genius having an insight over a cup of tea (although the tea helped); it was an industrial-scale codebreaking operation, centered at a country estate in England called **Bletchley Park**, where mathematicians, linguists, chess champions, and engineers worked around the clock.
+
+Among them was **Alan Turing**, who helped design the **Bombe**, an electromechanical machine built to automate the search for Enigma's daily settings by testing thousands of possibilities far faster than any human team could. When Germany's high command moved to an even more sophisticated cipher — codenamed **Tunny** by the British, generated by the Lorenz machine — the codebreakers needed something faster still, and engineer Tommy Flowers built **Colossus**: a machine using over a thousand vacuum tubes, electronic rather than electromechanical, and configurable for different logical tasks. Colossus is widely regarded by historians as one of the very first electronic digital computers ever built — and it wasn't built to calculate artillery tables or compile payroll. It was built entirely to break codes faster than the humans sending them could change their settings. The first computer, in any meaningful sense of the word, was born directly out of a communications problem.
+
+Radar tells a parallel story. Britain's Chain Home system strung a network of radio detection stations along the coast, each one feeding what it detected back to a central command that could scramble fighters to intercept incoming raids before they arrived — sensors, links, and a shared reporting protocol, coordinating a defense across an entire country in something close to real time. It was, in every structural sense, a distributed sensor network decades before that phrase existed, and the people who built and operated it went on, after the war, to shape the first generation of British and American computing research.
+
+<Axiom>Modern networking descends from two wartime obsessions at once: breaking secret codes fast enough to matter, and coordinating scattered machines and people into one working system under pressure. Both problems are still, at their core, exactly what this book teaches you to solve.</Axiom>
+
+Many of the engineers and mathematicians who cut their teeth on Bletchley Park's machines, American codebreaking efforts, and wartime radar carried that expertise directly into the postwar computing research that follows in this chapter. The line from a 1940s codebreaking shed to a 1960s university research lab is short, direct, and full of the same people.
 
 ---
 
 ## The Humble Beginnings: Pre-Network Era
 
-Before networks, computers were solitary giants—massive, expensive, and locked away in research labs. Data transfer? Think punch cards, magnetic tapes, and a lot of sneaker-net (literally walking data from one machine to another). It was like sending messages by carrier pigeon in the digital age.
+By the 1960s, the war was two decades gone, but its computing legacy had grown into something new: solitary giants — massive, expensive machines locked away in research labs, direct descendants of Colossus's lineage but now aimed at science instead of secrets. Data transfer between them? Think punch cards, magnetic tapes, and a lot of *sneaker-net* — literally walking a box of cards or a reel of tape from one machine to another. It was carrier-pigeon speed in a jet age.
 
-It's worth pausing on *why* this was such a problem worth solving. In the 1960s a single mainframe computer could cost the equivalent of tens of millions of dollars today, and only a handful of universities and government labs had one. If a researcher at MIT wanted to use a program running on a machine at Berkeley, there was no way to simply "connect"—time on these machines was scarce, precious, and jealously guarded. The original motivation for networking wasn't cat videos or email; it was resource sharing. If computers could talk to each other, a research lab that needed extra computing power could borrow it from a machine sitting mostly idle across the country instead of buying its own multi-million-dollar mainframe.
+It's worth pausing on *why* this was such a problem worth solving. In the 1960s a single mainframe computer could cost the equivalent of tens of millions of dollars today, and only a handful of universities and government labs had one. If a researcher at MIT wanted to use a program running on a machine at Berkeley, there was no way to simply "connect" — time on these machines was scarce, precious, and jealously guarded. The original motivation for networking wasn't cat videos or email; it was resource sharing. If computers could talk to each other, a research lab that needed extra computing power could borrow it from a machine sitting mostly idle across the country instead of buying its own multi-million-dollar mainframe.
 
 <Axiom>Every major leap in networking history was driven by scarcity: scarce computers, scarce bandwidth, scarce addresses. Necessity, not curiosity, built the internet.</Axiom>
 
@@ -25,7 +59,7 @@ It's worth pausing on *why* this was such a problem worth solving. In the 1960s 
 - **Analogy:** Imagine scientists wanting to send secret notes across the country, but instead of paper, they use electric pulses.
 - **Key Players:** The U.S. Department of Defense's ARPA (Advanced Research Projects Agency), universities, and visionaries like J.C.R. Licklider, who described an "Intergalactic Computer Network" years before it existed.
 
-<DeepDive title="Where packet switching actually came from">Packet switching—the idea of chopping messages into small, independently-routed packets—was proposed almost simultaneously and independently by Paul Baran in the United States (thinking about a communications network that could survive a nuclear strike, since there would be no single point to destroy) and Donald Davies in the United Kingdom (thinking purely about efficiency for a national data network). Neither man built the ARPANET, but both of their ideas shaped it. This is a good early lesson: good ideas in networking are rarely invented once by a single genius—they tend to be reinvented by multiple people solving different versions of the same problem.</DeepDive>
+<DeepDive title="Where packet switching actually came from">Packet switching — the idea of chopping messages into small, independently-routed packets — was proposed almost simultaneously and independently by Paul Baran in the United States (thinking about a communications network that could survive a nuclear strike, since there would be no single point to destroy) and Donald Davies in the United Kingdom (thinking purely about efficiency for a national data network). Neither man built the ARPANET, but both of their ideas shaped it. This is a good early lesson: good ideas in networking are rarely invented once by a single genius — they tend to be reinvented by multiple people solving different versions of the same problem, exactly the way Chappe's optical telegraph and countless smoke-signal systems arrived at similar relay designs independently, centuries apart, with no contact between the people who built them.</DeepDive>
 
 ### 1969: ARPANET Goes Live
 - **Diagram:**
@@ -36,16 +70,16 @@ It's worth pausing on *why* this was such a problem worth solving. In the 1960s 
 [UCSB]---[Utah]
 ```
 
-- **Fun Fact:** The first message ever sent was "LO" (they tried to type "LOGIN" but the system crashed—classic!).
-- **Impact:** ARPANET proved that computers could talk to each other over long distances using packet switching instead of a dedicated circuit, laying the foundation for everything to come. Crucially, it also proved something less obvious: that a network could be built from special-purpose routing computers (Interface Message Processors, the ancestors of today's routers) rather than requiring every mainframe to understand networking itself. That separation of concerns—"let the network do networking, let the computer do computing"—is still exactly how the internet is structured today.
+- **Fun Fact:** The first message ever sent was "LO" (they tried to type "LOGIN" but the system crashed — classic!).
+- **Impact:** ARPANET proved that computers could talk to each other over long distances using packet switching instead of a dedicated circuit, laying the foundation for everything to come. Crucially, it also proved something less obvious: that a network could be built from special-purpose routing computers (Interface Message Processors, the ancestors of today's routers) rather than requiring every mainframe to understand networking itself. That separation of concerns — "let the network do networking, let the computer do computing" — is still exactly how the internet is structured today.
 
 ---
 
 ## Building Blocks: Protocols and Expansion
 
 ### 1970s: The Protocol Revolution
-- **TCP/IP:** Designed by Vint Cerf and Bob Kahn starting in 1974, TCP/IP was the answer to a hard problem: ARPANET only knew how to connect networks that were built the same way. Cerf and Kahn wanted to connect *networks of networks*—radio networks, satellite links, and wired ARPANET segments—regardless of how each one worked internally. The trick was to design a protocol that didn't care what was underneath it, as long as each network could carry a packet from one point to another. That single design decision is why the internet today can run over fiber, Wi-Fi, satellite links, and even smoke signals in principle—TCP/IP simply doesn't care about the medium.
-- **Email:** The first "killer app"—suddenly, people could send digital letters across the globe. Ray Tomlinson chose the "@" symbol in 1971 specifically because it was a character that never appeared in a person's name, making "user@host" unambiguous.
+- **TCP/IP:** Designed by Vint Cerf and Bob Kahn starting in 1974, TCP/IP was the answer to a hard problem: ARPANET only knew how to connect networks that were built the same way. Cerf and Kahn wanted to connect *networks of networks* — radio networks, satellite links, and wired ARPANET segments — regardless of how each one worked internally. The trick was to design a protocol that didn't care what was underneath it, as long as each network could carry a packet from one point to another. That single design decision is why the internet today can run over fiber, Wi-Fi, satellite links, and even smoke signals in principle — TCP/IP simply doesn't care about the medium.
+- **Email:** The first "killer app" — suddenly, people could send digital letters across the globe. Ray Tomlinson chose the "@" symbol in 1971 specifically because it was a character that never appeared in a person's name, making "user@host" unambiguous.
 - **Ethernet:** Invented at Xerox PARC by Robert Metcalfe in 1973, Ethernet solved a different problem: connecting machines in the *same room or building* cheaply, without needing a telephone-company-grade dedicated line for every pair of machines. Networking goes local, connecting computers in the same building (LANs).
 
 ### 1980s: Networks Everywhere
@@ -58,22 +92,22 @@ It's worth pausing on *why* this was such a problem worth solving. In the 1960s 
         [Printer]
 ```
 
-- **The Internet Emerges:** ARPANET evolves, more networks join, and on January 1, 1983—a date network engineers call "flag day"—every single machine on ARPANET was required to switch over from the older NCP protocol to TCP/IP simultaneously, or be cut off. There was no gradual rollout; it was an all-or-nothing coordinated flip across every connected site. The term "Internet" (originally just shorthand for "internetworking") sticks from around this point.
+- **The Internet Emerges:** ARPANET evolves, more networks join, and on January 1, 1983 — a date network engineers call "flag day" — every single machine on ARPANET was required to switch over from the older NCP protocol to TCP/IP simultaneously, or be cut off. There was no gradual rollout; it was an all-or-nothing coordinated flip across every connected site. The term "Internet" (originally just shorthand for "internetworking") sticks from around this point.
 
-<Warning title="A common misconception">People often assume "the internet" and "the World Wide Web" are the same thing. They are not: the internet is the underlying network of networks and the TCP/IP protocols that make it work, and it existed for over 20 years before the Web. The Web is just one application—arguably the most famous one—that runs on top of the internet, alongside email, file transfer, and countless others.</Warning>
+<Warning title="A common misconception">People often assume "the internet" and "the World Wide Web" are the same thing. They are not: the internet is the underlying network of networks and the TCP/IP protocols that make it work, and it existed for over 20 years before the Web. The Web is just one application — arguably the most famous one — that runs on top of the internet, alongside email, file transfer, and countless others.</Warning>
 
 ---
 
 ## The Internet Age: Connecting the World
 
 ### 1990s: The World Wide Web
-- **Tim Berners-Lee:** While working at CERN in 1989–1991, invented the Web, URLs, HTML, and the first browser—not to build a global entertainment platform, but to solve a mundane problem: physicists at CERN kept losing track of each other's documents and data. Suddenly, the internet is not just for scientists—it's for everyone.
+- **Tim Berners-Lee:** While working at CERN in 1989-1991, invented the Web, URLs, HTML, and the first browser — not to build a global entertainment platform, but to solve a mundane problem: physicists at CERN kept losing track of each other's documents and data. Suddenly, the internet is not just for scientists — it's for everyone.
 - **Analogy:** The web is like building roads and highways on top of the existing city, making it easy for anyone to travel (browse) anywhere.
-- **Dot-com Boom:** Businesses race to get online, and by the late 1990s home internet access—via screeching, 56-kilobit dial-up modems—becomes common in households for the first time.
+- **Dot-com Boom:** Businesses race to get online, and by the late 1990s home internet access — via screeching, 56-kilobit dial-up modems — becomes common in households for the first time.
 
 ### 2000s: Broadband and Wireless
 - **Faster Connections:** DSL, cable, and fiber replace dial-up, offering "always-on" connections instead of a phone call you had to dial every time you wanted to go online.
-- **Wi-Fi:** Standardized as IEEE 802.11 in the late 1990s and widely adopted through the 2000s, Wi-Fi lets Ethernet-style local networking happen without wires—coffee shops, airports, and homes become digital playgrounds.
+- **Wi-Fi:** Standardized as IEEE 802.11 in the late 1990s and widely adopted through the 2000s, Wi-Fi lets Ethernet-style local networking happen without wires — coffee shops, airports, and homes become digital playgrounds.
 - **Diagram:**
 
 ```
@@ -88,15 +122,15 @@ It's worth pausing on *why* this was such a problem worth solving. In the 1960s 
 
 ## The Modern Era: Ubiquity and Beyond
 
-### 2010s–2020s: The Networked Everything
-- **Smartphones:** The internet in your pocket—anytime, anywhere—made possible by mobile data networks (3G, 4G, now 5G) that are themselves enormous packet-switched networks.
-- **Cloud Computing:** Data and apps live in the sky (well, in data centers), accessible from anywhere. In a real sense, cloud computing is a return to the original 1960s motivation for networking—sharing scarce, powerful computing resources—just at a scale the ARPANET pioneers could never have imagined.
+### 2010s-2020s: The Networked Everything
+- **Smartphones:** The internet in your pocket — anytime, anywhere — made possible by mobile data networks (3G, 4G, now 5G) that are themselves enormous packet-switched networks.
+- **Cloud Computing:** Data and apps live in the sky (well, in data centers), accessible from anywhere. In a real sense, cloud computing is a return to the original 1960s motivation for networking — sharing scarce, powerful computing resources — just at a scale the ARPANET pioneers could never have imagined.
 - **IoT:** Fridges, cars, and even light bulbs join the network, often each with their own IP address.
-- **Security:** As networks grow, so do the threats—cybersecurity becomes a top priority, and much of Part 1 of this book (later chapters) is devoted to exactly that.
+- **Security:** As networks grow, so do the threats — cybersecurity becomes a top priority, and Part 3 of this book is devoted entirely to it, carrying forward the exact tension between message and interceptor that started with Caesar's shifted alphabet.
 
 ### 2020s and Beyond: The Future
 - **5G and Beyond:** Fast, low-latency mobile connections enable new tech like AR, VR, and remote-controlled vehicles.
-- **Quantum Networking:** An active research frontier—using quantum-entangled particles to detect eavesdropping or distribute unbreakable encryption keys.
+- **Quantum Networking:** An active research frontier — using quantum-entangled particles to detect eavesdropping or distribute unbreakable encryption keys, which is, fittingly, the oldest problem in this entire chapter — keeping a message safe from someone who wants to read it — being attacked with the newest physics we have.
 
 ---
 
@@ -113,9 +147,11 @@ It's worth pausing on *why* this was such a problem worth solving. In the 1960s 
 ---
 
 ## Key Takeaways
+- The urge to communicate across distance, faster than a person could carry a message, is not a computing-era invention — drums, beacon towers, courier relays, and optical telegraphs solved the same problem with the same nodes-links-protocol structure, centuries before electricity.
+- Interception, forgery, and codebreaking are exactly as old as messaging itself, and World War II — through Enigma, Bletchley Park, and Colossus — is the direct hinge between "breaking secret codes by hand" and "the first electronic digital computer."
 - Computer networks evolved from isolated machines to a global, interconnected web, driven at every step by scarcity of computers, bandwidth, or trust.
-- Each era brought new protocols, technologies, and ways for people to connect—but almost every "new" idea (packet switching, resource sharing, layered protocols) traces back to a handful of decisions made in the 1960s and 70s.
-- The journey is ongoing—who knows what the next chapter will bring?
+- Each era brought new protocols, technologies, and ways for people to connect — but almost every "new" idea (packet switching, resource sharing, layered protocols) traces back to a handful of decisions made in the 1960s and 70s, which themselves trace back to ideas as old as the Persian Royal Road.
+- The journey is ongoing — who knows what the next chapter will bring?
 
 ---
 
@@ -132,7 +168,13 @@ It's worth pausing on *why* this was such a problem worth solving. In the 1960s 
 ## Visual Timeline
 
 ```
-1960s: [Mainframes, sneaker-net]
+Antiquity: [Drums, beacon towers, courier relays]
+   |
+1793: [Chappe's optical telegraph network, France]
+   |
+1940s: [Enigma, Bletchley Park, Colossus: codebreaking births the computer]
+   |
+1960s: [Mainframes, sneaker-net, scarcity drives the first network idea]
    |
 1969: [ARPANET: 4 nodes]
    |
@@ -158,46 +200,11 @@ It's worth pausing on *why* this was such a problem worth solving. In the 1960s 
 ## Fun Facts & History Notes
 - The first webcam was invented to monitor a coffee pot at Cambridge University, so researchers wouldn't walk over to find it empty.
 - The "@" symbol in email was chosen because it was rarely used in names.
+- Talking drums encode actual sentences, not simple alerts — some West African drum languages can relay proverbs and full messages across distances a shouting human voice could never cover.
 - If the internet were a country, it would be among the largest in the world by population connected.
 
-### Seeing It in Code
+### The Artifacts Are Still Here
 
-History left artifacts behind, and one of them is sitting on your machine right now: the network interfaces your operating system exposes are the direct descendants of the ARPANET's Interface Message Processors—dedicated hardware/software whose only job is to move packets in and out of a machine. Let's list yours.
+History left artifacts behind, and one of them is sitting on your machine right now: the network interfaces your operating system exposes — that Wi-Fi adapter, that Ethernet port, that quiet loopback interface named `lo` — are the direct descendants of the ARPANET's Interface Message Processors, dedicated hardware whose only job was ever to move packets in and out of a machine. Each one still carries a hardware address baked into it at the factory, a globally unique identifier that is a direct, unbroken descendant of Robert Metcalfe's 1973 Ethernet design, decades before IP addresses became the way most of us think about "who a machine is" on a network. Every device you own that connects to anything is still, quietly, running on decisions made in that chain of history — from a drumbeat crossing a valley, to a tower relaying a semaphore signal, to a codebreaking shed at Bletchley Park, to a handful of stubborn engineers at UCLA in 1969.
 
-```go
-package main
-
-import (
-	"fmt"
-	"net"
-)
-
-func main() {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		fmt.Println("Error listing interfaces:", err)
-		return
-	}
-
-	msg := "Found %d network interface(s) on this machine:\n\n"
-	fmt.Printf(msg, len(interfaces))
-	for _, iface := range interfaces {
-		fmt.Println("Name:      ", iface.Name)
-		// iface.HardwareAddr is the MAC address, an Ethernet-era concept.
-		fmt.Println("Hardware:  ", iface.HardwareAddr)
-		fmt.Println("Flags:     ", iface.Flags)
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			fmt.Println("  (could not read addresses)")
-			continue
-		}
-		for _, addr := range addrs {
-			fmt.Println("  Address: ", addr.String())
-		}
-		fmt.Println("---")
-	}
-}
-```
-
-Running this with `go run main.go` will print something like a loopback interface (`lo` on Linux/Mac, `Loopback Pseudo-Interface` on Windows) alongside your real Wi-Fi or Ethernet adapter, each with a hardware (MAC) address and one or more IP addresses. The `HardwareAddr` field is a direct descendant of Ethernet's 1973 design: a globally-unique identifier burned into (or assigned to) the network card itself, decades before IP addresses became the way we usually think about "who a machine is" on a network. Every time this program runs, you are reading a small, still-active piece of 1970s networking history.
+You'll meet that hardware directly, in code, soon — the Go Fundamentals part that follows Part 1 gets you writing real programs almost immediately, and by Part 2 you'll be listing your own machine's interfaces, opening your own sockets, and building the exact kind of software this whole history led to. For now, carry the story forward with you: every protocol in the chapters ahead was somebody's answer to a real, human problem, usually a scarcity of something — computers, bandwidth, trust, patience. That's about to become very concrete.

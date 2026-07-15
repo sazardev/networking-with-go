@@ -16,11 +16,12 @@ pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
 ## Repository structure
 
 - `README.md` — the master table of contents for the whole book, linking every chapter in reading order. **If you add, remove, rename, or reorder a chapter file in `docs/`, update the corresponding entry/link in `README.md` too** — the two are expected to stay in sync.
-- `docs/part1/` — networking theory (OSI/TCP-IP, IP addressing, protocols, etc.). Originally pure prose with no code; each chapter now also ends with a "Try It Yourself in Go" hands-on section (standard-library only) that lets the reader directly observe the concept just explained.
+- `docs/part1/` — pure networking theory (introduction, history, types of networks, topologies, OSI/TCP-IP, IP/subnetting, ports/sockets, TCP vs UDP, protocols, security fundamentals, firewalls/NAT/VPN, troubleshooting, performance), written in a warm, story-driven, passionate voice — real history, analogies, and fun facts, not dry reference prose. No Go code anywhere in Part 1, including chapters 1 and 2 — that was tried and deliberately reverted; every chapter is code-free theory, full stop.
+- `docs/go-fundamentals/` — a dedicated crash course in the Go language itself (installation through testing, plus a flagship goroutines/channels/concurrency chapter), sitting between Part 1 and Part 2. This is where hands-on Go code actually begins for the reader.
 - `docs/part2/` — core Go networking topics (TCP/UDP, HTTP, WebSockets, DNS, concurrency, context, security, etc.); each chapter pairs theory with Go code samples inline. `exercises/part2/` contains the runnable counterparts to these chapters.
 - `docs/advanced/` — specialized/advanced networking topics (gRPC, WebRTC, MQTT, SDN, NFV, etc.).
 - `docs/part3/` — cybersecurity/offensive-defensive networking topics (scanning, sniffing, TLS/PKI, IDS/IPS, red/blue team, honeypots, etc.).
-- `docs/part-apis/` — building modern APIs/backends in Go (REST, Gin, Fiber, auth, rate limiting, gateways, observability, deployment, etc.). `docs/part-apis/README.md` is a scoped index for this section only (stays plain `.md` — it's not a book chapter, so go-pretty-pdf ignores it).
+- `docs/part-apis/` — building modern APIs/backends in Go (REST, gRPC, Gin, Fiber, SQL/SQLite, Docker, Clean/Hexagonal Architecture, DDD, Google Cloud, security, etc.). `docs/part-apis/README.md` is a scoped index for this section only (stays plain `.md` — it's not a book chapter, so go-pretty-pdf ignores it).
 - `exercises/part2/` — one directory per exercise, numbered to match its `docs/part2/` chapter (e.g. `08-goroutines-basic`, `10-http-server-routing`). Chapters with a client and server both get sibling directories (e.g. `06-udp-client` / `06-udp-server`, `13-chat-client-gorilla` / `13-chat-server-gorilla`).
 
 ## Running exercises
@@ -48,4 +49,5 @@ There is no linter or test suite configured for the exercises; `go vet`/`gofmt` 
 
 - Chapters are numbered `.mdx` files; filenames encode both order and topic (`NN-topic-slug.mdx`). Preserve this numbering scheme when adding chapters, and don't renumber existing files without updating their `README.md` links.
 - Every chapter needs YAML frontmatter with `id: "[X.Y.Z]"` and `title: "..."` — see the `mdx-pdf-format` skill for the ID scheme and the h3 heading-depth limit before writing content.
-- Chapters mix theory prose with embedded Go code blocks and diagrams — follow the existing tone (practical, example-driven, liberal use of emoji headers) rather than switching to dry reference style.
+- Zero emoji anywhere in the book, in any chapter — a hard, repo-wide rule. Follow the existing tone instead: warm, story-driven, example-driven, with real history/analogies/fun-facts, never dry reference style.
+- Part 2 onward mixes theory prose with embedded Go code blocks and diagrams; Part 1 in its entirety is theory-only prose with no code at all — see the structure notes above before adding code to the wrong section.

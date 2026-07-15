@@ -31,7 +31,7 @@ Every chapter is a `.mdx` file under `docs/`, and the whole book can be compiled
 Chapters are listed in reading order. Each links straight to its file — click any of them to jump in.
 
 ### Part 1: Networking Theory and Concepts
-Pure conceptual grounding: how networks are built and how data actually moves, with diagrams and analogies before any code. Each chapter now closes with a short "Try It Yourself in Go" section so you can observe the concept directly, even this early in the book.
+Pure conceptual grounding: how networks are built and how data actually moves — real history, analogies, and stories, no code at all. This part is entirely about building a rock-solid mental model before you write a single line of Go, which starts fresh in the very next part.
 
 1. [Introduction to Networking](docs/part1/01-introduction-to-networking.mdx)
 2. [History and Evolution of Computer Networks](docs/part1/02-history-and-evolution-of-computer-networks.mdx)

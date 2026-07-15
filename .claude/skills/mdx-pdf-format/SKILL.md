@@ -41,12 +41,18 @@ numeric prefix, `Z` is reserved (always `0` today):
 | Folder | X |
 |---|---|
 | `docs/part1/` | 1 |
-| `docs/part2/` | 2 |
-| `docs/advanced/` | 3 |
-| `docs/part3/` | 4 |
-| `docs/part-apis/` | 5 |
+| `docs/go-fundamentals/` | 2 |
+| `docs/part2/` | 3 |
+| `docs/advanced/` | 4 |
+| `docs/part3/` | 5 |
+| `docs/part-apis/` | 6 |
 
-Example: `docs/part2/05-tcp-in-depth-...mdx` → `id: "[2.5.0]"`.
+Example: `docs/part2/05-tcp-in-depth-...mdx` → `id: "[3.5.0]"`.
+
+`docs/go-fundamentals/` (X=2) sits between Part 1 and Part 2 in reading
+order and covers the Go language itself (installation through testing,
+including a dedicated goroutines/channels chapter) — it does not follow
+Part 1's "theory only, no code" rule; it's the opposite, all hands-on Go.
 
 When adding a **new** chapter, keep this scheme: pick the `X` for its folder,
 and a `Y` that doesn't collide with an existing file in that folder (typically
@@ -71,6 +77,30 @@ blockquotes when the intent matches:
 `title` is optional on `DeepDive`/`Warning`. Only simple inline Markdown
 (code spans, `**bold**`) is rewritten inside these tags — don't nest complex
 Markdown (tables, nested lists, headings) inside them.
+
+**Hard rule, learned the hard way twice in this repo: write the content of
+every `DeepDive`/`Warning`/`Axiom` tag as ONE physical line in the source
+file**, no matter how long it looks in your editor — e.g.
+`<Warning title="X">All of this stays on one line, however long, until the
+closing tag.</Warning>` written as a single line, not soft-wrapped like a
+normal paragraph. The renderer's HTML transpiler converts every literal
+newline inside these tags into a forced `<br>`, so wrapping the text across
+multiple source lines (as if it were ordinary prose) produces ugly, choppy,
+mid-sentence line breaks in the printed PDF. This has nothing to do with
+Markdown's own soft-wrap rules for regular paragraphs, which are unaffected —
+it only applies to text between these specific opening and closing tags.
+
+## Code block line length
+
+Fenced code blocks render in a fixed-width box roughly 90 monospace
+characters wide (9pt font on the default theme). A line longer than that
+gets visually clipped at the right margin in the printed PDF instead of
+wrapping — this applies to Go, shell, YAML, or any other fenced language.
+Keep every line inside a code fence under about 85 characters after
+expanding tabs to 8 spaces (`str.expandtabs(8)`), wrapping long struct
+literals, function signatures, or calls across multiple lines, gofmt-style,
+rather than one long line. This is easy to miss since the source file looks
+fine in an editor — when in doubt, count.
 
 ## Variable substitution
 

@@ -7,43 +7,51 @@ title: "Firewalls, NAT, and VPNs"
 
 > "Imagine your network as a medieval city: firewalls are the city walls and gates, NAT is the clever gatekeeper who knows everyone's real and fake names, and VPNs are secret tunnels that let you travel safely, unseen by prying eyes!"
 
----
+Picture your router tonight, sitting quietly on a shelf, doing something you will never see and almost never think about: turning away strangers. Every few seconds, a packet arrives from somewhere on the open internet, addressed to your home network, asking to come in — a scanning bot in another country probing for an open door, background radiation of a hostile internet that never sleeps. Almost all of them are refused, silently, instantly, without you lifting a finger. You never see the rejection. You never see the attempt. That invisible, relentless act of turning strangers away at the gate is the subject of this chapter, and it has a much older, much more human history than you might expect.
+
+## The Wall Is Older Than the Internet
+
+The word "firewall" did not start in a computer science paper. It started in construction codes, after cities kept burning down. Following the Great Fire of London in 1666 — which destroyed roughly 13,000 houses in four days because flames simply leapt from one wooden building to the next — building regulations across Europe began requiring thick masonry walls between adjoining structures, specifically designed to stop a fire in one unit from spreading to its neighbor. Later, steam locomotive builders borrowed the same idea and the same name: a metal firewall was bolted between the boiler, where the actual fire burned, and the cab, where the crew sat, so that a firebox failure wouldn't cook the people driving the train. In both cases, the wall wasn't there to prevent every possible disaster — it was there to contain one, so it couldn't spread to everything else.
+
+Computer networking borrowed the metaphor for the exact same reason, and it took a real disaster to make the borrowing urgent. On November 2, 1988, a graduate student named Robert Tappan Morris released a self-replicating program onto the fledgling internet — not, by his later account, intended to be destructive, but written with a replication bug that made it copy itself onto the same machine over and over until it ground systems to a halt. The Morris worm infected an estimated 10 percent of the roughly 60,000 computers then connected to the internet, crippling research labs, universities, and military installations across the country in one weekend. It was the first incident to make it viscerally clear, to a lot of very smart people at once, that "connected to everything" also meant "reachable by anything." Researchers at Bell Labs, including Bill Cheswick and Steve Bellovin, spent the years afterward formalizing exactly the kind of gatekeeping this chapter is about — and by the early 1990s, "firewall" was the name everyone had settled on for it.
 
 ## Firewalls: The First Line of Defense
 
-**Analogy:** Think of a firewall as the mighty wall and guarded gate around your digital city. Only trusted visitors get in; everyone else is turned away or questioned.
+Think of a firewall as the wall and guarded gate around your digital city. Only visitors matching a specific description get through; everyone else is turned away without so much as an explanation. Formally, **a firewall monitors and controls incoming and outgoing network traffic based on a set of rules**, usually matched against the **5-tuple**: source IP, destination IP, source port, destination port, and protocol (TCP, UDP, and so on). Everything a firewall does, no matter how sophisticated, ultimately boils down to checking a packet against that five-part description and deciding: let it through, or don't.
 
-- **Definition:** A firewall monitors and controls incoming and outgoing network traffic based on a set of rules, usually matched against the **5-tuple**: source IP, destination IP, source port, destination port, and protocol (TCP/UDP/etc).
-- **Types by deployment:**
-  - **Hardware firewalls:** Dedicated appliances sitting at the network edge, like a security checkpoint at the city gate.
-  - **Software firewalls:** Programs running on an individual host, like a personal bodyguard that only protects one person.
-  - **Cloud/security-group firewalls:** Rules enforced by the cloud provider itself, protecting virtual machines that may not even share physical hardware.
-- **Types by inspection depth:**
-  - **Stateless (packet-filtering):** Evaluates each packet in isolation against static rules — fast, but can't tell an established conversation from a fresh, unsolicited one.
-  - **Stateful:** Tracks the state of each connection (has a handshake completed? is this packet part of a conversation we already allowed?) so it can, for example, permit response traffic to a request you initiated without a separate rule for every possible reply.
-  - **Next-generation (NGFW) / application-layer:** Inspects the actual payload, not just headers — it can tell the difference between legitimate HTTPS traffic and a disguised, malicious protocol both using port 443.
+Firewalls come in a few flavors depending on *where* they stand guard:
+
+- **Hardware firewalls** are dedicated appliances at the network's edge, like a security checkpoint built into the city gate itself.
+- **Software firewalls** are programs on an individual machine, like a personal bodyguard protecting exactly one client.
+- **Cloud and security-group firewalls** are rules enforced by the cloud provider, protecting virtual machines that may not even share physical hardware — a gate with no physical wall, purely a policy enforced on your behalf.
+
+And they differ just as much in *how closely* they look at what passes through:
+
+- **Stateless (packet-filtering) firewalls** evaluate each packet in isolation against static rules — fast, but blind to context: they cannot tell an established, welcome conversation from a fresh, unsolicited one using the same port.
+- **Stateful firewalls** track the condition of each connection — has a handshake completed? Is this part of a conversation we already allowed? — so they can permit reply traffic without a separate rule for every conceivable reply.
+- **Next-generation (NGFW) or application-layer firewalls** read the actual payload, not just the header, telling legitimate HTTPS traffic apart from a disguised, malicious protocol riding the same port 443.
 
 ```
 [Internet] ---[Firewall]--- [Internal Network]
 ```
 
-- **Use Case:** Protects against hackers, malware, and unauthorized access.
-- **Fun Fact:** The term "firewall" comes from a physical wall built into buildings and, appropriately, steam locomotives to stop a fire in one compartment from spreading to the next.
+<DeepDive title="Why stateful inspection was such a big deal">Early stateless firewalls had an awkward problem: to let your own web browsing work, you had to write a rule allowing *inbound* traffic on high, unpredictable ports, because that's where replies would land — which also left the door cracked open for anything else arriving on those same ports. Stateful firewalls fixed this by keeping a connection table: when your machine sends a request out, the firewall remembers it, and only that specific reply is allowed back in. This is also exactly the mechanism that makes home routers usable without any manual configuration at all — the router's stateful firewall, bundled with its NAT, quietly permits replies to connections you started while still blocking unsolicited inbound connections by default, which is why you have never had to configure a firewall rule just to browse the web.</DeepDive>
 
-<DeepDive title="Why stateful inspection was such a big deal">Early stateless firewalls had an awkward problem: to let your web browsing work, you had to write a rule allowing *inbound* traffic on high, unpredictable ports, because that's where responses would land — which also happened to open the door for anything else arriving on those same ports. Stateful firewalls solved this by keeping a connection table: when your machine sends a request out, the firewall remembers it, and only *that* specific reply is allowed back in, on the assumption that everything else in that state entry is illegitimate. This is also the same mechanism that makes home routers usable at all without manual configuration — the router's stateful firewall (bundled with its NAT, discussed next) automatically permits replies to connections you initiated, while still blocking unsolicited inbound connections by default.</DeepDive>
+Firewalls exist because networks are, structurally, an open invitation: every device with an IP address is theoretically reachable by every other device with one, since the internet was built to route around damage and connect strangers, not to keep them apart. A firewall is the layer of judgment bolted onto a system that was never designed to say no by default.
 
----
+<Warning title="A common misconception">People often picture a firewall as a single dramatic barrier, like a drawbridge that's either up or down. In practice, most networks you use every day pass through several firewalls at once — one on your laptop, one built into your home router, often another at your ISP or workplace — each enforcing its own independent rules. A connection has to satisfy every gate along its path, not just one.</Warning>
 
 ## NAT (Network Address Translation): The Master of Disguise
 
-**Analogy:** NAT is like a clever gatekeeper who gives visitors a temporary badge and keeps a secret list of who's really inside.
+NAT is the clever gatekeeper who hands every visitor a temporary badge on the way in and keeps a private ledger of who's really who. Formally, **NAT rewrites IP addresses — and often port numbers — as packets cross a boundary**, most commonly translating many private internal addresses down to one shared public address.
 
-- **Definition:** NAT rewrites IP addresses (and often ports) as packets cross a boundary, most commonly translating many private internal addresses to one shared public address.
-- **Why it exists:** NAT was invented primarily to solve **IPv4 address exhaustion** — there are only about 4.3 billion IPv4 addresses, nowhere near enough for every device on Earth. By letting an entire household or office share one public IP, NAT bought the internet roughly three extra decades before IPv6 adoption became mandatory.
-- **Common variants:**
-  - **SNAT (source NAT):** Rewrites the source address of outbound packets — what your home router does for every device inside.
-  - **DNAT (destination NAT):** Rewrites the destination address of inbound packets — what lets a public IP forward traffic to an internal server, e.g. port-forwarding to a home server.
-  - **PAT (port address translation):** The specific, very common case of NAT where many internal hosts share one public IP by also remapping port numbers, so the router can tell which internal device a reply belongs to.
+NAT exists because of a piece of arithmetic nobody in 1981 took seriously enough. IPv4 addresses are 32 bits long, which sounds generous until you do the multiplication: roughly 4.3 billion possible addresses, in a world that would go on to connect billions of phones, laptops, servers, and eventually light bulbs. By the early 1990s, with the Web about to set off an explosion of new devices, engineers at the Internet Engineering Task Force ran the numbers and got worried: at the growth rate they were seeing, the entire IPv4 address space looked set to run out well before the decade was over. Two pieces of duct tape held the dam together long enough for a real fix to arrive: CIDR, a smarter way of carving up address blocks, and NAT, formalized by Kjeld Egevang and Paul Francis in RFC 1631 in 1994 — if an entire household or office could share a single public address instead of needing one each, the shortage could be deferred by decades. It worked far better than anyone expected; NAT alone is a large part of why IPv6, designed as the *real* long-term fix back in the 1990s, only became strictly mandatory for large providers this past decade.
+
+NAT shows up in a few common shapes:
+
+- **SNAT (source NAT)** rewrites the source address of outbound packets — what your home router does, silently, for every device inside it.
+- **DNAT (destination NAT)** rewrites the destination address of inbound packets — what lets a single public IP forward traffic to a specific internal server, such as port-forwarding to a home server.
+- **PAT (port address translation)**, the specific and very common case of NAT where many internal hosts share one public IP by also remapping port numbers, so the router can tell exactly which internal device each reply belongs to.
 
 ```
 [Private Devices]
@@ -51,26 +59,19 @@ title: "Firewalls, NAT, and VPNs"
 [NAT Router] <---[Public IP: 203.0.113.5]---> [Internet]
 ```
 
-- **Use Case:** Home routers, office networks — almost every Wi-Fi router uses NAT.
-- **Fun Fact:** NAT is why you can have hundreds of devices at home, all sharing one public IP address.
+<Warning title="NAT is not a security feature, even though it looks like one">Because NAT happens to block unsolicited inbound connections — there's no internal address to translate them to unless a rule already maps one — it gets mistaken for a firewall constantly. But NAT was invented purely to conserve a scarce resource, addresses, not to provide security; the blocking behavior is a side effect of how translation works, not the goal it was designed for. A single misconfigured port-forwarding rule (DNAT) undoes that side effect instantly, and NAT does nothing at all to inspect payloads, filter malicious content, or restrict traffic between devices already inside the same private network. Treat your firewall and your NAT as two separate tools doing two separate jobs, even though your home router happens to bundle both into one small plastic box.</Warning>
 
-<Warning title="NAT is not a security feature, even though it looks like one">Because NAT happens to block unsolicited inbound connections (there's no internal address to translate them to unless a rule already maps one), it's commonly mistaken for a firewall. But NAT was designed purely to conserve addresses, not to provide security — the blocking behavior is a side effect, not the goal. A misconfigured port-forwarding rule (DNAT) undoes that side effect instantly, and NAT does nothing at all to inspect, filter, or block outbound traffic, malicious payloads, or traffic between devices that are already inside the same private network. Treat your firewall and your NAT as two separate tools, even though your home router happens to bundle both.</Warning>
-
-NAT has one well-known downside: it breaks true end-to-end connectivity. Two devices behind two different NATs can't simply dial each other directly, because neither has a real, routable address the other can reach — this is the exact problem that peer-to-peer applications (video calls, file-sharing, online games) solve with techniques like **NAT hole punching** (getting both sides to send outbound packets first so their NATs create temporary mappings) or by falling back to a relay server when hole punching fails.
-
----
+NAT does have one well-known cost: it quietly breaks true end-to-end connectivity, the original design promise of the internet. Two devices sitting behind two different NATs cannot simply dial each other directly, because neither one has a real, routable address the other can reach from the outside — there's no true address to knock on, only a disguise. This is the exact problem that peer-to-peer applications — video calls, file-sharing tools, online multiplayer games — solve with techniques like **NAT hole punching**, where both sides send outbound packets first so their respective NATs create temporary, matching mappings that let replies slip through, or by falling back to a relay server when even that trick fails.
 
 ## VPN (Virtual Private Network): The Secret Tunnel
 
-**Analogy:** A VPN is a secret tunnel under the city walls — your messages travel safely, hidden from spies and eavesdroppers.
+If a firewall is a wall and NAT is a disguise, a VPN is the tunnel dug underneath both of them — a secure, encrypted, authenticated passage between your device and a remote endpoint, so that anything traveling inside it stays hidden from whoever might be listening along the way.
 
-- **Definition:** A VPN creates a secure, encrypted, authenticated tunnel between your device and a remote endpoint, so traffic inside the tunnel is protected from anyone observing the network in between.
-- **Why Use a VPN?**
-  - Protects your data on untrusted networks (public Wi-Fi).
-  - Lets a remote device appear to be "inside" a private network (remote-access VPN for employees).
-  - Connects two entire private networks over the public internet (site-to-site VPN, e.g. linking a company's two office branches).
-  - Can hide your apparent location and IP address from the sites you visit.
-- **Split tunnel vs. full tunnel:** A full-tunnel VPN routes *all* of a device's traffic through the tunnel; a split-tunnel VPN only routes traffic destined for specific (usually internal, corporate) destinations through it, letting everything else — like general web browsing — go directly to the internet.
+Eavesdropping on a wire is not a hypothetical worry invented by paranoid engineers; it has happened, for real, at a scale that reads like a spy novel. During the Cold War, in an operation code-named Ivy Bells, American Navy divers located a Soviet undersea communications cable in the Sea of Okhotsk and physically attached a recording device to it — not by cutting the cable, but by tapping it, listening to unencrypted signals traveling along its length. The tap ran undiscovered for years, quietly proving a point every network engineer since has had to internalize: if a cable carries your traffic in the clear, anyone with physical access to it, or to any point between you and your destination, can potentially read it. A VPN's answer is blunt and effective — encrypt everything before it ever leaves your device, so even a perfect, undetected tap sees only noise.
+
+VPNs earn their keep in several distinct situations: protecting your data on untrusted networks like public Wi-Fi; letting a remote device appear to be "inside" a private network, the classic remote-access VPN used by employees working from home; connecting two entire private networks over the public internet (a site-to-site VPN, linking a company's two office branches without leasing a dedicated line); and masking your apparent location and IP address from the sites you visit.
+
+A **full-tunnel VPN** routes every scrap of a device's traffic through the tunnel; a **split-tunnel VPN** only routes traffic destined for specific, usually internal, destinations through it, letting everything else — ordinary web browsing — go directly to the internet, trading some privacy for speed and simplicity.
 
 ```
 [Your Device] ===(Encrypted Tunnel)===> [VPN Server] --- [Internet]
@@ -83,94 +84,29 @@ NAT has one well-known downside: it breaks true end-to-end connectivity. Two dev
 | OpenVPN | AES (TLS-based) | TCP or UDP, commonly 1194 | Mature, flexible, open-source, moderate overhead |
 | PPTP | MPPE (weak by modern standards) | TCP 1723 | Legacy; considered insecure, best avoided today |
 
-<Warning title="A VPN protects your traffic in transit — it doesn't make you anonymous">A very common misconception is that "using a VPN" is equivalent to "being untraceable." A VPN hides your traffic from your local network and your ISP, and it changes what IP address a destination sees — but the VPN provider itself can usually see everything your ISP used to see, just relocated to a different point in the path. It also does nothing about identifiers that travel *inside* the encrypted tunnel, like login cookies, browser fingerprints, or simply logging into an account tied to your real identity. A VPN is a confidentiality tool for the network path, not a general anonymity tool.</Warning>
+That last row has its own small history. PPTP, developed by a consortium that included Microsoft engineer Gurdeep Singh-Pall in the mid-1990s, was the first VPN protocol most ordinary people ever used, simply because Windows shipped built-in support for it — suddenly a small business could let an employee dial into the office network from home without leasing an expensive dedicated telephone line. It also turned out, over the following decade, to have serious cryptographic weaknesses, which is exactly why the table lists it as legacy: convenience got there first, and security caught up afterward, a pattern that repeats constantly in this field.
+
+<Warning title="A VPN protects your traffic in transit — it doesn't make you anonymous">A very common misconception is that "using a VPN" is equivalent to "being untraceable." A VPN hides your traffic from your local network and your ISP, and it changes what IP address a destination sees — but the VPN provider itself can usually see everything your ISP used to see, just relocated to a different point along the path. It also does nothing about identifiers that travel *inside* the encrypted tunnel, like login cookies, browser fingerprints, or simply signing into an account tied to your real identity. A VPN is a confidentiality tool for the network path, not a general-purpose anonymity tool, and treating it as one is how people end up with a false sense of security.</Warning>
 
 <Axiom>Firewalls decide who's allowed to knock, NAT decides what name the knocker uses, and a VPN decides who's allowed to overhear the conversation — three different jobs that only look like one because home routers bundle all three.</Axiom>
 
----
-
 ## How They Work Together
 
-1. **Firewall:** Blocks unwanted traffic at the gate, based on rules and (usually) connection state.
-2. **NAT:** Translates addresses so everyone inside can share one public face, and incidentally hides internal topology.
-3. **VPN:** Lets you travel safely through untrusted territory, and can make a remote device look like it's inside the private network the firewall protects.
-
----
+Line the three up and a modern home or office network turns out to run a small, silent ritual on every single connection: the **firewall** blocks unwanted traffic at the gate, based on rules and, usually, connection state; **NAT** translates addresses so everyone inside can share one public face, incidentally hiding the internal network's true shape from outside eyes; and the **VPN** lets you travel safely through untrusted territory, making a remote device look, to the firewall, like it's already standing inside the walls it protects.
 
 ## Real-World Example: Safe Surfing at a Coffee Shop
 
-1. You connect to the coffee shop's public Wi-Fi — a network you don't control and can't fully trust.
-2. Your VPN client establishes an encrypted tunnel to your company's VPN server.
-3. NAT at the coffee shop's router still translates your device's address for its own outbound traffic, same as always — the VPN tunnel just rides inside that translated connection.
-4. Your company's firewall is configured to only accept internal-network traffic that arrives through the VPN, rejecting everything else at the edge.
-5. You work as if you were plugged in at the office, even sitting in a crowded, untrusted room.
+1. You connect to the coffee shop's public Wi-Fi — a network you don't control, run by people you've never met, shared with strangers you can't vet.
+2. Your VPN client establishes an encrypted tunnel to your company's VPN server, the digital equivalent of stepping into that tunnel under the wall the moment you sit down.
+3. NAT at the coffee shop's router still translates your device's address for its own outbound traffic, same as always — the VPN tunnel simply rides inside that translated connection.
+4. Your company's firewall is configured to accept internal-network traffic only when it arrives through the VPN, rejecting everything else at the edge.
+5. You work as if you were plugged in at the office, even sitting in a crowded, unfamiliar room full of strangers.
 
----
-
-## Try It Yourself in Go
-
-A real firewall inspects packets at the OS/kernel level, which is well beyond what a userspace Go program can do — but you can build something that captures the *logic* of packet filtering perfectly well: a small TCP proxy that only forwards connections to an allow-listed destination port, and drops everything else, exactly the way a firewall rule would.
-
-```go
-package main
-
-import (
-	"fmt"
-	"io"
-	"net"
-)
-
-// allowedPorts simulates a simple firewall allow-list: only traffic destined
-// for these backend ports is permitted through the proxy.
-var allowedPorts = map[string]bool{
-	"80":  true,
-	"443": true,
-}
-
-func main() {
-	ln, err := net.Listen("tcp", "127.0.0.1:8080")
-	if err != nil {
-		fmt.Println("listen error:", err)
-		return
-	}
-	defer ln.Close()
-	fmt.Println("filtering proxy listening on", ln.Addr())
-
-	for {
-		client, err := ln.Accept()
-		if err != nil {
-			continue
-		}
-		go handle(client, "example.com:80")
-	}
-}
-
-func handle(client net.Conn, backend string) {
-	defer client.Close()
-
-	_, port, err := net.SplitHostPort(backend)
-	if err != nil || !allowedPorts[port] {
-		fmt.Println("blocked connection to", backend)
-		return // firewall rule: drop it, just like a real filter would
-	}
-
-	upstream, err := net.Dial("tcp", backend)
-	if err != nil {
-		fmt.Println("upstream dial error:", err)
-		return
-	}
-	defer upstream.Close()
-
-	go io.Copy(upstream, client)
-	io.Copy(client, upstream)
-}
-```
-
-Every client that connects to `127.0.0.1:8080` gets forwarded to `example.com:80` here, because port 80 is in `allowedPorts`. Change the hardcoded backend to something like `"example.com:8081"` and rerun it, and `handle` will print `blocked connection to example.com:8081` and close the connection without ever dialing upstream — the same decision a real stateful firewall rule makes, just implemented at the application layer instead of in the kernel's packet-filtering path. This is also, structurally, a miniature NAT: clients only ever see the proxy's address, never the real backend's, and the proxy is the one translating "a connection to me" into "a connection to someone else on your behalf."
-
----
+That whole sequence — wall, disguise, tunnel — happens in the time it takes to open your laptop and load your email, standing on the shoulders of a fire code from 1666, a worm outbreak in 1988, an address-exhaustion panic from the early 1990s, and a Cold War cable tap the public didn't learn about for years. None of this machinery announces itself. It just quietly works, the way a good wall always has.
 
 ## Fun Facts & Memes
-- The term "firewall" started as literal walls, first in buildings and then in steam engines, to stop fires from spreading.
-- NAT is the reason you can have twenty smart bulbs, three laptops, and a smart fridge all online at home, sharing a single public IP.
-- WireGuard's entire codebase is famously small enough that security researchers can read (and have read) the whole thing, unlike some older VPN protocols spanning hundreds of thousands of lines.
+
+- The word "firewall" protected buildings and locomotives from real fire for over three centuries before it ever protected a single byte of data.
+- NAT is the reason you can have twenty smart bulbs, three laptops, and a smart fridge all online at home, sharing a single public IP address that the outside world sees as just one machine.
+- WireGuard's entire codebase is famously small enough that security researchers can read — and have read — the whole thing line by line, unlike some older VPN protocols spanning hundreds of thousands of lines of code accumulated over decades.
+- The Morris worm's creator was, in a small irony of history, the son of a chief scientist at the National Security Agency, and the incident he caused led directly to the founding of the first Computer Emergency Response Team (CERT), still coordinating security responses today.
