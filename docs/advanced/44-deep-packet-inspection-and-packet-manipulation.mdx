@@ -119,6 +119,23 @@ if err := handle.WritePacketData(buf.Bytes()); err != nil {
 
 <DeepDive title="Root privileges and platform setup">Raw packet capture requires elevated privileges on every platform -- `CAP_NET_RAW` (or root) on Linux, Administrator on Windows with Npcap installed, and root on macOS -- because reading traffic that was not addressed to your process is precisely the capability an operating system restricts by default. `gopacket/pcap` is a cgo binding to `libpcap`/`Npcap`, so those native libraries and headers need to be installed on the build machine as well as the target machine.</DeepDive>
 
+## Frequently Asked Questions
+
+**Why does `net.Dial` never see this kind of raw traffic on its own?**
+Because the standard library is deliberately built to keep you above the fray -- it hands you an already-reassembled TCP stream or a UDP datagram's payload, precisely so you never have to think about Ethernet frames, IP headers, or checksums to write an ordinary client or server. `gopacket` exists as a separate, opt-in layer specifically because most Go network code should never need raw sockets at all; DPI is the exception, not the rule.
+
+**Do I need root or Administrator just to read traffic my own program sent?**
+Yes, and that is by design, not an oversight. Reading packets off an interface means reading traffic that was not necessarily addressed to your process, so every major OS gates that behind `CAP_NET_RAW`/root on Linux, Administrator plus Npcap on Windows, and root on macOS. If `pcap.OpenLive` fails with a permissions error, that is the platform doing exactly what it is supposed to do.
+
+**What happens if I skip the BPF filter and just inspect everything in `packetSource.Packets()`?**
+It will still work, but you will burn CPU cycles copying every single frame on the wire into your Go process's userspace just to throw most of them away. `SetBPFFilter("tcp port 80")` pushes that discarding decision down into the kernel, before the packet ever reaches your code -- on a busy interface that difference is the gap between a tool that scales and one that falls over.
+
+**My inspection code sees an HTTP request cut in half across two calls to `inspect` -- is that a bug?**
+No, that is TCP working as intended: segments can arrive split at arbitrary byte boundaries, and a single captured packet is not the same thing as a single application-layer message. That is exactly the problem `gopacket`'s `tcpassembly`/`reassembly` subpackage solves, reconstructing an ordered, gap-free byte stream out of individually-captured segments the same way the kernel's own TCP stack would.
+
+**Is crafting my own packets with `SerializeLayers` the same skill as the custom protocols in the next chapter?**
+Related, but not the same layer of the stack. Here you are hand-assembling Ethernet, IP, and TCP headers below the transport your OS would normally manage for you -- useful for scanners, fuzzers, or generators that need frames a plain `net.Dial` could never produce. The next chapter's custom protocol design work happens above a transport that already exists, defining your own message format on top of a TCP or UDP connection you did not have to construct byte by byte.
+
 ### Where This Belongs in a Real System
 
 DPI-style inspection is the mechanism behind intrusion detection systems (matching payloads against known attack signatures), application-aware load balancers (routing based on the actual protocol inside a TLS-terminated stream), and network troubleshooting tools that need to see what a `tcpdump` capture file actually contains, programmatically, instead of eyeballing it. Used within its legal and ethical bounds, it is one of the few tools that lets you verify what is really happening on the wire, rather than trusting what a protocol's headers claim.

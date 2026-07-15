@@ -130,3 +130,20 @@ MQTT needs a broker to route messages between publishers and subscribers -- Mosq
 ### Connection Reliability in Practice
 
 Both client libraries shown above handle reconnection, but the details matter for IoT specifically: a sensor on an unreliable cellular link will disconnect often, and `paho.mqtt.golang`'s `ClientOptions` exposes `SetAutoReconnect` and `SetConnectRetry` precisely because dropped connections are the normal case, not the exception, for this class of device. Designing your topic structure and QoS choices around "this device will reconnect frequently" rather than "this device stays connected" is the difference between an IoT system that degrades gracefully and one that silently loses data during ordinary network hiccups.
+
+## Frequently Asked Questions
+
+**Do I need to pick either MQTT or AMQP for my whole system?**
+Not necessarily -- as the DeepDive on choosing between them points out, many real IoT architectures use both at once: MQTT out at the edge where devices are cheap and often offline, with a bridge translating into AMQP (or Kafka) once messages reach the data center. Treat the choice as per-hop, not system-wide -- ask what is talking to what at each stage.
+
+**If I set MQTT QoS to 2, can I stop worrying about duplicate processing in my subscriber?**
+No, and this is exactly the trap the Warning box in this chapter calls out. QoS 2 guarantees exactly-once delivery of the message between the client and the broker, not exactly-once processing on your end -- a redelivered message after a reconnect can still trigger your handler twice, so your subscriber logic still needs to be idempotent regardless of which QoS level you choose.
+
+**Why does MQTT bother with a two-byte fixed header when AMQP has all this routing machinery?**
+Because they were built to solve different problems, exactly as the radio-station-versus-post-office analogy that opens this chapter suggests. MQTT was designed in 1999 for monitoring oil pipelines over unreliable satellite links, so every byte on the wire was a real cost; AMQP targets backend systems that need transactional guarantees and rich routing through exchanges and bindings, where a few extra bytes of overhead is a fair trade for that flexibility.
+
+**My sensor keeps disconnecting -- is that a bug in my Go code?**
+Probably not. This chapter's closing point is that frequent disconnects are the normal case for IoT devices on cellular or other unreliable links, not an exception to design around. Lean on `paho.mqtt.golang`'s `SetAutoReconnect` and `SetConnectRetry` options, and make sure your topic structure and QoS choices assume reconnection will happen often rather than treating it as a rare failure.
+
+**Do I have to write a broker myself to use either protocol from Go?**
+No -- your Go programs are clients, not infrastructure. For MQTT you point `paho.mqtt.golang` at an already-running broker like Mosquitto or EMQX; for AMQP you dial into RabbitMQ with `amqp091-go`. Both brokers are easy to run in a container for local development, and neither requires you to implement any broker-side logic in Go.

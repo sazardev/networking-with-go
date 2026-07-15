@@ -374,3 +374,22 @@ Extend the careful client above to report how much data it received:
 - The Go Playground lets you run code in your browser—try it out!
 - Go’s motto: "Make the easy things easy, and the hard things possible."
 - Go is used by giants: Google, Uber, Netflix, Docker, Kubernetes, and more.
+
+---
+
+## Frequently Asked Questions
+
+**Should Address() on my Server struct use a value or pointer receiver?**
+It depends on whether the method reads or mutates the struct. `Address` in this chapter only reads `Host` and `Port`, so a value receiver is fine—but `Connect` on the `Client` struct assigns to `c.conn`, and a value receiver there would only update a throwaway copy, leaving the original struct's `conn` field untouched. The rule of thumb: if a method changes the struct, or the struct holds a `net.Conn`, mutex, or buffer, give it a pointer receiver.
+
+**Why does my map of ports print in a different order every time I run the program?**
+That's Go being deliberate, not a bug. The runtime randomizes the order `range` visits a map's keys on every single run, specifically so nobody accidentally depends on an order that was never guaranteed. If you're building something like a routing table where check order matters, sort the keys explicitly instead of trusting iteration order.
+
+**My program printed "all goroutines are asleep - deadlock!" What did I do wrong?**
+You almost certainly sent on an unbuffered channel with nothing ready to receive it. `messages <- "Ping!"` on the same goroutine that will later run `<-messages`, with no `go` in front of the send, blocks forever waiting for a receiver that can never start—Go's runtime detects that the whole program is stuck and panics rather than hanging silently forever.
+
+**If goroutines are so cheap, why does the chapter warn about spawning one per connection?**
+Because "cheap" isn't "free." A few KB of stack per goroutine handles thousands of slow, mostly-idle clients without breaking a sweat, but a flood of a million connections in the same few seconds still means a million live goroutines, each with its own stack, `net.Conn`, and handler buffers—memory and file descriptors run out even though the goroutines themselves stay lightweight. That's exactly why Part 2's concurrency chapter later introduces worker pools as the escape hatch, reached for only once you've measured that unbounded goroutines are the actual problem.
+
+**Why does the careful TCP client print `buf[:n]` before checking whether `err` is `io.EOF`?**
+Because `Read` is allowed to return both data and `io.EOF` in the same call—the last chunk of the response can arrive at the exact moment the connection closes. Checking the error first and discarding the data on `io.EOF` would silently drop the tail end of whatever you were reading, which is why the loop prints first and only then decides whether to break.

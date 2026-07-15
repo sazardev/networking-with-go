@@ -163,4 +163,21 @@ A mobile client that fetches this once at app launch and caches it for the sessi
 
 Flags multiply the number of code paths your tests need to cover — a checkout handler with one flag has two behaviors to verify, and a handler with three independent flags has up to eight. Keep this tractable by testing the flag-dependent logic in isolation from flag evaluation itself: extract `newCheckout` and `legacyCheckout` as functions that take no dependency on `FlagStore` at all, and test each directly, reserving a much smaller set of tests for `IsEnabled` and the routing `if` statement that chooses between them.
 
+## Frequently Asked Questions
+
+**Why hash the user ID with the flag name instead of just generating a random number to decide rollout?**
+A fresh random number on every request means the same user could see the new checkout flow on one page load and the old one on the next, which is a confusing and sometimes broken experience. Hashing `flagName + ":" + userID` with SHA-256 gives a deterministic bucket, so `alice` always lands on the same side of the rollout percentage for that specific flag, no matter which server handles her request.
+
+**Why does `IsEnabled` use an `RWMutex` instead of a plain `Mutex`?**
+Because reads vastly outnumber writes here — `IsEnabled` gets called on potentially every request that touches a flagged path, while `refresh` only swaps the map every few seconds on a polling interval. An `RWMutex` lets all those frequent reads proceed concurrently and only blocks briefly during the rare write, which a plain `Mutex` would serialize unnecessarily.
+
+**When should I move from the DIY `FlagStore` to something like Unleash?**
+Once you need things the map-and-poll approach can't express cleanly — audit logs of who flipped a flag and when, scheduled changes, or targeting rules richer than a percentage rollout, like "users in the EU on the enterprise plan." Both designs share the same shape (poll periodically, cache locally, evaluate in-memory), so switching later doesn't mean rearchitecting your handlers, just swapping what backs `IsEnabled`.
+
+**What's the risk of checking a feature flag in my frontend code and again in the API that backs it?**
+The two checks can disagree — a UI rendered with the new checkout flow enabled might submit to an API endpoint that independently evaluated the same flag and got the old behavior, since evaluation timing, caching, or targeting rules can drift between the two. Evaluate the flag once, as early in the request as possible, and pass the resolved decision down instead of re-checking it in multiple places.
+
+**Won't my codebase eventually be full of flags nobody remembers the purpose of?**
+Yes, if nobody treats flags as temporary — that's the trap the chapter calls out explicitly: an `if` branch left forever is dead code with extra steps. Give every flag an expected lifetime, and once a rollout has sat at 100% for a sprint or two, delete the flag and the old code path in the same change rather than letting it linger.
+
 <Axiom>A feature flag is a config value with exactly two states; once you build the machinery to change one value safely without a deploy, you've built the machinery for all of them.</Axiom>

@@ -126,3 +126,20 @@ func TestHandler(t *testing.T) {
 ```
 
 For end-to-end testing that includes API Gateway's own routing and request transformation, tools like AWS SAM's local invoke or `localstack` emulate the surrounding platform on your own machine, closing the gap between "works in my unit test" and "works when actually deployed" without needing a real AWS account for every iteration.
+
+## Frequently Asked Questions
+
+**Why does the handler return a nil error alongside a `4xx` status code instead of just returning the error?**
+Because Lambda treats those two situations completely differently — a non-nil error tells the platform something went wrong at the invocation level, which gets logged and potentially retried, while a `4xx`/`5xx` status in `events.APIGatewayProxyResponse` is your application deliberately telling the caller "here's a normal HTTP-shaped answer, it just happens to be an error." Conflating the two would mean a routine "invalid request body" turns into Lambda quietly retrying the same bad request against your function.
+
+**If I already have a working Gin or Fiber app, do I have to rewrite it against `events.APIGatewayProxyRequest` to run it on Lambda?**
+No, and that's exactly what `aws-lambda-go-api-proxy` is for. `httpadapter.New(router)` wraps your existing `*gin.Engine` (or any `http.Handler`) so the same code you'd deploy to a normal server also runs behind `lambda.Start`, which is why the chapter frames this as the practical path most teams actually take rather than maintaining two parallel implementations.
+
+**Why can't I just cache something in a package-level variable and expect it to survive between requests?**
+Because Lambda doesn't guarantee your execution environment survives between invocations — it might be frozen, reused for a while, or torn down entirely, and you have no control over which. That's why the chapter insists anything that needs to persist across invocations, like a shared cache or a queue, has to live in an external service such as Redis or DynamoDB rather than in the Lambda process's own memory.
+
+**My function works fine most of the time but occasionally responds noticeably slower — is that a bug?**
+Probably not a bug, just a cold start: the first invocation after a period of inactivity has to initialize your process from scratch, which is inherently slower than a warm invocation reusing one already running. If that latency is unacceptable for a given endpoint, provisioned concurrency (covered in the DeepDive above) keeps environments pre-warmed at the cost of paying for idle capacity, rather than something you fix in your handler code.
+
+**How do I know whether an endpoint should be serverless at all rather than a normal long-running service?**
+Look at the traffic shape and the state it needs: spiky, unpredictable, or rarely-hit endpoints are a good fit because you only pay per invocation, while latency-sensitive APIs that can't tolerate occasional cold starts, or workloads needing long-lived in-memory state or very high sustained throughput, are usually cheaper and more predictable on an always-warm pool of servers. This is the same tradeoff the "When serverless is, and isn't, the right fit" section walks through — it's rarely an all-or-nothing choice across an entire system.

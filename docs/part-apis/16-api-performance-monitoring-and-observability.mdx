@@ -177,4 +177,21 @@ go tool pprof http://localhost:8080/debug/pprof/profile?seconds=30
 
 A `p99_latency` alert fires for `/orders`. Metrics show the histogram's tail spiking. A trace for one of the slow requests shows 4ms in the handler itself, but 800ms in a single downstream span labeled `db.query: orders_by_user`. That's enough to know exactly where to look next — a missing index, most likely — without guessing from logs alone.
 
+## Frequently Asked Questions
+
+**Isn't a plain average latency number good enough to know if my API is slow?**
+Not really, and this is a common trap — a service with mostly 5ms responses and a handful of 5-second stragglers can still report a perfectly healthy-looking average. That's exactly why the Prometheus section reaches for a histogram instead: bucketing observations lets you compute p50, p95, and p99 after the fact, which is what tells you how bad the slowest requests actually are, not just the typical one.
+
+**Why do `/healthz` and `/readyz` need to be two separate endpoints instead of one combined health check?**
+Because they answer different questions to the orchestrator, and conflating them causes real outages. `/healthz` should only fail if the process itself is unrecoverably broken — if a failing database ping trips it too, Kubernetes will restart a perfectly healthy process for a problem restarting can't fix. `/readyz` is where dependency checks like `db.PingContext` belong, since it only controls whether traffic gets routed to this instance, not whether it gets killed.
+
+**If `net/http/pprof` is just a stdlib import, is it safe to leave wired up on the same port as the rest of the API in production?**
+No — this is called out directly as a hard warning in the chapter, not a stylistic preference. The `/debug/pprof/` endpoints expose internal memory layout and can be used to degrade the service, since even a legitimate 30-second CPU profile request forces the server to profile itself for that whole window. Bind pprof to a separate internal-only port or put it behind authentication, and never let it share a listener with public traffic.
+
+**With logs, metrics, and traces all in play, how do I know which one to check first when something's wrong?**
+The chapter's closing example walks through exactly this order: a `p99_latency` alert (metrics) tells you something's slow, a trace shows you where the time actually went (a specific downstream span, in that example a slow `orders_by_user` query), and only then do you go looking at logs for the specific request if you need more detail. Metrics tell you something is wrong, traces tell you where, and logs fill in the specifics once you know where to look.
+
+**Do I need OpenTelemetry tracing even for a small API that only talks to one database?**
+Probably not on day one — tracing earns its keep once a request fans out across multiple services or hops, where logs and metrics alone can't show where time was spent for one specific slow request. For a single-service API talking to a single database, structured logs plus a latency histogram will usually answer "what's slow" just fine; add tracing when the call graph actually grows enough to need it.
+
 Logs, metrics, and traces each answer a different question — logs the *what*, metrics the *how much*, traces the *where* — and together they turn "the API feels slow" into a specific, actionable finding. Next, we'll look at what it takes to actually run this API in production: deployment and scaling.

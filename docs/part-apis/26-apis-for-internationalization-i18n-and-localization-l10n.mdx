@@ -142,4 +142,21 @@ func directionForLocale(tag language.Tag) string {
 
 This small, explicit signal (`"direction": "rtl"` in a JSON response) is far more reliable for a client than deriving it from a hardcoded list of language codes scattered through frontend code — centralizing it in the API means every client consuming your API gets it consistently.
 
+## Frequently Asked Questions
+
+**Why bother with `language.NewMatcher` instead of just checking if the `Accept-Language` header contains one of my supported language codes?**
+Because real `Accept-Language` headers are messier than a single code — a client might send `fr-CA`, `zh-Hant`, or a ranked list of several languages with quality values, and a plain substring or exact-match check breaks on the first regional variant you didn't anticipate. `matcher.Match` does confidence-ranked fallback matching, so `fr-CA` still resolves to your registered `fr` instead of falling through to your default locale.
+
+**Why does the chapter recommend sending raw error codes like `invalid_email` alongside the localized message instead of just localizing everything?**
+Because client code — especially other programs consuming your API, not humans reading a browser — needs something stable to branch on. If a client pattern-matches against the English message text and a translator later tweaks that string, every integration relying on it breaks silently. The machine-readable code never changes even when the human-readable message does.
+
+**Why does the chapter push pluralization handling into `golang.org/x/text/message` instead of a simple `count == 1 ? "item" : "items"` check?**
+Because that ternary hardcodes English grammar, and most languages don't follow English's two-form pattern — Polish has three plural categories depending on the count's last digit, Arabic has six, and Japanese has none at all. `plural.Selectf` picks the right category per language according to CLDR rules, so the same catalog entry produces correct grammar in every locale without your handler ever branching on language.
+
+**Why does the API only send a `"direction": "rtl"` field instead of actually reformatting the response for right-to-left languages?**
+Because text direction is a rendering concern that belongs to whatever is drawing the UI, not to the API returning JSON — your server has no idea how the client lays out its interface. Sending an explicit signal derived from the locale (as `directionForLocale` does) is more reliable than every client independently maintaining its own hardcoded list of RTL language codes.
+
+**Should I format dates and currency on the server before sending them to the client?**
+For currency, yes — `golang.org/x/text/currency` formats correctly per locale in a single call, and doing that centrally in the API avoids every client reimplementing locale-aware currency formatting. For dates, the chapter recommends the opposite: send RFC 3339 UTC timestamps and let the client localize them, since only the client actually knows the user's timezone.
+
 <Axiom>i18n is an architectural decision made once, early; l10n is content work that never really finishes — get the first one right and the second one stays tractable.</Axiom>

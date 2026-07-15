@@ -39,6 +39,20 @@ title: "Wireless Network Security: Theory and Attacks"
 - **Deploy a Wireless Intrusion Detection System (WIDS)** to detect rogue access points, unusual deauthentication frame volume, and known-attack signatures over the air, mirroring the wired IDS concepts from earlier in this part but applied to the radio layer.
 - **Disable WPS** (Wi-Fi Protected Setup) on consumer-grade access points, since several widely known implementation flaws make its PIN-based pairing mode a common weak point.
 
+## Frequently Asked Questions
+
+**We're on WPA2 with a strong passphrase - do we still need to worry about KRACK?**
+The original KRACK disclosure was patched across essentially the entire Wi-Fi ecosystem through software and firmware updates, so a fully patched WPA2 deployment isn't exposed to the original attack. The lesson worth keeping, though, is the broader one: a strong passphrase protects against dictionary attacks on the handshake, but it does nothing against a flaw in the handshake's state machine itself, which is exactly the kind of gap that patching, not passphrase strength, has to close.
+
+**If deauthentication frames are unauthenticated, why hasn't that just been fixed already?**
+Newer protections (802.11w management frame protection, and WPA3's design more broadly) do address this, but a huge installed base of older client devices and access points still needs to interoperate with configurations that don't enforce it, which slows how quickly the unauthenticated behavior can be retired industry-wide. It's the same kind of legacy-compatibility tension that kept WEP-compatible WPA around longer than its security merited.
+
+**Our guest Wi-Fi and our IoT devices are on separate SSIDs - is that the same thing as the VLAN segmentation this chapter recommends?**
+Not automatically. Separate SSIDs only guarantee separate segmentation if each one is actually mapped to its own VLAN with firewall rules blocking routing between them; plenty of consumer and even small-business access points broadcast multiple SSIDs that quietly land on the same underlying network. It's worth explicitly verifying the backend mapping rather than assuming a different network name implies a different network.
+
+**Is war driving something we need written authorization for, the same as an active attack?**
+Passively recording which networks and signal strengths are visible from a public street generally sits in a legal gray area that varies by jurisdiction, but the moment an assessment moves from passively observing to attempting to associate with, decrypt, or interact with a network you don't control, you're squarely back in territory that requires the same explicit written authorization as any other test in this chapter.
+
 ## Summary
 
 - Wireless security compensates for a fundamentally broadcast, unauthenticated physical medium - anyone in range can receive the signal.

@@ -101,6 +101,23 @@ not a log line we understand
 
 Each vendor's real log format is messier than this example, but the shape of the problem never changes: parse, extract the fields that matter, discard or quarantine what fails to parse, and emit a consistent structure downstream. Once every source speaks the same JSON schema, writing a correlation rule - "same `source_ip` blocked more than three times in sixty seconds" - becomes a straightforward query instead of a cross-format nightmare.
 
+## Frequently Asked Questions
+
+**We already have a firewall and an IDS with their own alerts. Why do we still need a SIEM on top of them?**
+Because each of those tools only narrates its own slice of the story. The firewall can tell you a connection was blocked, and the identity provider can tell you a login happened, but neither one knows about the other's event, let alone that they belong to the same incident. A SIEM's entire reason for existing is stitching those separate fragments into one timeline for a given user, host, or address.
+
+**Our correlation rules keep firing on things that turn out to be harmless. Is the SIEM broken?**
+No, that's the normal cost of the approach, not a malfunction. Every rule in this chapter - impossible travel, brute-force-then-success, beaconing, data staging - is a hypothesis, not a proof of compromise, and tuning thresholds against real traffic to cut false positives without missing real incidents is ongoing work, the same alert-fatigue problem the IDS/IPS chapter raised, just spread across the whole environment instead of one sensor.
+
+**If we can only onboard a few log sources at first, does it matter which ones we pick?**
+It matters enormously. Authentication logs, DNS query logs, firewall/flow logs, and endpoint process logs give the highest signal for the least onboarding effort, because network visibility without identity context and identity logs without network context each leave a blind spot the other one fills. Starting with those four covers far more realistic attack paths than onboarding ten obscure sources nobody correlates against anything.
+
+**Why does the Go example bother normalizing log lines into JSON instead of just searching the raw text?**
+Because correlation only works once every source speaks the same schema. If the firewall logs timestamps in UTC and another source uses local time, or one calls a field `src_ip` and another calls it `source_address`, a query trying to span both breaks silently. The normalization step - regex-parse, extract the fields that matter, discard what fails - is what turns "same source_ip blocked three times in sixty seconds" from a cross-format nightmare into a simple query.
+
+**How does beaconing detection here connect to the malware chapter that follows?**
+A SIEM notices beaconing as a pattern - the same external address contacted at suspiciously regular intervals - without necessarily knowing what's causing it. The malware analysis chapter picks up exactly where that pattern leaves off, digging into what a piece of malware's command-and-control traffic actually looks like on the wire, so the indicator a SIEM flags becomes something you can positively identify rather than just suspect.
+
 ## Summary
 
 - A SIEM's value comes from correlation across sources, not from any single log in isolation.

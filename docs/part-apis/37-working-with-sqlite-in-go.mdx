@@ -226,6 +226,23 @@ copy.
 
 <DeepDive title="In-memory SQLite for fast repository tests">Chapter 6.13 covered testing and mocking APIs, including the tradeoff between mocking a data layer and exercising a real one. SQLite's `:memory:` special filename gives you a third option that is often better than either: `sql.Open("sqlite", ":memory:")` creates a fresh, empty database that lives only for the lifetime of the connection, with zero setup cost and no Docker container to start. Your repository code runs against a real SQL engine -- real constraints, real transactions, real query syntax -- instead of a hand-written mock that can silently drift from what the production database actually enforces. There is one sharp edge: `database/sql` pools multiple connections, and by default each new connection to `:memory:` gets its own separate, empty database, so a pooled test that opens more than one connection can appear to "lose" rows it just inserted. The fix is either `db.SetMaxOpenConns(1)` in tests, so every query shares one connection, or a shared-cache DSN such as `"file::memory:?cache=shared"`, which lets multiple connections see the same in-memory database. Either way, in-memory SQLite turns repository tests from slow, container-dependent integration tests into tests that run in milliseconds as part of `go test ./...`.</DeepDive>
 
+## Frequently Asked Questions
+
+**My API suddenly starts throwing `SQLITE_BUSY` under light concurrent load -- is SQLite broken?**
+No, that's SQLite behaving exactly as designed: only one writer can hold the database lock at a time, so a second write arriving while the first is still in flight either blocks or fails with `SQLITE_BUSY`. The fix isn't switching databases, it's setting `PRAGMA busy_timeout` on every connection you open, which tells SQLite to retry quietly for a few seconds instead of surfacing that brief, ordinary contention as a hard error your handler has to deal with.
+
+**Why would I ever choose `modernc.org/sqlite` over the more established `mattn/go-sqlite3`?**
+Because `mattn/go-sqlite3` wraps the real C SQLite library through cgo, which means every build needs a matching C toolchain, and cross-compiling -- say, building a Linux binary from a Mac, or shipping a `CGO_ENABLED=0` container -- gets meaningfully harder. `modernc.org/sqlite` is SQLite's C source translated into pure Go, so `GOOS=linux GOARCH=arm64 go build` just works with no cross toolchain at all; the tradeoff is a modest performance gap that rarely matters at the traffic levels where SQLite makes sense in the first place.
+
+**Doesn't `db.SetMaxOpenConns(1)` defeat the purpose of using a connection pool?**
+For a write-heavy SQLite workload, deliberately, yes -- and that's the point. Because only one writer can hold the lock regardless of how many connections you open, a larger pool against a single SQLite file mostly buys you connections queuing behind each other rather than genuine concurrency. If your workload is read-heavy and you've already turned on WAL mode, a small pool with a healthy `busy_timeout` is usually the better balance, letting readers run concurrently while occasional writer collisions just wait out the timeout.
+
+**Can I back up a SQLite database by just copying the file while the API is running?**
+Only safely if nothing is writing to it at that exact moment, and in WAL mode a plain `cp` can miss changes still sitting in the separate `-wal` file, producing a backup that looks fine but is subtly stale. Use SQLite's own `VACUUM INTO 'backup.db'` for a single consistent snapshot from Go, or a tool like `benbjohnson/litestream` for continuous, near-real-time replication to object storage -- a raw file copy is fine for a personal project and risky for anything more.
+
+**Why does testing with `:memory:` sometimes look like it "loses" rows I just inserted?**
+Because `database/sql` pools multiple connections, and by default each new connection to `:memory:` opens its own separate, empty database rather than sharing one -- so a test that inserts on one pooled connection and reads on another sees nothing. Either force `db.SetMaxOpenConns(1)` in tests so every query shares a single connection, or use the shared-cache DSN `"file::memory:?cache=shared"`, which lets multiple connections see the same in-memory database.
+
 ### Key Takeaways
 
 - SQLite fits embedded, single-binary services, CLI tools, tests, and

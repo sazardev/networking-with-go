@@ -119,3 +119,19 @@ Once you've listed threats, you still need to decide what to fix first. Most tea
 <Axiom>You cannot secure what you haven't mapped. Every minute spent listing entry points is a minute not spent guessing at your defenses later.</Axiom>
 
 Threat modeling isn't a one-time diagram you draw and file away — it's a habit you repeat every time the system changes: a new endpoint, a new dependency, a new network path all deserve a fresh pass through the same questions.
+
+---
+
+## Frequently Asked Questions
+
+**Isn't threat modeling just a fancy name for "think about security"?**
+It's a bit more structured than that — the whole point of vocabulary like asset, actor, threat, and vulnerability is to stop "think about security" from turning into a vague worry and turn it into a repeatable checklist. STRIDE in particular forces you to check a component against six specific failure modes instead of whatever happens to come to mind that day.
+
+**I found a debug pprof endpoint or a metrics port left open — is that really a big deal?**
+Yes, and this chapter calls that out specifically: entry points you didn't intentionally design are still entry points. An admin panel or debug route with no authentication scores as high-risk in the sample inventory above precisely because attackers don't care whether you meant to expose it; they only care that it's reachable.
+
+**How does STRIDE relate to the CVSS scoring mentioned near the end?**
+STRIDE and likelihood-times-impact prioritization are how you find and rank threats in something you're designing yourself; CVSS is a standardized version of that same likelihood/impact judgment applied to already-known vulnerabilities in software you didn't write, which is why Chapter 4.6 picks it up when the conversation shifts to scanning for known issues rather than modeling your own architecture.
+
+**Do I need to redo the full threat model every time I ship a small change?**
+Not the whole diagram, but yes to the habit — a new endpoint, dependency, or network path each deserve a quick pass through the same questions (what's the asset, who can reach it, what could go wrong). Treating threat modeling as a living habit rather than a one-time document is exactly what keeps the attack surface from silently growing underneath you.

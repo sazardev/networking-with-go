@@ -100,6 +100,23 @@ First, narrow the claim. Is it down for everyone, or just them? A quick message 
 
 The next move is `curl -v https://api.example.com/health`, and this is where the real answer tends to hide. Maybe the TCP connection succeeds instantly but the TLS handshake stalls — a certificate that quietly expired overnight. Maybe the connection and handshake both succeed, but the HTTP response takes eleven full seconds to arrive — not "down" at all, but a database query somewhere upstream grinding to a halt under load. Two completely different root causes, both reported by a human as "the API is down," and both distinguishable in under a minute once you stop guessing and start asking each layer its own specific question in order.
 
+## Frequently Asked Questions
+
+**If ping succeeds, why would someone still insist the network is the problem?**
+Because a successful ping only proves that ICMP traffic can reach a host and come back, and plenty of very real outages leave ICMP completely untouched while the actual service — a web server, a database, an application process — is either crashed or blocked at a different port entirely. The chapter's warning box on this is there specifically because it's one of the most common ways an investigation stalls: someone declares "the server responds, so it's not a network problem" and stops looking exactly one layer too early.
+
+**Why does traceroute sometimes show a hop as `* * *` even when the connection past it works fine?**
+Because some routers deliberately deprioritize the ICMP "time exceeded" replies traceroute depends on, since answering those messages isn't their actual job and can even be treated as a minor security risk to expose. A silent hop doesn't mean a broken hop — it just means that particular router chose not to confess its identity, while every packet destined further down the path keeps moving through it perfectly normally.
+
+**Should troubleshooting always start from Layer 1 and work upward?**
+Not necessarily — the chapter presents bottom-up and top-down as equally legitimate, just suited to different situations. Bottom-up is the thorough, no-assumptions approach, useful when you genuinely have no idea where the fault lies. Top-down is faster when you already have a hunch, like a colleague reporting a specific broken feature, because you can jump straight to testing the application layer first and only dig deeper if that layer turns out to be innocent.
+
+**In the "the API is down" walkthrough, why bother checking DNS and the listening port at all once ping already succeeds?**
+Because each of those checks rules out a different, otherwise-plausible cause, and skipping any one of them leaves a gap an actual outage could be hiding in. A clean ping only proves the machine is alive; a correct DNS answer only proves the name isn't stale; a listening port only proves the process hasn't crashed outright — none of those three facts, even together, guarantees the service itself is healthy, which is exactly why the investigation still has to reach `curl -v` before it finds the real answer.
+
+**Is memorizing every flag for every tool in this chapter actually the point?**
+No — the chapter's closing axiom says this outright: the tool matters less than the order you reach for it. What actually matters is knowing which specific question belongs to which layer, so that "the internet is broken" turns into a sequence of small, testable claims you can confirm or rule out one at a time, the same discipline that turned a literal moth in a relay into the most famous bug report in computing history.
+
 ## Fun Facts & Memes
 
 - The Harvard Mark II moth wasn't the first use of the word "bug" for a glitch, but it is almost certainly the only time in history the bug in question could be pressed flat and taped into a logbook as physical evidence.

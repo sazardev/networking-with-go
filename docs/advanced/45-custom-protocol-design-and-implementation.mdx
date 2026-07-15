@@ -161,3 +161,20 @@ Put the version byte in from day one, even if you only ever ship `Version1` for 
 <DeepDive title="State machines keep protocols honest">Beyond framing, most real protocols have a notion of valid message *order* -- a handshake must complete before data messages are accepted, a `Close` message ends the conversation. Modeling this explicitly as a state machine (a `type connState int` with defined transitions, rejecting messages that arrive in the wrong state) turns "what should never happen" into something your code actively checks for, instead of an assumption baked silently into control flow.</DeepDive>
 
 <Axiom>A protocol is not the bytes you send -- it is the promises both sides agree to keep about what those bytes mean.</Axiom>
+
+## Frequently Asked Questions
+
+**Why not just use delimiters like HTTP/1.1 does, instead of a length-prefixed header?**
+Delimiters work fine when your payload is text you control, like HTTP headers, but they fall apart the moment the payload is arbitrary binary data that might legitimately contain your delimiter bytes. Length-prefixing sidesteps the whole escaping problem: the reader is told exactly how many bytes to expect and never has to scan the payload looking for a terminator, which is why HTTP/2 and gRPC's own framing both moved to it.
+
+**I called `conn.Read` once with a big buffer -- why did I only get part of my message?**
+Because TCP makes no promise that a single `Read` fills your buffer, even if the sender wrote everything in one `Write` -- the two ends do not share a notion of "message," only a stream of bytes that can be sliced up differently by the network. That is exactly why `ReadMessage` in this chapter uses `io.ReadFull` rather than a bare `Read`: it loops internally until it has the exact number of bytes the header promised, or it gives up with an error.
+
+**What actually stops a malicious peer from crashing my server with a huge length field?**
+The `maxPayload` guard in `ReadMessage` is what stops it. Without an upper bound, a hostile or buggy sender could put a `Header.Length` near 4 GiB into a 4-byte field and force your server to allocate that much memory before ever verifying the rest of the data shows up -- any time you trust a length value read off the network, it needs a ceiling checked before you allocate.
+
+**Do I really need a version byte if I only have one version of my protocol today?**
+Yes, put it in from the start. The whole point is that reserving the byte costs you nothing on day one, while adding it later means every already-deployed peer suddenly needs to be taught to expect a byte that used to not exist -- a breaking change you could have avoided entirely by planning for evolution before you needed it.
+
+**How does this connect to the state machine idea in the DeepDive above?**
+Framing (this chapter's main subject) tells you where one message ends and the next begins; a state machine tells you whether a message that arrived in the right shape is even allowed to arrive *now*. Both are part of the same discipline -- a protocol is not just a byte layout, it is a set of promises about order and meaning, which is the idea the closing Axiom is pointing at.

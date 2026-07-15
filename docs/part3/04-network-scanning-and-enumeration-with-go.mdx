@@ -153,3 +153,22 @@ DNS enumeration is another common technique, using `net.LookupHost`, `net.Lookup
 A scan produces a list of open ports and banners. On its own, that's just data. Chapter 4.6 covers how to turn "port 21 open, running vsftpd 2.3.4" into an actual assessed finding — checking that version against known weaknesses and deciding whether it matters in context. Scanning tells you what's there; assessment tells you whether it's a problem.
 
 <DeepDive title="Why not just use nmap?">`nmap` is the industry-standard scanner and you should absolutely use it for real engagements — it has SYN scanning, OS fingerprinting, and a huge script library that would take years to reimplement. Building a scanner in Go here isn't about competing with it; it's about understanding exactly what a scanner does under the hood, so that when you read `nmap` output — or write Go code that needs to probe its own dependencies at startup — you know precisely what's happening on the wire.</DeepDive>
+
+---
+
+## Frequently Asked Questions
+
+**My scanner in this chapter can't do a SYN scan like nmap — is my code broken?**
+No, that's expected and by design. A TCP connect scan completes the full handshake using ordinary, unprivileged sockets, while a SYN scan deliberately stops halfway and needs raw sockets plus root or `CAP_NET_RAW` — capabilities the standard library doesn't expose portably. The connect scan is slightly noisier and slower, but it's the version that runs anywhere Go runs, which is exactly why it's the one worth learning first.
+
+**Why does the example scanner use a worker pool instead of just spawning a goroutine per port?**
+Because thousands of simultaneous connection attempts against one host don't just look like a denial-of-service attempt — functionally, they are one. Bounding concurrency with a fixed number of workers keeps even a full 1-65535 scan from overwhelming the target or your own machine's socket table, which matters whether you're scanning a lab VM or, someday, a system under a signed engagement.
+
+**Is it actually illegal to scan a network I don't own, even if I never exploit what I find?**
+In many jurisdictions, yes — the Warning at the top of this chapter isn't boilerplate. Simply probing ports without authorization can itself be the offense under computer-crime statutes, independent of whatever you do (or don't do) with the results. Keep every scan pointed at `localhost`, a VM you control, or an environment you have written permission to test.
+
+**My banner grab against an HTTP server just hangs or returns nothing — what's going on?**
+That's normal, not a bug: unlike SSH, which announces itself the moment a connection opens, HTTP servers sit quietly waiting for the client to speak first. The fix is to send a minimal request yourself — an HTTP `HEAD /` is enough — and then read the response headers, rather than assuming a banner will arrive unprompted.
+
+**How does today's scanning tie into the "assessment" step Chapter 4.6 covers?**
+Scanning and enumeration answer "what's reachable and what's running there," which produces raw data like "port 21 open, running vsftpd 2.3.4" — but that data isn't a finding on its own. Chapter 4.6 picks up exactly where this chapter stops, showing how to check that version against known weaknesses and decide whether it's actually a problem worth acting on.

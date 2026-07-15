@@ -162,4 +162,21 @@ tp := sdktrace.NewTracerProvider(
 
 `TraceIDRatioBased(0.1)` samples roughly ten percent of new traces, and `ParentBased` ensures that if an upstream service already decided to sample a trace, downstream services honor that same decision rather than each service flipping its own independent coin — otherwise you'd end up with fragments of a trace where some services recorded spans and others didn't, defeating the purpose of a connected trace entirely. A common refinement is sampling all error traces at 100 percent regardless of the base rate, since the traces you need most are exactly the ones representing something that went wrong.
 
+## Frequently Asked Questions
+
+**Do I need to add a span to every single function to get useful traces?**
+No, and trying to would bury the signal you actually care about. `otelhttp.NewHandler` and `otelhttp.NewTransport` already give you a span at every HTTP boundary for free, which is usually enough to see which service ate the time. Reach for a manual `tracer.Start` call only around business logic you'd otherwise have to guess about, like `processOrder` in this chapter — a span around every helper function just adds noise to the trace view without adding insight.
+
+**What happens if I forget `otel.SetTextMapPropagator(propagation.TraceContext{})`?**
+Each service still generates spans just fine, but they stop belonging to the same trace. Without a shared propagator, an incoming request gets a fresh trace ID at every hop instead of continuing the one from upstream, so your tracing backend shows a pile of disconnected single-span traces rather than one connected story — which defeats the entire point of distributed tracing.
+
+**If I turn on sampling, don't I lose exactly the trace I need later?**
+That's the worry `ParentBased(TraceIDRatioBased(0.1))` is built to avoid for the common case: whatever the upstream service decided, downstream services honor it, so a sampled trace stays whole instead of fragmenting. The remaining risk is the rare request that turns into an error after being sampled out — which is why teams commonly sample error traces at 100 percent regardless of the base rate, so the traces you're most likely to need are never the ones you threw away.
+
+**Are exemplars just a fancier metric, or a replacement for tracing?**
+Neither — they're a pointer from one signal to the other. The metric still does the cheap job of showing "how much" and "how often" across all traffic; the exemplar just tags one sample with the trace ID that was active when it was recorded, so a spike on a histogram becomes a single click into the one trace that explains it, instead of a separate cross-referencing exercise against timestamps.
+
+**How is this chapter's tracing different from the logging and metrics in the previous chapter?**
+Logs and metrics live inside one service and describe what that service did; a trace crosses service boundaries and describes what the whole request did, tying together every hop with a single trace ID. The trace-aware logging and exemplar sections in this chapter exist specifically to stitch the three signals back together, so you can start at any one of them — a log line, a metric spike, or a trace — and jump straight to the others for the same request.
+
 <Axiom>A single service's logs tell you what it did; a trace tells you what the whole request did — and once you can jump between a metric spike, a trace, and the exact log line behind it, "why is this slow" stops being a multi-hour investigation and becomes a click.</Axiom>

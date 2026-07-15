@@ -107,6 +107,22 @@ This is deliberately simple — a real inventory would pull from your infrastruc
 
 ---
 
+## Frequently Asked Questions
+
+**Do I need to be a "hacker" already to get anything out of Part 3?**
+Not at all — this chapter exists precisely because most readers arrive as builders, not breakers. Every technique from here on is taught the way a locksmith teaches lock-picking: understand the mechanism deeply enough to know exactly where it fails, then use that knowledge to build stronger locks. If you can write a TCP server, you already have the foundation this part needs.
+
+**Is it legal for me to try the scanning and sniffing techniques later in Part 3?**
+Only against systems you own or are explicitly authorized to test — your own lab machines, a virtual machine, a CTF environment, or a target covered by a signed penetration-testing agreement. Running the same commands against someone else's network without permission crosses from "learning security" into "committing a crime," regardless of intent. Chapter 4.10 walks through the legal boundaries in full detail before you touch any live target.
+
+**Why does this chapter spend so much time on CIA (confidentiality, integrity, availability) instead of jumping straight to tools?**
+Because tools change every year and the properties they protect don't. If you internalize that every attack is ultimately an assault on confidentiality, integrity, or availability, you'll be able to reason about brand-new attack techniques you've never seen before, instead of only recognizing ones you memorized. It's the difference between knowing a checklist and understanding why the checklist exists.
+
+**How does "assume breach" square with also trying to keep attackers out in the first place?**
+The two aren't in tension — they're layers. You still lock the front door (firewalls, TLS, authentication), but you also design as though someone might already be inside, so a single failure doesn't cascade into total compromise. That's the defense-in-depth idea in practice, and it's why Chapter 4.15 revisits it as a full architectural philosophy (zero trust) rather than a single control.
+
+---
+
 ## What's Ahead in Part 3
 
 The rest of this part builds up in layers:

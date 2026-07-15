@@ -151,3 +151,17 @@ This produces exactly the `cert.pem`/`key.pem` pair the TLS server in Chapter 4.
 Certificates expire on purpose — `NotAfter` bounds how long a mis-issued or compromised certificate can cause damage, which is why automated renewal (widely available via the ACME protocol used by many CAs) has become the norm rather than manual, easily-forgotten yearly renewal. For certificates that need to be invalidated *before* their expiry — a compromised private key, for example — CAs publish **CRLs (Certificate Revocation Lists)** or support **OCSP (Online Certificate Status Protocol)** queries so clients can check current validity beyond just the expiry date.
 
 <Warning title="An expired certificate is a self-inflicted outage">Unlike most security failures, a certificate silently expiring is entirely predictable and entirely preventable — track expiry dates for every certificate you operate, alert well before expiry, and prefer automated renewal over a calendar reminder.</Warning>
+
+## Frequently Asked Questions
+
+**If TLS already encrypts the connection, why do I still need a certificate at all?**
+Because encryption alone doesn't tell you who you're encrypting *to* — an attacker running a man-in-the-middle attack can encrypt traffic too, just with themselves sitting in the middle of it. A certificate is what closes that specific gap: a signed statement binding a public key to an identity, which is why Chapter 4.12's TLS handshake is only as trustworthy as the certificate chain backing it.
+
+**Why bother with intermediate CAs — why can't every server certificate just be signed directly by the root?**
+Because that would mean the root's private key, the single most sensitive key in the entire chain of trust, would need to be online and in active use constantly, turning it into a huge and tempting attack surface. Intermediates let the root stay offline almost all the time, brought out rarely just to sign new intermediates, while the day-to-day work of issuing certificates happens through keys that are far easier to rotate or revoke if one is ever compromised.
+
+**My self-signed certificate from the local-testing example works in my own test client but gets rejected by everyone else — is something broken?**
+No, that's exactly correct behavior, not a bug. A self-signed certificate isn't backed by any CA a normal client already trusts, so chain verification fails for anyone except a client that has deliberately been told to trust it — typically by adding it to a custom `RootCAs` pool. It's meant for local development and lab work, never for anything a real client should trust by default.
+
+**What's the actual difference between a certificate expiring and a certificate being revoked?**
+Expiry is a scheduled, built-in limit — `NotAfter` bounds in advance how long any given certificate can possibly be trusted, mis-issued or not. Revocation is an unscheduled, active response to something going wrong before that date arrives, like a compromised private key, communicated to clients through CRLs or OCSP queries so they can reject a certificate that technically hasn't expired yet but should no longer be trusted.

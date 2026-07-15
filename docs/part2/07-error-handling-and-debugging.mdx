@@ -331,6 +331,25 @@ clients, message-queue consumers) do every time they connect.
 
 ---
 
+## Frequently Asked Questions
+
+**Why does `err == net.ErrClosed` sometimes fail even when the connection really was closed?**
+Because the moment anything in the call chain wraps that error with `fmt.Errorf("...: %w", err)`, the value you're comparing against `==` is a brand-new wrapper, not the original sentinel. `errors.Is` exists exactly for this — it walks the `Unwrap()` chain underneath any number of wrapping layers, so it keeps matching no matter how much context got added on the way up. Reach for `errors.Is`/`errors.As` by default and treat raw `==`/type-assertion comparisons on errors as a bug waiting to happen.
+
+**Should I use a sentinel error or a custom error type for my own package?**
+It depends on what the caller needs to know. A sentinel like `io.EOF` or `net.ErrClosed` is enough when there's really only one meaningful kind of failure and callers just need to detect *that* it happened; a custom struct type, like `*net.DNSError` in this chapter's DNS example, is worth the extra ceremony when callers also need structured details about *why*, such as `IsTimeout` or `IsNotFound`.
+
+**If a goroutine panics, will my deferred `recover()` in `main` catch it?**
+No, and this trips people up constantly: `recover` only has an effect inside a deferred function in the *same* goroutine that's unwinding. A panic in a goroutine started with `go` that never recovers takes the whole process down with it, so the `defer`/`recover` pair has to live inside that goroutine itself — see the `safeGo` helper earlier in this chapter for the pattern.
+
+**When should I actually use `panic` instead of just returning an error?**
+Reserve it for programmer errors and broken invariants that should genuinely never happen at runtime — not for ordinary, expected failures like "connection refused" or "host not found." Those are exactly what the `error` return value is for, and reaching for `panic` there just throws away the caller's chance to decide what to do about it.
+
+**How does retrying with backoff, like `connectWithRetry`, relate to context and cancellation from the next chapter?**
+This chapter's retry loop uses a fixed attempt count and `time.Sleep` to back off, which works but can't be interrupted from outside once it starts. The context chapter builds on exactly this pattern by threading a `context.Context` through the retry loop so a caller can cancel it early or bound the whole operation with a deadline, instead of just hoping the attempt count and sleep durations were chosen well enough.
+
+---
+
 ## Fun Facts & Go Memes
 - The Go mascot (the gopher) is often shown with a magnifying glass—always hunting for bugs!
 - The phrase "Don’t just check errors, handle them!" is a Go proverb.

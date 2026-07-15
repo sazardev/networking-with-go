@@ -41,6 +41,22 @@ Rather than pointing at specific links that go stale, it's more durable to know 
 
 ---
 
+## Frequently Asked Questions
+
+**With so many chapters behind me, where should I actually go read first: the standard library docs, the RFCs, or Go proverbs?**
+Start with whichever one answers the specific question in front of you rather than trying to read all three cover to cover. The standard library docs (and its source, which is just ordinary readable Go) settle exact API behavior fastest; an RFC is worth a skim only when a library's behavior feels genuinely surprising and you need the ground truth behind it; the Go proverbs are less a reference and more a lens for writing idiomatic code once the basics are already working. Treat them as three different tools for three different kinds of question, not a reading list to clear in order.
+
+**Do I need to read RFC 793 or RFC 7230 before I can call myself competent with TCP and HTTP in Go?**
+No — this book deliberately built TCP and HTTP understanding through the `net` and `net/http` packages rather than through the specifications themselves, and that's enough for the overwhelming majority of real work. The RFCs earn their keep specifically when something a library does seems to contradict what you expected, since they're the authoritative source underneath the abstraction; they're a reference to reach for when confused, not a prerequisite to unlock the next part of the book.
+
+**I finished every exercise in Part 2 — am I actually ready for Part 3 or the advanced topics, or should I build something first?**
+Working through the exercises is necessary but the case studies in the previous chapter exist precisely because composing familiar pieces into something a little larger is what turns "I followed along" into "I understand this." If any case study sparked an idea, building even a small version of it before moving on will surface gaps in your understanding far faster than reading the next part cold — the suggested load-balancer-plus-small-servers project at the end of the previous section is exactly this kind of low-stakes way to find out.
+
+**Which part of the book should I read next if I only care about security, not gRPC or WebRTC?**
+Part 3: Cybersecurity in Networking picks up directly from the authentication and TLS chapters here and goes considerably further — threat modeling, scanning, packet analysis, and building your own security tooling in Go. The Advanced and Specialized Networking Topics part is a separate branch entirely, covering gRPC, WebRTC, MQTT, and software-defined networking; nothing stops you from reading Part 3 first and doubling back to the advanced topics later, since both build on this same Part 2 foundation rather than on each other.
+
+---
+
 ## Where to Go From Here in This Book
 
 Part 2 covered the topics needed by nearly any networked Go application. The rest of this book branches into more specialized territory:

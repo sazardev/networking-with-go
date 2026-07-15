@@ -38,6 +38,23 @@ A good vulnerability report answers, without requiring the recipient to ask foll
 - **Duplicate reports**: most platforms only reward the first valid report of a given issue, so checking a program's known-issues list first saves time on both sides.
 - **Overstating impact**: exaggerating a low-severity finding to seem more significant tends to damage a researcher's credibility with a program more than it helps in the short term.
 
+## Frequently Asked Questions
+
+**If I find a serious bug in an app that has no published bug bounty program, is it fine to just test it anyway since I mean well?**
+No - good intentions do not create authorization, and this is one of the most important distinctions in the whole chapter. Without a published scope, VDP, or explicit permission from the owner, probing a system is legally indistinguishable from an unauthorized attack, regardless of what you planned to do with the findings. If a target has no program, the responsible path is to look for a security contact (a `security.txt` file, a published email) and ask before testing, not to test first and disclose later.
+
+**My automated scanner found something interesting just outside the listed scope - can I report it anyway?**
+You can report what you observed incidentally, but you should not have actively scanned or exploited anything outside the published scope to get there, and most programs will say so explicitly. As the chapter's warning on scope makes clear, authorization only covers what a program defines, so the safest move is to stop at the boundary, double-check your scanner's target list before every run, and only report in-scope findings unless a program invites broader reports.
+
+**Why does coordinated disclosure bother with a 90-day window instead of just publishing immediately once you're sure the bug is real?**
+Because certainty about the bug does not equal certainty about the fix. Full disclosure hands attackers a working roadmap the moment it's published, while the organization may still need days or weeks to build, test, and roll out a patch across its infrastructure. The 90-day convention popularized by Project Zero exists precisely to balance the public's eventual right to know against giving defenders a realistic chance to close the hole first.
+
+**My report sat untriaged for two weeks with no reply - what should I do?**
+First, resist the urge to escalate to public disclosure early, since that risks violating both the program's timeline and your own safe harbor protection. Most platforms have an internal escalation path or a way to nudge the program directly; use that before assuming silence means rejection. It also helps to revisit your original report and make sure it clearly stated impact and reproduction steps, since the chapter's guidance on report quality applies just as much to getting a stalled report moving as to getting a fast first response.
+
+**How does responsible disclosure fit with the honeypot and lab-simulation chapters later in this part?**
+They sit on the same ethical spine even though the activities look different. A honeypot you build and run captures attacker behavior on infrastructure you own and control, and a lab simulation exercises attacks against environments you built for that purpose - both are inherently authorized by construction. Bug bounty work is the mirror image: you are testing someone else's live systems, so the authorization has to come from them, explicitly, through a published scope, rather than from the fact that you built the target yourself.
+
 ## Summary
 
 - Bug bounty programs and VDPs give researchers a legitimate, defined channel to report vulnerabilities instead of exploiting or publicizing them unilaterally.

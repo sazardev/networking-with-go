@@ -376,3 +376,22 @@ client follows: resolve, inspect, format, connect.
 - Go’s networking is so fast, you can scan thousands of ports in seconds!
 - Go’s `net` package is cross-platform: your code works on Windows, Linux, and Mac without changes.
 - Go handles all the low-level socket magic for you—no need to mess with C or system calls!
+
+---
+
+## Frequently Asked Questions
+
+**Why did comparing two net.IP values with == fail even though they were clearly the same address?**
+Because `net.IP` is just `type IP []byte`, and Go's `==` on slices compares the underlying representation, not the address they mean. One value might be parsed as 4 raw bytes while another is stored in the 16-byte IPv4-mapped form Go normalizes to internally, so two IPs that print identically can still fail `==`. Use `ip1.Equal(ip2)` instead—it compares the address itself, regardless of which byte-shape each value happens to be stored in.
+
+**My code did `ips[0]` from net.LookupIP and it worked in testing but fails for some users—what happened?**
+A hostname very often resolves to more than one address—for load balancing, IPv4/IPv6 dual-stack, or a CDN behind the name—and blindly grabbing the first one assumes every user's network can reach that particular address family. `net.Dial` already implements Happy-Eyeballs-style fallback across all the results internally, so letting `Dial` handle the whole hostname:port string is usually safer than picking an index yourself.
+
+**Why does net.ParseIP return nil instead of an error when parsing fails?**
+Unlike almost every other parsing function in Go, `net.ParseIP` simply hands back `nil` on invalid input rather than a second `error` return value. That's easy to miss, because a `nil` `net.IP` printed with `fmt.Println` just shows `<nil>` in your log output rather than anything alarming—always check `if ip == nil` explicitly right after calling it.
+
+**Why can't I just build a host:port string with fmt.Sprintf("%s:%d", host, port)?**
+Because that breaks the moment `host` is an IPv6 address. `2001:db8::1` combined naively with `:8080` produces `2001:db8::1:8080`, which is ambiguous and unparsable since IPv6 addresses already use colons as their own separator. `net.JoinHostPort` wraps an IPv6 host in brackets automatically (`[2001:db8::1]:8080`), so pair it with `net.SplitHostPort` and never hand-roll the colon yourself.
+
+**What's the difference between net.InterfaceAddrs and net.Interfaces, and when do I need the second one?**
+`net.InterfaceAddrs()` is the simpler call: it flattens every network interface's addresses into one slice, which is all the "list local IPs" example in this chapter needs. Reach for `net.Interfaces()` instead when you need to know *which* physical or virtual interface an address belongs to—say, picking a specific NIC for multicast, or writing VPN-aware code—since each `net.Interface` carries its own `Name`, MTU, and hardware address, and you call `.Addrs()` on the one you care about.

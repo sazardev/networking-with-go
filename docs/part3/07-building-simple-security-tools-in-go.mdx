@@ -144,6 +144,22 @@ func auditAll(urls []string) {
 
 ---
 
+## Frequently Asked Questions
+
+**Why write a headers auditor instead of just using Burp Suite or Nessus?**
+Both of those tools do this and far more, but they're heavyweight for a question this narrow — "does our fleet still set HSTS after last week's config change" doesn't need a full scanning suite spun up, it needs a fifty-line program you can read top to bottom and trust completely. The point of this chapter isn't to replace professional tooling, it's to recognize when a small, purpose-built script is genuinely the faster and more auditable choice.
+
+**Is it safe to point this tool at a website I don't control?**
+A single read-only `GET` against a public site's headers is about as low-risk as network probing gets, but "low-risk" isn't the same as "always fine" — running it against your own services, a lab target, or anything you're explicitly authorized to test is the safe default this book sticks to throughout. If you're ever unsure whether checking a third party's headers crosses a line, treat that uncertainty as your answer and stick to systems you own or have permission for.
+
+**What happens if the target is slow or just never responds?**
+That's exactly what `http.Client{Timeout: 5 * time.Second}` is guarding against — without it, a single hanging endpoint could stall the whole audit indefinitely, which is especially dangerous once you're checking a fleet of a hundred targets concurrently. If you see the tool hang despite the timeout, double check that you're using the client's timeout rather than relying on context cancellation you never wired up, since the two are easy to conflate.
+
+**A header shows as MISSING but I'm sure the server sends it — what's going on?**
+Check for case sensitivity and proxying first: `resp.Header.Get` is case-insensitive so that's rarely the culprit, but a reverse proxy, CDN, or load balancer in front of the real server can silently strip or rewrite headers before they ever reach your client. Re-run the check directly against the origin server if you can, and compare — a header that's present at the origin but missing at the edge is itself a useful finding.
+
+---
+
 ## Where a Tool Like This Fits
 
 Small, purpose-built tools like this one are exactly what feed a penetration test's reconnaissance phase (Chapter 4.8), what a security team runs on a schedule to catch configuration drift, and what an incident responder reaches for when they need a very specific answer *right now* rather than waiting on a heavyweight scanner's next scheduled run.

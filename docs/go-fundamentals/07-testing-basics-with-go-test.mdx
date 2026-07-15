@@ -5,6 +5,14 @@ title: "Testing Basics with go test"
 
 # Testing Basics with go test
 
+Ask a Go programmer what surprised them most moving from another
+language, and after "no exceptions" the next answer is often "there's
+nothing to install to write a test." No framework to choose between, no
+assertion library to argue about in a pull request, no configuration file
+to get right before the first test even runs. You already have everything
+you need, because it shipped in the same download as the compiler back in
+Chapter 1. This chapter is about using it.
+
 > Go treats tests the way a good workshop treats a tape measure: not a
 > separate specialized tool bolted on afterward, but something built into
 > the toolchain itself, sitting right next to the saw, ready to check every
@@ -63,6 +71,11 @@ go test ./...
 ok  	example.com/calc	0.002s
 ```
 
+There's something quietly satisfying about that one-line `ok` — it's the
+same feeling as the first `Hello, Go!` back in Chapter 1, just now backed
+by an actual claim about your code's correctness instead of a print
+statement.
+
 <Warning title="t.Errorf keeps running the test; t.Fatalf stops it immediately">`t.Errorf` records a failure and lets the rest of the test function keep executing — useful when later assertions are independent and you want to see all of them fail at once. `t.Fatalf` records the failure and immediately stops the current test function, which matters when a later line would panic on bad data from an earlier, already-failed step (for instance, dereferencing a pointer that a failed setup step left `nil`).</Warning>
 
 ## Table-Driven Tests
@@ -104,7 +117,7 @@ others, and `-run` (below) can target one specific case by name.
 
 <Axiom>A table-driven test turns "did I test enough cases?" into "did I add enough rows?" — the hard part of testing becomes enumerating scenarios, not writing boilerplate to exercise each one.</Axiom>
 
-<DeepDive title="Why the struct fields are named, not positional">The table above names every field (`name`, `a`, `b`, `expected`) rather than relying on struct literal position. As the table grows to a dozen cases and someone inserts a new field in the middle of the struct definition, named literals keep every row correct automatically, while positional literals would silently shift values into the wrong field — exactly the same reasoning from Chapter 4's advice to name struct fields in literals, just at higher stakes because test data errors are easy to overlook.</DeepDive>
+<DeepDive title="Why the struct fields are named, not positional">The table above names every field (`name`, `a`, `b`, `expected`) rather than relying on struct literal position. As the table grows to a dozen cases and someone inserts a new field in the middle of the struct definition, named literals keep every row correct automatically, while positional literals would silently shift values into the wrong field — exactly the same reasoning from the structs chapter's advice to name struct fields in literals, just at higher stakes because test data errors are easy to overlook.</DeepDive>
 
 ## Useful go test Flags
 
@@ -137,7 +150,8 @@ ok  	example.com/calc	0.002s
 ## Testing Error Paths
 
 Idiomatic Go tests exercise both the success path and the failure path of
-any function that returns an `error`, using the tools from Chapter 5:
+any function that returns an `error`, using the tools from the previous
+chapter:
 
 ```go
 func Divide(a, b float64) (float64, error) {
@@ -196,7 +210,9 @@ real socket involved, and `httptest.NewRecorder` captures whatever an
 `http.HandlerFunc` writes as if it were a real `http.ResponseWriter` —
 letting you test an HTTP handler's exact logic at full speed, with no
 listening port, no real connection, and no flakiness from the network at
-all.
+all. Hold onto that phrase — "no flakiness from the network" — because
+you'll come to appreciate it a great deal once Part 2 shows you how many
+things can quietly go wrong across a real one.
 
 ## A Word on Benchmarks
 
@@ -308,16 +324,36 @@ func TestDivideTable(t *testing.T) {
 
 <Axiom>A test you didn't write for the failure path isn't half a test suite — for error-returning functions, it's arguably the more important half you skipped.</Axiom>
 
-## Key Takeaways
+## Frequently Asked Questions
 
-- `go test` discovers `_test.go` files and runs any exported
-  `TestXxx(t *testing.T)` function — no external framework required.
-- `t.Errorf` records a failure and continues; `t.Fatalf` records a failure
-  and stops the current test function immediately.
-- Table-driven tests (a slice of named cases run through `t.Run` in a
-  loop) are the idiomatic way to cover many scenarios without repeating
-  test-body boilerplate.
-- `-v`, `-run`, and `-cover` target, narrate, and measure test runs;
-  coverage percentage reflects lines executed, not assertion quality.
-- `net/http/httptest` tests HTTP handlers in-memory, with no real network
-  connection — the tool Part 2 relies on once servers need testing.
+**Do I need a separate `_test.go` file for every source file, or can one test file cover a whole package?**
+Nothing in the toolchain forces a one-to-one mapping between `math.go` and `math_test.go` — that convention exists purely for humans to find the right test quickly, not because `go test` requires it. You could legally dump every test in the package into one giant `all_test.go`, but splitting tests to mirror the source file they exercise is what every idiomatic Go codebase does, and it's worth adopting from your very first package.
+
+**Why did my test function silently not run at all?**
+The single most common cause is a lowercase letter right after `Test` — `func Testadd(t *testing.T)` compiles fine and simply never gets discovered, because the toolchain's naming rule requires an uppercase letter immediately following the word `Test`. The second most common cause is forgetting the `*testing.T` parameter or misspelling the file suffix `_test.go`; `go test -v ./...` is the fastest way to confirm exactly which tests it thinks exist.
+
+**Should I use `t.Error` or `t.Fatal` inside a table-driven test's `t.Run` closure?**
+Prefer `t.Fatalf` the moment a later assertion in that same subtest would be meaningless without the earlier one succeeding — exactly the `Divide` example above, where comparing an unexpected-error result against `5` produces a confusing second failure. `t.Errorf` is right when two checks in the same subtest are genuinely independent and you'd want to see both fail together rather than stopping at the first.
+
+**Is `-cover` something I should chase toward 100%?**
+Not on its own — this chapter's warning about coverage measuring lines, not scenarios, is worth taking seriously rather than treating as a throwaway caveat. A far better habit is watching *which* lines `-cover` reports as untested and asking whether that gap is a real failure path you forgot, rather than treating the percentage itself as a score to maximize.
+
+**How does this chapter's testing style carry forward into Part 2?**
+Every technique here — table-driven cases, testing both success and error paths, `t.Run` subtests — applies unchanged once your functions start doing networking instead of arithmetic. The one new tool Part 2 leans on constantly is `httptest`, previewed above, precisely because a real TCP or HTTP round trip is exactly the kind of slow, flaky dependency a good unit test avoids.
+
+### Where This Goes From Here
+
+You now have the last piece of the everyday Go workflow: write code,
+`go run` it while you're shaping it, `go build` it once it's worth
+keeping, and `go test` it so "it compiles" and "it works" stop being the
+same claim. That loop — write, run, test — is the same loop you'll use for
+every remaining chapter in this book, just aimed at increasingly
+networked code instead of toy `calc` packages.
+
+There's one more idea from this part still waiting, and it's the one that
+made Go the language of choice for the exact kind of software this whole
+book is about: goroutines and channels, Go's built-in tools for doing many
+things at once without the usual tangle of manual thread management. Every
+networking server you build from Part 2 onward will juggle many
+connections simultaneously — this next, final chapter of Go Fundamentals
+is what makes that juggling feel almost ordinary instead of terrifying.

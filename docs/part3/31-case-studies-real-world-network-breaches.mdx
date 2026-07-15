@@ -29,6 +29,23 @@ The WannaCry ransomware outbreak in May 2017 spread using EternalBlue, an exploi
 
 <DeepDive title="The Recurring Pattern Behind These Incidents">None of these five incidents required a genuinely novel or exotic technique. Default credentials, an under-segmented third-party connection, a known and already-patched vulnerability, a compromised trusted update channel, and a leaked exploit against an old protocol - every one of these is a pattern this book has already named and addressed directly: least privilege, segmentation, patch management, supply chain integrity, and protocol hygiene. The consistent lesson across large, well-documented breaches is less often "nobody could have predicted this" and more often "the fix was already known, and the gap was in consistently applying it."</DeepDive>
 
+## Frequently Asked Questions
+
+**If Mirai's source code got released publicly, why wasn't that a disaster in itself?**
+It was, in a real sense - the release is exactly what enabled the wave of derivative botnets that followed. But the deeper lesson is that the technique itself (scan the internet, try a short list of default passwords) was never the hard part; the hard part organizations kept failing at was simply changing default credentials on deployed devices. Publishing the code mostly proved that the barrier to entry for this style of attack was already low, credentials or no leak.
+
+**Target had a security team and monitoring tools in place - so why is this breach remembered as a segmentation failure rather than a detection failure?**
+Because the point-of-sale malware and the lateral movement it required only became possible in the first place due to a third-party connection that had far more reach into the network than its actual job required. Detection matters, but detection is a second layer of defense; segmentation is what determines whether a compromised vendor credential can even reach payment systems to begin with. The recurring lesson in this chapter is to fix the reachability problem before leaning on the alerting problem.
+
+**Equifax and WannaCry both trace back to unpatched software - so is patching always the right first fix to prioritize after a breach?**
+It's the highest-leverage one precisely because it is the least glamorous: a known vulnerability with a public patch is a solved problem sitting unapplied, not a mystery requiring new tooling. That said, patch management works alongside the other practices in this part rather than replacing them - segmentation and least privilege are what limit the blast radius on the days between disclosure and patching, which is exactly the gap WannaCry and Equifax both exploited.
+
+**Why did SolarWinds bypass defenses that would have caught almost any other kind of intrusion?**
+Because the malicious code arrived through a channel every other defense was explicitly designed to trust: an official, digitally signed update from a known vendor. Perimeter defenses and signature-based detection are built around the assumption that software from a trusted publisher is safe by definition, and the Sunburst backdoor was engineered specifically to exploit that assumption rather than to sneak past it.
+
+**These are all breaches from roughly 2013 to 2020 - does studying older incidents like this actually help against tomorrow's attacks?**
+Yes, because the mechanisms recur even when the specific malware names change. The next chapter looks at where the threat landscape is heading, and you'll notice the same underlying categories - unmanaged devices, trust placed in a supply chain, a patching gap, a segmentation gap - showing up again in new technical clothing rather than being replaced by something unrecognizable.
+
 ## Summary
 
 - Mirai illustrates the IoT threat model at internet scale: default credentials, unmanaged devices, and DNS as a single point of failure.

@@ -122,3 +122,20 @@ fsthttp.ServeFunc(func(
 This is a small example of a broader principle: any check that doesn't require your origin's database or business logic — authentication header presence, basic input shape validation, geographic restrictions — is a candidate for pushing to the edge, freeing your origin's capacity for the requests that genuinely need it.
 
 <Axiom>The edge is not a faster version of your server — it's a different, more limited place to run a small, well-chosen slice of your logic closer to the user, with everything else still deferring to origin.</Axiom>
+
+## Frequently Asked Questions
+
+**Can I just take my existing `net/http` handlers and run them on Fastly Compute?**
+Not directly — `fsthttp` mirrors `net/http`'s shape closely enough to read familiarly, but the underlying execution model is a WebAssembly sandbox with strict CPU-time budgets and no goroutine scheduler in the usual sense, as the Warning above spells out. Code that spawns background goroutines or assumes it can keep running after the response is sent needs to be redesigned around "do one focused thing per request and return," not just recompiled.
+
+**Why does the edge function call `r.Send(ctx, "origin")` instead of making an ordinary outbound HTTP request?**
+Because `"origin"` refers to a backend configured outside your code, in Fastly's service configuration, and `r.Send` is the SDK's way of routing through that configuration rather than opening an arbitrary connection from inside the sandbox. This is also what keeps the mechanism working within the platform's tight execution-time limits — the backend is already known and pre-configured rather than resolved and dialed fresh on every request.
+
+**If my API returns personalized content per user, is it safe to just add edge caching for a latency win?**
+Not without matching your cache key to what actually varies — that's the exact trap the DeepDive on cache keys describes. Caching personalized recommendations on the URL alone will serve one user's data to another, while over-varying (say, on a cookie that doesn't actually affect the response) fragments the cache into near-zero hit rate; the `Vary` header needs to reflect the real variance, no more and no less.
+
+**Doesn't rejecting requests at the edge duplicate validation I already do in my origin API?**
+It duplicates the check, but deliberately, because the cost profile is different — a request missing an API key or matching an obviously abusive pattern is cheapest to reject close to the client, before it costs a round trip across the globe to origin and back. The chapter frames this as any check that doesn't need your origin's database or business logic being a candidate for pushing to the edge, freeing origin capacity for requests that genuinely need its full context.
+
+**How is `stale-while-revalidate` different from a plain `max-age`?**
+`max-age=60` alone just says the response is fresh for 60 seconds and then must be refetched from origin before being served again. Adding `stale-while-revalidate=300` lets the CDN keep serving that now-stale response immediately for up to 300 more seconds while it quietly refetches from origin in the background, which is a meaningful latency win for data like a product listing that doesn't need to be perfectly fresh on every single request.

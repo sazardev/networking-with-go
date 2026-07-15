@@ -97,6 +97,25 @@ Segmentation isn't free — every additional boundary is a place a legitimate co
 
 ---
 
+## Frequently Asked Questions
+
+**Isn't microsegmentation just VLANs with extra steps?**
+It looks that way from a distance, but the granularity is the whole point. A VLAN groups a whole class of machines and lets the firewall reason about the group; microsegmentation reasons about a single service-to-service relationship, independent of which subnet or physical host either side happens to sit on. That's why it survives the constant IP churn of a container-orchestrated environment, where a VLAN-based model would need constant re-drawing of boundaries just to keep up.
+
+**If a service is compromised, does segmentation actually stop the attacker, or just slow them down?**
+Both, and which one depends entirely on how tight the policy is. A traditional "app tier can reach database tier" rule mostly slows an attacker down — they still have a path, just a coarser one to abuse. A true microsegmentation policy, like the allow-list in this chapter's Go example, can stop lateral movement outright: `web-frontend` has no listed path to `orders-db`, so the connection attempt is refused at the enforcement point, not merely logged and permitted anyway.
+
+**Why does the sample policy deny by default instead of listing what's forbidden?**
+Because a deny-list has to anticipate every bad path in advance, and attackers are good at finding the one nobody thought to write down. An allow-list only has to get the legitimate paths right, and anything else — including a path nobody imagined yet — is refused automatically. That's the same "fail closed" habit Chapter 4.1 introduced, just applied at the segmentation layer instead of the firewall rule layer.
+
+**We segmented aggressively and now legitimate deploys keep breaking. What went wrong?**
+Almost always it's policy drift: the segmentation rules were hand-written for the architecture as it existed on day one, and the services evolved without anyone updating the rules alongside them. This is exactly why the chapter points to policy as code — version-controlled, declarative segmentation rules deployed in the same pipeline as the services they govern, so a new service-to-service dependency shows up as a reviewable diff instead of a mystery outage.
+
+**How does segmentation relate to the zero trust chapter that came before it?**
+Zero trust is the philosophy — never grant trust based on network location alone — and segmentation is the structural tool that makes enforcing that philosophy practical. You can't evaluate "should this specific connection be allowed" per request if the network itself is flat and every host can already reach every other host; segmentation is what gives zero trust's policy engine actual boundaries to enforce.
+
+---
+
 ## Closing Part 3's First Arc
 
 Chapters 4.1 through 4.16 have moved from fundamentals through hands-on Go tooling to the architectural principles — zero trust and segmentation — that shape how secure networks are actually built and operated. The chapters ahead go deeper into detection, response at scale, and the offensive and defensive disciplines that build on everything covered here.

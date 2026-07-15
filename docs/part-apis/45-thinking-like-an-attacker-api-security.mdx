@@ -197,6 +197,25 @@ Both attacks share the same root cause: trusting the algorithm the token claims 
 
 ---
 
+## Frequently Asked Questions
+
+**If a caller has a valid, authenticated session, why isn't that enough to trust their request?**
+Because authentication and authorization answer two different questions, and it's easy to build a system that only ever asks the first one. Authentication proves the caller is *somebody* — a real session, a real token, a real identity. Authorization proves that the specific object or action they're now requesting is one *that particular somebody* is allowed to touch, and nothing about a valid token guarantees that on its own. Every IDOR and broken-function-level example in this chapter is a handler that quietly assumed the first check covered the second.
+
+**Why return `404 Not Found` instead of `403 Forbidden` when a user requests someone else's order?**
+Because a `403` leaks information even while correctly blocking access: it confirms to the attacker that the ID they guessed is real and simply belongs to someone else, which is a free signal for enumerating exactly which IDs exist in the system. A `404` gives an attacker probing `/orders/1`, `/orders/2`, `/orders/3` nothing to distinguish "this order doesn't exist" from "this order exists but isn't yours" — the honest answer from the server's side, and the least useful one from theirs.
+
+**Can't the frontend just hide the admin endpoints and fields a user shouldn't touch?**
+Hiding a button or omitting a route from a compiled JavaScript bundle changes what a user sees, not what their browser is capable of requesting — and an attacker reading that same bundle for API paths, or simply guessing at conventional admin routes, will find an unlinked endpoint just as easily as a linked one. The mass-assignment and broken-function-level-authorization sections in this chapter exist because "the UI doesn't expose it" and "the server doesn't accept it" are two entirely different guarantees, and only the second one is real security.
+
+**Do I need to memorize all ten OWASP API Security categories to write a reasonably safe API in Go?**
+Not really — what carries further is the pattern underneath the four or five covered here: check ownership explicitly rather than trusting a valid token, bind requests to narrow input types rather than domain models, cap anything a client can size (`page_size`, request bodies, JSON nesting), and never let attacker-controlled input — a header, a query string, a JWT's own `alg` claim — decide how it gets verified. Apply that instinct consistently and most of the Top 10, memorized or not, stops being a threat.
+
+**This is the last chapter of the book — where does someone go from here?**
+Back into the earlier chapters, most likely, but with different eyes: Chapter 6.10's authentication, Chapter 6.17's statelessness, Chapter 6.36's parameterized queries, and the previous chapter's graceful shutdown were all presented as features to build, and this chapter is really the reminder to go back and ask, of each one, what an attacker would try against it. Building an API and thinking like the person trying to break it are not two separate skills learned in sequence — they're the same skill, practiced from both directions, and that practice does not end when the book does.
+
+---
+
 ## Key Takeaways
 
 - The OWASP API Security Top 10 is a useful organizing reference for API-specific vulnerability classes that don't map cleanly onto general web security advice.

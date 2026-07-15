@@ -397,6 +397,25 @@ that removes the most pain first.
 
 ---
 
+## Frequently Asked Questions
+
+**Is a "port" in this chapter a different thing from a network port (like TCP port 8080)?**
+Completely different, and the name collision trips people up the first time they meet it. A port here is just an interface owned by the application core — `OrderRepository` and `EventPublisher` are both ports — describing a capability the core needs or offers. It has nothing to do with a numeric address on a socket; Cockburn simply reused an everyday English word ("a place where things connect") for an unrelated idea.
+
+**Why does `EventPublisher` count as a driven port when the core is the one calling `Publish`?**
+Because "driving" and "driven" describe who initiates the call, not who does more work. The core calls out through `EventPublisher` to ask for something to happen — publish this event — exactly the same direction as calling out to `OrderRepository` to save a row. A driving adapter, by contrast, is whatever calls *into* the core uninvited, like an HTTP request arriving. Both `OrderRepository` and `EventPublisher` sit on the "driven" side because the core is always the one reaching outward through them.
+
+**Why bother giving the CLI command in `cmd/opstool/ship.go` its own adapter instead of just calling `core.ShipOrder` directly from `main`?**
+It already is calling it directly — that's the point being illustrated, not a gap. The CLI function and the HTTP handler are both thin driving adapters wrapping the identical port, and neither one needed `core.ShipOrder` to change at all to support it. That symmetry — two completely different entry points sharing one unmodified core — is exactly what the hexagon's six equal sides are trying to make visible that a stack of rings tends to hide.
+
+**The in-memory `OrderRepository` in the testing section looks good enough to use as a cache — why does the chapter warn against that?**
+Because a test double is optimized for one job: being simple and predictable inside a test run. A real cache needs invalidation rules, consistency guarantees under concurrent writers, and an eviction policy, none of which the fake was ever designed to get right. The warning above is there because this exact promotion — "it already satisfies the interface, why not use it in production" — is a common way test-only code quietly becomes load-bearing infrastructure.
+
+**Do I need to migrate an existing codebase to ports and adapters all at once?**
+No, and the chapter argues against it — start with whichever dependency is slowest to set up in tests, which for most services is the database. Extract an interface for what your handlers currently call directly, write an in-memory implementation, and let existing tests use it before widening the boundary any further. One port at a time, in the order that removes the most pain first, is the whole migration strategy.
+
+---
+
 ## Key Takeaways
 
 - Hexagonal Architecture's ports are the same interfaces Clean Architecture

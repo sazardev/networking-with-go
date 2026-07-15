@@ -145,3 +145,17 @@ type OrderShippedEvent struct {
 ```
 
 <DeepDive title="Let consumers subscribe to only the events they need">A webhook system that sends every consumer every event type forces each receiver to filter events it doesn't care about, and increases the blast radius when one event type's payload changes. A subscription model, where each registered endpoint declares which event types it wants, keeps payloads relevant and makes it possible to evolve one event type's schema without touching consumers who never subscribed to it.</DeepDive>
+
+## Frequently Asked Questions
+
+**Why sign the marshaled JSON bytes instead of computing the HMAC over the original Go struct?**
+The receiver only ever sees the raw bytes that traveled over the network, not your in-memory struct, so the signature has to be computed over exactly what was sent. If the receiver re-serializes the payload differently before checking, or if the sender signed the struct rather than the bytes, the signatures simply won't line up even for a completely legitimate request.
+
+**Why does the receiver use `hmac.Equal` instead of a plain `==` comparison on the signatures?**
+A normal string or byte-slice comparison in Go returns as soon as it finds the first differing byte, and that tiny timing difference is enough for an attacker to reconstruct a valid signature one byte at a time across many requests. `hmac.Equal` compares in constant time regardless of where the values differ, which closes off that timing attack entirely.
+
+**My receiver got the exact same event twice — is that a sign something is broken?**
+Not necessarily — webhook delivery is "at least once," not "exactly once," because a sender that doesn't get a `200 OK` in time will retry even if the first attempt actually succeeded. This is exactly why the chapter's `alreadyProcessed` / `markProcessed` pattern exists: every event carries a unique `EventID` so a receiver can safely ignore a duplicate instead of charging a card or shipping an order twice.
+
+**If webhooks already solve event notification, why would a team move to Kafka or NATS instead?**
+Webhooks are point-to-point HTTP calls, which works well until you need ordering guarantees, replay across many independent consumers, or much higher volume than one HTTP call per event can comfortably handle. The underlying design principles carry over unchanged, though — stable IDs for deduplication, idempotent consumers, retry strategies for unavailable consumers — which is why understanding webhooks well is what makes the broker-based version make sense later.

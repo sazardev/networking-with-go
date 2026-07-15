@@ -170,3 +170,17 @@ func retryArchivedHandler(inspector *asynq.Inspector) http.HandlerFunc {
 	}
 }
 ```
+
+## Frequently Asked Questions
+
+**Why not just launch `go sendEmail(order)` right inside the handler and skip the queue entirely?**
+It works right up until the process restarts mid-task, at which point that email silently never sends because it only ever existed in memory. A real task queue like `asynq` persists the job in Redis, retries it automatically with backoff if it fails, and caps concurrency to a fixed worker pool instead of letting ten thousand requests spawn ten thousand unmanaged goroutines.
+
+**What's the difference between a task hitting `MaxRetry` and a task ending up "archived"?**
+`MaxRetry` is the ceiling on automatic retries with exponential backoff; once a task exhausts that ceiling, `asynq` moves it into the archived state instead of discarding it. Archived is effectively the dead-letter queue: a place tasks land so a systemic failure, like an email provider being down for an hour, doesn't silently lose every affected job.
+
+**My workers all report healthy, but emails are showing up late — what am I missing?**
+A worker reporting itself healthy only means its process is alive, not that it's keeping up with incoming volume. Watch the queue's `Pending` count through `asynq`'s `Inspector` instead: a steadily climbing pending count is the earliest reliable sign you need more worker capacity, well before users notice the delay.
+
+**Should my API let clients poll the task queue directly to check on their job?**
+No — the queue is an internal implementation detail, not part of your public API surface. Expose task status through your own resource, such as a `notification_status` field on `GET /orders/{id}`, or notify the client via a webhook when the task completes, rather than letting clients reach into `asynq` itself.

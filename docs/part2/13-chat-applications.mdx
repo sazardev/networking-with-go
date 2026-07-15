@@ -333,6 +333,23 @@ boundaries.
 
 ---
 
+## Frequently Asked Questions
+
+**Should my chat server use a mutex-guarded map or a channel-owned hub?**
+It depends on which coordination style buys you more safety for your design. A mutex-guarded `map[*Client]bool` (Option A, used in the minimal Gorilla example) stays passively readable from anywhere, which is handy if an outside HTTP handler needs to answer "who's online right now." A hub goroutine (Option B, used in the "Try It Yourself" tests) makes the "only one goroutine touches this state" rule structural instead of something every caller has to remember to respect. Reach for the hub when you want that guarantee for free, and the mutex when simplicity and outside readability matter more.
+
+**Why does the broadcast loop push onto a per-client channel instead of just calling `conn.WriteMessage` for everyone?**
+Because a `*websocket.Conn` isn't safe for concurrent writes, and a client's own writer goroutine could be writing back to the same connection at the same instant. Funneling every outbound message through a per-client `send` channel, drained by exactly one writer goroutine per connection, guarantees there's never more than one writer touching a given socket — the same rule covered in the previous WebSockets chapter, just now with many clients instead of one.
+
+**One slow client seems to freeze the whole chat room — why?**
+This happens when `client.send <- msg` is an unbuffered or blocking send inside a loop that iterates over every client sequentially: one stuck client blocks that iteration, so every client after it in the map never gets the message either. The fix in this chapter is a bounded channel with a non-blocking send (`select { case client.send <- msg: default: }`), so a full buffer just marks that one client as too slow and disconnects it instead of stalling the broadcast for everyone else.
+
+**I forgot to remove a client from the map on disconnect — what actually breaks?**
+The client's entry, its reader goroutine, and its writer goroutine all stay alive forever, since nothing ever tells the broadcast loop or the runtime that connection is gone — a silent memory and goroutine leak that's invisible in short-lived development runs but accumulates steadily in a long-running server. The chapter's fix is to always unregister inside a `defer`, placed immediately after registration, so cleanup runs no matter how the connection ends (clean close, error, or failed write).
+
+**My chat app works great on one server — why can't clients on two different instances see each other's messages?**
+Because the hub's client map and `broadcast` channel only exist in that one process's memory — a message published to instance A's channel has no way to reach instance B's clients. Scaling past a single process means replacing the in-process channel with a shared external bus like Redis Pub/Sub, NATS, or Kafka: each instance keeps running its own local hub exactly as shown in this chapter, but also subscribes to and republishes through the shared bus, so the same design just federates outward instead of being rebuilt from scratch.
+
 ## Key Takeaways
 - Chat apps are a classic real-time networking challenge — perfect for learning concurrency, broadcasting, and protocol design.
 - Use WebSockets for low-latency, bidirectional messaging.

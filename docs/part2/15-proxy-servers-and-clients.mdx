@@ -311,6 +311,23 @@ re-authenticate mid-stream.
 
 ---
 
+## Frequently Asked Questions
+
+**What's the actual difference between a forward proxy and a reverse proxy, since both just relay traffic?**
+It comes down to whose identity gets hidden. A forward proxy sits in front of clients and hides the client from whatever destination it's reaching — the client explicitly configures it as a gateway. A reverse proxy sits in front of servers and hides the backend from the client, who often has no idea multiple servers even exist back there. The wiring underneath — two connections joined together — is the same either way; only the direction of trust differs.
+
+**Why does `proxyConn` use two goroutines and two `io.Copy` calls instead of one loop?**
+Because TCP is full-duplex — a client can be sending bytes to the server at the same instant the server is sending bytes back. A single goroutine reading and writing in a loop can only push data in one direction at a time, so it would stall whichever direction it wasn't currently servicing. Running one `io.Copy` per direction lets both flows proceed independently, which is exactly how the underlying network conversation actually behaves.
+
+**My proxy connection never times out and just hangs forever if one side goes quiet — why?**
+Because the basic `proxyConn` example never calls `SetDeadline` on either connection, so a peer that opens a connection and simply stops sending or reading, whether by accident or as a denial-of-service tactic, keeps both `io.Copy` calls blocked indefinitely along with their goroutines and file descriptors. The chapter's fix is to set a deadline (an idle timeout, for example) on both connections and either bound the whole session or reset the deadline on every successful read if you need to tolerate long idle gaps.
+
+**Why does the `CONNECT` handler have to read from `bufrw` before relaying raw bytes from the hijacked connection?**
+Because `net/http` already buffered some of what the client sent while parsing the `CONNECT` request's headers, and that buffer — not the raw socket — is where any leading bytes of the tunneled protocol are sitting. Reading straight from the hijacked `net.Conn` after calling `hijacker.Hijack()` would skip right past whatever was left in that `bufio.ReadWriter`, silently losing the first bytes of the tunneled session — a subtle bug this chapter calls out explicitly as a reason to drain the buffer first.
+
+**Do I need to close the connections myself after hijacking, or does `net/http` still handle that?**
+You must close them yourself. The moment a handler calls `hijacker.Hijack()`, `net/http` stops managing that connection's lifecycle entirely — an earlier version of the `handleConnect` example in this chapter never called `destConn.Close()` or `clientConn.Close()`, and every tunneled request leaked one upstream and one client socket until the process ran out of file descriptors. Hijacking hands you full ownership, `defer` included, exactly the same discipline this book has stressed since the TCP chapters.
+
 ## Key Takeaways
 
 - Forward proxies represent clients; reverse proxies represent servers. Same mechanics, opposite direction of trust.

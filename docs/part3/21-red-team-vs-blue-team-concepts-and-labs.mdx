@@ -46,6 +46,20 @@ Tracked over successive exercises, these numbers turn "we did a red team exercis
 
 A personal red/blue lab doesn't need to be elaborate: a hypervisor (VirtualBox, VMware, or a cloud provider's free tier) running a handful of VMs - an attacker box with common tooling, one or two intentionally vulnerable targets, and a lightweight SIEM or log collector to practice the blue side - is enough to practice both offense and defense safely, isolated from any production network. The lab-building chapter later in this part goes into topology and isolation practices in more detail; the short version is: keep it on an isolated virtual network with no route to anything you can't afford to have broken.
 
+## Frequently Asked Questions
+
+**Isn't a purple team exercise just a red team that got caught early?**
+It looks that way from the outside, but the intent is different. A blind red-team engagement is trying to answer "would we notice a real attacker," while purple teaming deliberately gives up that blind-spot realism in exchange for tightening detection rules technique by technique, in the same afternoon the technique was run. Both formats earn a place in a mature program; they're just measuring different things.
+
+**If our blue team already caught every technique the red team tried, was the exercise a waste of time?**
+Not at all - a clean sweep is itself a valuable, if less exciting, result. It tells you your current detection coverage holds up against a specific set of realistic techniques, and it gives you a documented baseline to defend the next time someone asks whether the security budget is working. The real waste would be never testing that assumption and finding out the hard way during an actual incident.
+
+**Do we need a full red team before we can start measuring MTTD and MTTR?**
+No - even a tabletop exercise can produce a rough MTTR by timing how long the group takes to agree on a response action, and a CTF-style lab exercise can generate a first MTTD baseline before you ever run a live-fire engagement. Start measuring with whatever exercise format you can afford; the trend across exercises matters more than getting a live-fire engagement on day one.
+
+**Why does the rules-of-engagement document matter so much if everyone already knows it's just a lab?**
+Because the same techniques used against a home lab and against a real target look identical from the outside - a scanning tool, a credential-stuffing script, or a lateral-movement technique doesn't know it's being run "just for practice." The RoE (or, in a personal lab, simply keeping everything on an isolated network with no route out) is what keeps a legitimate exercise from ever becoming indistinguishable from an actual intrusion.
+
 ## Summary
 
 - Red teams emulate attackers under authorization; blue teams detect and respond; purple teaming collaborates both in real time for faster feedback.

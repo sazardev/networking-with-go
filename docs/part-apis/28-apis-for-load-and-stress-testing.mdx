@@ -145,4 +145,21 @@ func TestPerformanceRegression(t *testing.T) {
 
 This doesn't replace a full stress test against production-like infrastructure before a major release, but it catches the common case — a new database query added without an index, a synchronous call added where an asynchronous one used to be — before it ships, rather than after an on-call engineer notices latency creeping up in production metrics.
 
+## Frequently Asked Questions
+
+**Why does `loadTest` cap `concurrency` separately from `totalRequests` instead of just firing everything at once?**
+Because concurrency, not total volume, is what actually exposes real-world problems — a service can happily churn through a thousand sequential requests but fall over at fifty concurrent ones if it has a small connection pool or a lock contention issue that only shows up under parallelism. Capping in-flight requests is what makes the test representative of actual traffic instead of a burst nothing production would ever see.
+
+**Why does the chapter warn against running the Go load generator on the same machine as the service under test?**
+Because at that point you're measuring loopback performance and your own client machine's limits — CPU contention or exhausting the ephemeral port range — rather than anything resembling real network behavior. For anything beyond a quick local sanity check, run the generator from a separate machine so the numbers reflect what actual users experience.
+
+**Why does `vegeta.Rate` fix the request rate instead of just sending requests as fast as possible?**
+Because "as fast as possible" models nothing real — actual user traffic arrives at some rate independent of how quickly your server happens to respond, and a naive hammer-it-as-fast-as-you-can approach conflates throughput with latency in a way that doesn't tell you where your real capacity limit is. Fixing `Freq` and ramping it across successive runs is what lets you find the point where success ratio drops or P95 latency spikes.
+
+**Why track latency percentiles instead of just the average response time?**
+Because an average hides exactly the users having a bad time — a p50 of 20ms sitting next to a p99 of 4 seconds means one in a hundred requests is badly broken, and that fact disappears completely once you average it in with 99 fast ones. Percentiles (especially p95 and p99) are what actually surface a problem an average would smooth over.
+
+**Is a two-minute load test run in CI on every release candidate a replacement for a full stress test?**
+No — it's a cheap regression check against a fixed latency and error-rate budget, good for catching the common case like a missing index or an accidentally synchronous call, but it's not exercising the system past its breaking point the way a proper stress test does. Keep both: the fast CI check on every release candidate, and a full stress test against production-like infrastructure before major releases.
+
 <Axiom>A system's real capacity is not what it does on your laptop with one client — it's the point where latency and error rate both start climbing, and you only find that point by deliberately looking for it.</Axiom>

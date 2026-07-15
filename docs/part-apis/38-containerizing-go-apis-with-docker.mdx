@@ -281,6 +281,23 @@ docker compose down
 
 <Axiom>An image should describe how your API runs, never what your API knows -- configuration and secrets belong at runtime, not baked into a layer.</Axiom>
 
+## Frequently Asked Questions
+
+**Why bother with a multi-stage Dockerfile instead of just running `go run` inside one image?**
+Because a single-stage image built `FROM golang:1.23` ships the entire Go toolchain, a full Linux userland, and your source tree alongside the binary that actually needs to run -- often hundreds of megabytes of things your API never touches at runtime. A multi-stage build compiles in one image and copies only the finished static binary into a second, minimal image, so the final artifact is just the binary plus a few kilobytes of certificates.
+
+**My container exits ungracefully on `docker stop` even though my Go code handles `SIGTERM` -- what's wrong?**
+Check whether `ENTRYPOINT` is written in shell form, `ENTRYPOINT /api`, instead of the exec array form, `ENTRYPOINT ["/api"]`. The shell form runs your binary as a child of `/bin/sh`, which becomes PID 1 and doesn't forward signals to its child by default, so your `signal.NotifyContext`-style shutdown code never sees the `SIGTERM` Docker sends, and Docker eventually escalates to `SIGKILL` after the grace period. The exec form makes your binary PID 1 directly, so it receives the signal exactly as it would running outside a container.
+
+**If distroless and scratch have no shell, how do I debug a container that's misbehaving?**
+You lean on the same structured logging you'd want in production anyway -- `docker logs -f myapi` -- rather than `docker exec`-ing in with a shell, since neither image ships one, precisely so there's nothing for an attacker (or a misconfigured entrypoint) to invoke either. If you genuinely need an interactive shell during development, `alpine` is the documented middle ground, trading a few extra megabytes and some `musl`-libc DNS quirks for `docker exec -it myapi sh` working normally.
+
+**Is it fine to set `ENV DATABASE_PASSWORD=supersecret` in the Dockerfile if I delete it in a later layer?**
+No -- every instruction writes into the image's permanent layer history, and earlier layers remain stored and retrievable even after a later layer appears to remove the file, so anyone who can pull the image or run `docker history` can read the secret back out. Secrets belong outside the image entirely: passed at runtime with `docker run -e`, through a compose `environment:`/`env_file:` pointing at a gitignored `.env`, or through a real secrets manager in production.
+
+**Why does the Compose file need both a named volume and a `healthcheck` for Postgres?**
+They solve two unrelated problems that both bite you the first time you skip them. The named volume `pgdata` is what makes Postgres's data survive a container restart -- without it, `docker compose down` deletes the writable layer and every row along with it. The `healthcheck`, combined with `depends_on: condition: service_healthy`, makes Compose wait until Postgres is actually accepting connections rather than merely "started," which avoids a race where the API container tries to connect before Postgres has finished initializing.
+
 ### Key Takeaways
 
 - Use a multi-stage Dockerfile: compile with the full `golang` image, then

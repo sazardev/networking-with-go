@@ -334,6 +334,23 @@ go func() {
 
 ---
 
+## Frequently Asked Questions
+
+**Do WebSockets replace HTTP, or run alongside it?**
+Alongside it, and only at the start. A WebSocket connection is born as an ordinary HTTP GET request carrying an `Upgrade: websocket` header; the server responds `101 Switching Protocols`, and from that point on the wire speaks the RFC 6455 framing protocol instead of HTTP. That's why WebSockets sail through most firewalls and proxies unbothered — they usually keep using ports 80/443, they just stop looking like HTTP the moment the handshake finishes.
+
+**My connection works fine with one goroutine, but breaks once I add a ticker for pings — why?**
+You've almost certainly got two goroutines calling `WriteMessage` on the same `*websocket.Conn` at once, which gorilla's own docs warn is unsafe — the frames can interleave and corrupt the stream. The fix shown in this chapter's "Production Nuances" section is to never let more than one goroutine write directly: route every outbound message, ping included, through a single writer goroutine fed by a channel. Reads don't have this restriction, so a reader-goroutine-plus-writer-goroutine pair per connection is the standard safe shape.
+
+**When should I write the native handshake myself instead of just using gorilla/websocket?**
+Almost never for production work — the native examples in this chapter exist purely so you can see what `gorilla/websocket` is doing under the hood (the RFC 6455 handshake, frame encoding, masking). For anything real, reach for `gorilla/websocket` for its maturity and ergonomics, or `nhooyr.io/websocket`/`gobwas/ws` if you specifically need a context-aware API or squeeze out more performance. Handling binary frames, fragmentation, and extensions correctly by hand is a lot of protocol detail to get right and re-verify on every change.
+
+**How do I detect a client that disconnected without a clean close, like a phone that lost signal?**
+This is exactly what ping/pong control frames are for, since plain TCP won't tell you a peer vanished. Send a `PingMessage` on a `time.Ticker`, let the client answer with a `PongMessage` handled by `SetPongHandler`, and reset `conn.SetReadDeadline` each time a pong arrives — if the deadline passes with no pong, treat the connection as dead and close it, or a long-running broadcast server slowly fills up with zombie clients.
+
+**Should I worry about WebSockets versus something like MQTT for my use case?**
+It depends on whether you need delivery guarantees. WebSockets give you a fast, low-latency, bidirectional pipe, but they hand you no built-in retry, acknowledgment, or at-least-once delivery — if a message needs to survive a dropped connection, you build that logic yourself. If your use case already needs that kind of guaranteed delivery (common in IoT and pub/sub systems), a protocol like MQTT or AMQP built for exactly that is usually a better fit than reinventing it on top of raw WebSocket frames.
+
 ## Key Takeaways
 - WebSockets enable real-time, bidirectional communication over a single connection.
 - Use the `gorilla/websocket` package for robust WebSocket support in Go.

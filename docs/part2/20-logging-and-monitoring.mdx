@@ -244,6 +244,25 @@ Add `setLogLevelHandler` from earlier in this chapter to a small HTTP server, al
 
 ---
 
+## Frequently Asked Questions
+
+**Why switch from `fmt.Println` to `log/slog` at all — isn't a print statement just as informative?**
+A print statement is fine for the one-off debugging earlier chapters leaned on, but it doesn't scale to a real service: free-form text is hard to search, filter, or feed into a log aggregator. `log/slog` emits key-value pairs instead, so a query like "every request with `path=/orders` and `status>=500`" is a field filter rather than a regular expression pulled apart from a sentence.
+
+**Why does `statusRecorder` embed `http.ResponseWriter` instead of implementing it directly, and what does that cost?**
+Embedding the interface is what lets `statusRecorder` satisfy `http.ResponseWriter` cheaply while only overriding `WriteHeader` to capture the status code as a side effect. The cost is that nothing beyond the embedded interface's own methods gets promoted — a downstream handler that upgrades to a WebSocket needs `w.(http.Hijacker)` to succeed, and that type assertion fails outright on `*statusRecorder` even though the underlying writer supports it, so logging middleware in front of upgrade-capable handlers has to implement `Hijack()` and `Flush()` explicitly and delegate through.
+
+**Why is `requestIDKey` its own named type instead of just a string constant?**
+Because `context.WithValue` keys collide by value across an entire program, with no compile-time warning — a plain `"requestID"` string used by two different packages would silently overwrite each other's value. Declaring `type contextKey string` as an unexported type scoped to one package makes that collision impossible, since no other package can construct a matching key without access to the type itself.
+
+**Why do liveness and readiness need separate endpoints instead of one `/health`?**
+Because the two failures call for opposite responses. A deadlocked process should be killed and restarted, which is what a liveness check like `healthHandler` is for; an instance that's merely waiting on a database to come back, which is what `readinessHandler` checks via `db.PingContext`, should just stop receiving new traffic rather than being replaced with another instance in the same broken state.
+
+**Why bother with `atomic.Int64` for something as simple as a request counter?**
+Because `metricsMiddleware` calls `Add` from many concurrent request-handling goroutines at once, and a plain `int64` incremented with `totalRequests++` is a data race — one that `go test -race` catches immediately, but that would otherwise show up in production only as a quiet, hard-to-notice undercount rather than a crash or an error.
+
+---
+
 ## Key Takeaways
 
 - Logs tell the story of individual events; metrics summarize system health over time. Production services need both.

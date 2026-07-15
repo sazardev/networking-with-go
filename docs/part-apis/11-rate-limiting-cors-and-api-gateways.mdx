@@ -155,4 +155,23 @@ Content-Type: application/json
 {"error": "rate limit exceeded, try again shortly"}
 ```
 
+---
+
+## Frequently Asked Questions
+
+**Why does the `ClientLimiter` keep one `*rate.Limiter` per key instead of just sharing one for the whole server?**
+A single shared limiter throttles total server traffic, but that means one noisy client can eat the entire budget and starve everyone else. Keying by `X-API-Key` (or falling back to `r.RemoteAddr`) gives every client its own bucket, so one misbehaving caller triggers `429`s for itself without touching anyone else's allowance.
+
+**My frontend gets a CORS error even though the server clearly sends `Access-Control-Allow-Origin` — why?**
+Check whether the failing request is a preflight `OPTIONS` call first — browsers send that automatically ahead of a `PUT`, a custom header, or certain `Content-Type` values, and if your middleware doesn't answer `OPTIONS` with a `204` and the right `Access-Control-Allow-*` headers before it ever reaches your real handler, the browser blocks the actual request without your handler code ever running.
+
+**Why can't I just set `Access-Control-Allow-Origin: *` on every endpoint and be done with CORS?**
+It works right up until you need cookies or an `Authorization` header the server actually trusts. Browsers refuse to combine a wildcard origin with `Access-Control-Allow-Credentials: true`, and for good reason — a wildcard plus credentials would let any website on the internet make authenticated requests on behalf of whoever's logged in, so a validated, specific origin is required the moment credentials are in play.
+
+**Do I need an API gateway from day one for a small Go API?**
+No — the chapter is explicit that hand-rolled CORS and rate-limiting middleware in the application itself is entirely reasonable for a single service. A gateway earns its place once you're running multiple backend services that all need the same routing, auth, rate-limiting, and observability policies applied consistently, not before.
+
+**Does the token bucket approach here work once I run multiple instances behind a load balancer?**
+Not correctly — each instance keeps its own in-memory map of limiters, so the effective rate limit multiplies by however many instances are running, since a client bouncing between instances gets a fresh bucket on each one. That's exactly the gap a shared store like Redis closes, which is why distributed rate limiting gets its own treatment in a later chapter.
+
 Rate limiting, CORS, and gateways all answer the same underlying question from different angles: not just who is allowed to call this API, but how much, from where, and through what front door. Next, we'll look at documenting the API surface itself, so both humans and tools can discover what's actually available to call.

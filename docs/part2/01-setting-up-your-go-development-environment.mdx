@@ -305,3 +305,22 @@ func handleConn(conn net.Conn) {
 - Cloudflare, Netflix, and Uber use Go for high-performance networking.
 - Go powers microservices, APIs, CLI tools, and even blockchain projects.
 - Go is a top choice for startups and big tech alike—fast, reliable, and fun.
+
+---
+
+## Frequently Asked Questions
+
+**Do I still need to set a GOPATH before I can start coding?**
+No, and this trips up almost everyone who learned Go from an old tutorial. Before modules arrived in Go 1.11, every project had to live inside `$GOPATH/src/...` for imports to resolve. Since `go mod init` works in any folder you choose, `GOPATH` today is just where the module cache and installed binaries (`go install` output) live—not a folder your source code needs to sit in.
+
+**I edited my .bashrc to add Go to my PATH, but `go version` still says "command not found." What's wrong?**
+Nothing is broken—your shell just hasn't reloaded its configuration yet. Editing `.bashrc` or `.zshrc` only affects new shell sessions, so a terminal window that was already open before you saved the file won't see the change. Open a fresh terminal, or run `source ~/.bashrc` (or `~/.zshrc`) in the current one, and the command will resolve.
+
+**Why does the first tcp-server.go example ignore every error with `_`, when the chapter itself warns that's dangerous?**
+It's a deliberate simplification to get you to a working three-line server fast, and the chapter immediately calls it out and then rebuilds it properly. The hardened version checks the error from both `net.Listen` and `ln.Accept()`, logs instead of panicking, and hands each connection to `handleConn` on its own goroutine—the same shape you'll reuse for essentially every TCP server in this book.
+
+**My editor says "no packages found for open files"—did I install Go wrong?**
+Almost certainly not; you likely opened a single file or a subfolder instead of the module root. Tools like `gopls` need to see the `go.mod` file to understand your project's imports and offer autocomplete, so open the folder that actually contains `go.mod` as your workspace root, not a directory buried inside it.
+
+**Why does the server loop forever with `for { ln.Accept() }` instead of handling one connection and exiting?**
+Because a network server's whole job is to keep waiting for the *next* client, not just serve one and quit. `Accept()` blocks until somebody connects, hands you that one `net.Conn`, and the `for` loop immediately sends the listener back to waiting—pair that with `go handleConn(conn)` and you get the standard Go server shape: listen once, loop forever, handle each client concurrently.

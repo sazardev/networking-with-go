@@ -263,6 +263,23 @@ func productHandler(w http.ResponseWriter, r *http.Request) {
 
 ---
 
+## Frequently Asked Questions
+
+**Why did my struct field disappear from the JSON output with no error at all?**
+Almost always it's an unexported field — one starting with a lowercase letter, like the `password` field in the `User` example earlier. Reflection simply cannot see unexported fields from outside their own package, so `encoding/json` and `encoding/xml` skip them silently rather than failing loudly. If a field genuinely needs to stay out of the wire format, export it and tag it `json:"-"` instead of leaving it lowercase — that way the omission is a documented choice, not a mystery.
+
+**Should I use `json.Unmarshal` or `json.NewDecoder(r.Body).Decode(&v)` in an HTTP handler?**
+Reach for `Decoder`/`Encoder` whenever you're working directly with `r.Body` or `http.ResponseWriter`. `Unmarshal` needs the whole body already sitting in a `[]byte`, which means an extra `ioutil.ReadAll` pass and two full copies of the data in memory before you've validated a single field. `Decoder.Decode` streams straight from the connection, and pairs naturally with `http.MaxBytesReader` to cap how much a single request can cost you.
+
+**My XML decode succeeded but the struct came back completely empty — what happened?**
+Check whether the incoming document declares an `xmlns`. A struct tag like `xml:"product"` only matches an element named `product` in the default (no) namespace, so a namespaced `<product xmlns="urn:example:catalog">` silently fails to match and `Decode` returns no error — just zero values. The fix is to include the namespace URI in the tag (`xml:"urn:example:catalog product"`) or decode into a type with an `XMLName xml.Name` field so you can inspect what namespace actually arrived.
+
+**Why does the sample content-negotiation handler check `Accept` for XML but `Content-Type` for what it just wrote?**
+Because they answer two different questions. `Accept` on an incoming request is the client saying what it would *prefer* to receive back — a hint you can honor or ignore. `Content-Type` on the response is your server truthfully describing what it just encoded, and every client-side decoder depends on that being accurate. Mixing the two up is exactly the class of bug that works fine in `curl` (where you set headers explicitly) but breaks with real browsers or libraries that default to `Accept: */*`.
+
+**Is `DisallowUnknownFields` actually necessary, or just extra caution?**
+It earns its keep the first time a client typos a field name — say `"naem"` instead of `"name"` — and your handler would otherwise decode that request into a struct with the correct field silently left at its zero value, no error raised. Combined with `http.MaxBytesReader`, it turns two of the most common "the request looked fine but the data was wrong" bugs into an immediate, explicit `400 Bad Request` instead of a debugging session two layers downstream.
+
 ## Key Takeaways
 - Use JSON for most web APIs—compact, fast, and easy in Go.
 - Use XML when you need to interoperate with older systems or standards.

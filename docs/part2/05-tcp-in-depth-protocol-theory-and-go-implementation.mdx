@@ -359,3 +359,22 @@ gives you bytes, and your protocol has to supply the boundaries.
   with Go's `net` package.
 - TCP is like a reliable friend: it never forgets, it always delivers.
 - Go's goroutines make handling thousands of TCP connections a breeze.
+
+---
+
+## Frequently Asked Questions
+
+**If TCP guarantees ordered, reliable delivery, why did my single conn.Read call only return part of the response I expected?**
+Because TCP guarantees an ordered stream of bytes, never message boundaries. A single `Read` can return whatever happened to arrive in the kernel's buffer at that moment — part of a response, all of it, or more than one logical message stuck together. That's exactly why the chapter's TCP client loops on `Read` until `io.EOF` instead of trusting one call, and why any real protocol needs its own framing, like a length prefix or a delimiter.
+
+**Why does my server sometimes fail to restart with "address already in use" right after I stop it?**
+That's `TIME_WAIT` doing its job: after a connection closes, the side that initiated the close lingers in that state for roughly twice the maximum segment lifetime (often around 60 seconds) so stray duplicate packets from the old connection don't get confused with a new one on the same port. Go's `net.Listen` already sets `SO_REUSEADDR` for you on Unix-like systems, which is why most Go servers can restart on the same port almost immediately — if you still see the error, something else is likely holding the socket open.
+
+**Should I turn on TCP_NODELAY for every connection to make my server more responsive?**
+Not universally—it depends on what you're sending. Nagle's algorithm batches small writes to cut overhead, which is great for bulk transfers but adds latency to small, time-sensitive messages like a keystroke or a game update. Type-assert the `net.Conn` to `*net.TCPConn` and call `SetNoDelay(true)` for those latency-sensitive cases, and leave Nagle's algorithm on for anything pushing large amounts of data.
+
+**My echo server's Read returned an error, but the chapter says I should still look at buf[:n] first. Why?**
+Because `io.Reader`'s contract explicitly allows `n > 0` together with a non-nil error, including `io.EOF`, in the very same call. Code that checks `err` first and bails out on anything non-nil can silently drop the last chunk of a message the peer already sent. Always process `buf[:n]` if `n > 0`, then decide what the error means.
+
+**Why does every server example in this chapter spawn a goroutine per connection instead of handling clients one at a time?**
+Because `Accept` only hands back one connection at a time, and handling it inline would make every other waiting client sit behind whichever one is currently being served. Goroutines are cheap — a few kilobytes of stack that grows on demand — so `go func(c net.Conn) { ... }(conn)` lets the accept loop go straight back to waiting for the next client. It isn't free at unlimited scale, though: a flood of slow or malicious clients each holding one goroutine, buffer, and file descriptor is exactly why production servers pair this pattern with connection limits and deadlines like `SetReadDeadline` above.

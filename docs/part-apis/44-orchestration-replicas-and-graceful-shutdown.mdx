@@ -208,6 +208,22 @@ A cluster administrator runs `kubectl drain node-7` to take a node out of servic
 
 ---
 
+## Frequently Asked Questions
+
+**Why does checking the database in a liveness probe feel like the responsible thing to do, and why is it actually the opposite?**
+It feels responsible because a broken database connection genuinely does mean the API can't do its job — surely the orchestrator should know that? But liveness answers a narrower question than that: is this specific process fundamentally stuck, deadlocked, or otherwise beyond recovery by anything short of a restart. A database outage is recoverable the moment the database comes back, and restarting the process does nothing to fix it — it just adds a pointless restart storm on top of an outage that was never the process's fault. That check belongs on `/readyz` instead, where "not ready right now" is exactly the right, non-destructive answer.
+
+**What actually breaks if I skip the five-second sleep between failing readiness and calling `srv.Shutdown`?**
+Nothing breaks in a demo, which is precisely what makes this one easy to ship broken — it only shows up under real cluster load. The readiness probe failing and every load balancer and kube-proxy in the cluster actually removing this pod's endpoint are two different events separated by a propagation delay that the process itself has no visibility into. Without the sleep, `Shutdown` can start closing the listener while traffic is still arriving, and those late-arriving requests get connection errors instead of the graceful drain the whole sequence was built to provide.
+
+**Does any of this apply if I'm not deploying to Kubernetes?**
+The mechanics of `SIGTERM`, `signal.NotifyContext`, and `http.Server.Shutdown` are just as relevant under `systemd`, Docker Compose, or a plain `docker stop` — every one of those sends a termination signal and then a kill signal after some grace period, which is the exact shape this chapter's shutdown sequence is built around. What's specific to Kubernetes is the readiness-probe dance and the `PodDisruptionBudget`; without an orchestrator routing traffic based on a readiness endpoint, the process can usually skip straight to draining once it decides to stop accepting new connections.
+
+**What happens to a request that's still running when the 20-second shutdown deadline expires?**
+`srv.Shutdown` gives up waiting and returns an error, and any handler still executing past that point gets its connection cut regardless of how far along it was — there's no partial credit for almost finishing. That's a deliberate tradeoff, not an oversight: a bounded deadline is what keeps a single slow request from holding up the entire rollout indefinitely. The right response is sizing the deadline generously above the true worst-case handler duration, and treating a request that regularly needs longer than that as a design problem — background jobs and polling, not a synchronous handler, are usually the actual fix.
+
+---
+
 ## Key Takeaways
 
 - Multiple replicas buy availability and horizontal scale, but only if every replica is interchangeable — no per-process state a client's next request might depend on.

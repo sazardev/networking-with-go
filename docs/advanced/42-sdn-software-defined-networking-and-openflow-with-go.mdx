@@ -129,4 +129,21 @@ A switch-side agent would dial `:6653`, send its `switch_id` as a JSON hello, an
 
 Even where Go is not driving raw OpenFlow frames, the SDN pattern -- centralize decisions, keep the data plane dumb and fast, expose a programmable API to the control logic -- shows up everywhere in modern infrastructure: Kubernetes' networking plugins, service meshes, and cloud provider virtual networks are all, in effect, software-defined networks with a controller making global decisions and lightweight agents enforcing them locally. Understanding the controller/agent split here pays off directly in the Zero Trust and NFV chapters that follow.
 
+## Frequently Asked Questions
+
+**Is the JSON-based `FlowRule` controller in this chapter actually speaking OpenFlow?**
+No, and the DeepDive and Warning boxes both say so directly -- it is a teaching model that mirrors OpenFlow's shape (a northbound API, a southbound channel, match-action rules) without claiming to be a byte-exact implementation of the wire protocol. If your real switches speak OpenFlow, drive them through Open vSwitch's OVSDB management protocol or an existing controller like ONOS or OpenDaylight instead of hand-rolling the frame encoding.
+
+**Why doesn't this chapter just show a real OpenFlow encoder in Go?**
+Because getting a binary protocol like OpenFlow subtly wrong is worse than not showing it at all -- a flow table with silently malformed match fields can misroute production traffic in ways that are hard to debug. Go also genuinely lacks a mature, widely adopted library for the raw OpenFlow wire format, unlike gRPC or MQTT where solid Go clients already exist, so this chapter deliberately builds the surrounding infrastructure instead: the northbound REST API and southbound registration channel a real controller needs.
+
+**What is actually the difference between the control plane and the data plane here?**
+The data plane is the part that forwards packets, one hop at a time, as fast as the hardware allows -- in this chapter's example, that role belongs to whatever the switch-side agent runs, whether that is an eBPF program, `iptables` rules, or a real OpenFlow switch. The control plane is the decision-making layer, which SDN moves out of each individual switch and into the central `Controller` struct -- it decides what the flow table should contain, and the switches just carry out those decisions.
+
+**Why does the southbound listener in the example use port 6653?**
+That is OpenFlow's IANA-assigned port, and the code comment in `controller.serveSouthbound(":6653")` calls it out for exactly that reason -- using the real assigned port keeps the example's shape consistent with genuine OpenFlow deployments even though the payload traveling over it is simplified JSON rather than OpenFlow's binary framing.
+
+**How does this SDN pattern connect to the NFV chapter that comes right after it?**
+The controller/agent split shown here -- centralize decisions, keep the forwarding path dumb and fast, expose a programmable API to the control logic -- is the same architectural idea that shows up in Kubernetes networking plugins, service meshes, and cloud virtual networks. As this chapter's closing section notes, understanding that split pays off directly once NFV asks a related question: what happens when the network functions themselves, not just the forwarding decisions, become software?
+
 <Axiom>Separate the decision from the delivery, and either one can improve without breaking the other.</Axiom>

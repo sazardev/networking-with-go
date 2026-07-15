@@ -256,4 +256,21 @@ For most teams, the deciding factor isn't raw throughput — both comfortably ha
 
 A practical middle ground worth knowing: Fiber can run behind `net/http` via an adapter package if you later need to embed it inside a larger `net/http`-based application, though at that point it's worth asking whether Gin (which never needed the adapter in the first place) would have been the simpler choice from the start.
 
+## Frequently Asked Questions
+
+**Why does every Fiber handler in this chapter return an `error`, when the Gin handlers in the previous chapter didn't?**
+That's Fiber's central error-handling design: instead of every handler managing its own failure response inline, returning an error lets Fiber's app-wide error handler decide how to turn it into an HTTP response. In the handlers shown here we mostly build the response ourselves and return `nil` on success, but the moment a deeper call — a database query, a downstream request — returns an error, you can simply `return err` and let the centralized handler take over.
+
+**I tried to plug a standard `net/http` middleware into my Fiber app and it didn't work — why?**
+Because `*fiber.Ctx` isn't built on `http.ResponseWriter`/`*http.Request` at all — it wraps `fasthttp`'s own pooled request and response types, as the `<Warning>` earlier in this chapter calls out. Anything written against the `http.Handler` interface, including most third-party middleware, needs a Fiber-specific equivalent (or the `net/http` adapter package) rather than dropping in directly.
+
+**What's the difference between `c.BodyParser` here and `ShouldBindJSON` from the Gin chapter?**
+They serve the same role — decoding the request body into a struct — but `BodyParser` is content-type aware out of the box, inspecting the `Content-Type` header to decode JSON, XML, or form data with a single method. Gin's `ShouldBindJSON` is JSON-specific by name, though Gin does offer its own family of `ShouldBind*` variants for other formats if you need them.
+
+**Do I need to call `fiber.New()` fresh in every test, or can I reuse the app from `main`?**
+`setupApp(store)` in this chapter already separates app construction from `main`, specifically so tests can build a fresh `*fiber.App` wired to a fresh, seeded `*Store` without ever binding a real port. That's what makes `app.Test(req)` possible — it drives a request through the exact same routing and middleware stack production would use, entirely in-process.
+
+**Given fasthttp is faster, why doesn't this book just use Fiber everywhere instead of Gin?**
+Because raw throughput is rarely the deciding factor for most APIs — both frameworks comfortably handle the request volumes typical services see, as the comparison above lays out. Gin's compatibility with the much larger `net/http` middleware ecosystem is usually worth more in practice than the performance edge Fiber offers, which is why Gin tends to be the safer default and Fiber earns its place only when extreme scale or an Express-like API is specifically what you need.
+
 Next, we'll shift from JSON APIs to serving HTML pages, templates, and static assets — for the parts of your application that render a page rather than return data.

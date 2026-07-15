@@ -79,6 +79,20 @@ Awareness training has a mixed reputation, largely because badly run programs (a
 
 <Warning title="Running Phishing Simulations Requires the Same Care as Any Other Test">An internal phishing simulation campaign should have explicit sign-off from leadership and HR, a clear non-punitive policy for anyone who clicks, and legal review if any simulated pretext resembles a sensitive real-world scenario (fake layoffs, fake medical information) closely enough to cause real distress. The goal is measuring and improving detection behavior, not creating a culture of fear.</Warning>
 
+## Frequently Asked Questions
+
+**If SPF, DKIM, and DMARC are all in place, is our domain safe from phishing that uses our name?**
+They stop something narrower and very specific: an attacker forging mail that claims to come directly from your exact domain. They do nothing to stop a look-alike domain, a homograph attack using a similar-looking Unicode character, or a compromised real account at a partner company - all of which can still convincingly impersonate your organization without ever touching your mail records. Domain authentication closes one real door, not every door.
+
+**Why does the `checkEmailAuthRecords` example only check for an SPF record's presence, not whether it's actually strict enough?**
+Because presence versus strictness are two different questions, and the first one alone already tells a security reviewer whether a domain is trivially spoofable. A domain with no SPF record at all is a much bigger, more urgent gap than a domain with an SPF record whose policy could be tightened - the quick automated check is meant to triage many domains fast, not replace a full mail security audit.
+
+**Our phishing simulation had a low click rate - does that mean our people are safe from social engineering generally?**
+Not necessarily. A low click rate on email-based phishing says little about how the same people would respond to a convincing vishing call, a tailgating attempt at the office door, or a well-researched pretexting scenario aimed at one specific employee. Awareness training and simulations need to rotate across techniques, not just repeat the same email template with a new subject line.
+
+**Is tailgating really a "networking" topic, or is that a stretch for this book?**
+It earns its place because the goal is almost always network access - a badge-in door is a physical-layer control protecting the same assets a firewall protects logically, and an attacker who tailgates their way to an empty conference room can often plug into a live network jack more easily than they could breach that same segment remotely.
+
 ## Summary
 
 - Social engineering targets people, not systems, and remains effective regardless of how strong the technical controls around it are.

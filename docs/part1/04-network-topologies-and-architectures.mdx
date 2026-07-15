@@ -90,6 +90,23 @@ Mesh:  [A]---[B]
 
 The next time you glance at a network diagram in the wild — an office floor plan, a data center rack layout, a cloud provider's architecture guide — try naming its shape before reading the label. Is it leaning on one plaza everything depends on? Redundant paths that cost real money to build? A single shared street everyone crowds onto? That instinct, more than any diagram in this chapter, is what carries forward into every networked system you will eventually design yourself, starting with the very first Go program you write in the part of this book that follows.
 
+## Frequently Asked Questions
+
+**If Wi-Fi looks like a star on every diagram, why does this chapter keep calling it a bus?**
+Because a diagram only ever shows the physical topology — the wires, or in this case the individual radio links between each device and the router — and that is not the same thing as the logical topology, which is the pattern the data actually behaves in. Every laptop and phone on a Wi-Fi network does have its own private-looking link to the router, but they are all shouting into the same shared slice of airwaves, so only one can transmit at a genuine instant without garbling the others. The wiring diagram is technically honest and practically misleading at the same time, which is exactly the kind of gap this chapter wants you to learn to notice.
+
+**Is the internet really a mesh network, then?**
+Yes, but a partial one, and that distinction matters enormously. A full mesh needs roughly n(n-1)/2 direct links to connect everyone to everyone, a number that explodes so fast it becomes physically impossible past a small handful of nodes — a hundred routers would already need nearly five thousand direct links. The internet instead relies on enough redundant paths between major points that traffic can usually route around any single failure, without any router needing a direct line to every router it might eventually need to reach.
+
+**Why did star topology beat bus and ring if a hub or switch is still a single point of failure?**
+Because "one bad cable takes down one desk" turned out to be worth far more than the theoretical risk of the central switch dying, especially once switches became cheap enough in the 1990s to make that trade affordable. Engineers did not ignore the weakness — they built around it with redundant switches, backup power, and failover links — but a single central risk you can actively defend is a much better bet than a shared cable where any cut anywhere kills everything past it.
+
+**Does the wiring shape of a network decide whether it's client-server or peer-to-peer?**
+No, and that surprises a lot of people the first time they hear it. Topology answers "what is the wiring shape," while architecture answers "what role does each device play in a conversation," and the two are independent — a client-server system overwhelmingly runs over a star-shaped network, but nothing about a star forces that choice, and a peer-to-peer system like BitTorrent can happily run over the exact same physical wiring.
+
+**What's actually different about a "hybrid" topology versus just calling something a mesh?**
+A hybrid isn't a fifth shape competing with the other four so much as an admission that real networks rarely stay pure past a certain size. A company might wire each floor as its own star radiating from a floor switch, then connect those floor switches together in a partial mesh — which is neither a textbook star nor a textbook mesh, but a deliberate combination of both, chosen because different parts of the same network face different failure and cost tradeoffs.
+
 ### Fun Facts and Notes
 
 - The first network topologies were sketched on napkins and whiteboards by engineers in the 1970s designing the earliest LANs, long before any of these shapes had settled into the standard diagrams you see in textbooks today.

@@ -86,6 +86,23 @@ func main() {
 
 Running this hypothesis against every message in a capture - not just one - is the real validation step. If the declared length consistently matches the actual remaining bytes across dozens of samples, the header format is very likely correct. If it only works for some messages, that's a strong signal that message type changes the header shape, which is common in protocols with multiple message kinds sharing a connection.
 
+## Frequently Asked Questions
+
+**Is reverse engineering a protocol always legally risky?**
+It depends heavily on why you're doing it and where you're doing it from, and there's no single answer that applies everywhere. Interoperability-motivated work - building a compatible client for a service you already have the right to use, say - tends to be treated more permissively than reverse engineering aimed at bypassing licensing or DRM, but jurisdiction and the target's terms of service both matter enough that this is genuinely a question for a lawyer, not something a technical rule of thumb can settle.
+
+**Why start with passive capture instead of just sending crafted packets and seeing what happens?**
+Because passive observation costs you nothing and reveals a surprising amount before you've risked anything - whether the protocol is text or binary, which byte offsets stay constant across messages, and which fields get echoed back between a request and its response. Only once that structure is hypothesized does it make sense to move to something more active like fuzzing, which needs the same authorization considerations as any other active technique in this book.
+
+**My header parser works for some captured messages but fails on others. Does that mean my whole hypothesis is wrong?**
+Not necessarily - it usually means one specific assumption needs revising, not that the whole model is broken. A common cause is that the header shape itself changes depending on message type, which is common in protocols that share one connection across several kinds of messages; the messages that fail to parse are exactly the clue pointing at which assumption to fix next.
+
+**How is reconstructing a protocol's state machine different from just parsing individual message formats?**
+Parsing a single message tells you what one piece of the conversation looks like in isolation; the state machine tells you the shape of the whole conversation - which replies are valid after which requests, what opens or closes a session, and whether the server can push messages unprompted. Sequence diagrams built from several captured sessions side by side make that larger pattern visible in a way that staring at one flow, or one parsed message, never will.
+
+**How does this chapter's approach connect back to the malware chapter's network indicators?**
+When the "protocol" under investigation turns out to be malware command-and-control rather than a legitimate undocumented system, the same passive-capture-first discipline still applies - you're looking for the same fixed headers, length fields, and request/response patterns, just in service of understanding an adversary's channel well enough to detect and block it, rather than interoperating with it.
+
 ## Summary
 
 - Start passive: capture real traffic before sending anything crafted, and let structure emerge from comparison across many samples.

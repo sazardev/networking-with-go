@@ -211,6 +211,23 @@ Benchmark the worker pool above two ways with `b.RunParallel`: once through the 
 
 ---
 
+## Frequently Asked Questions
+
+**I made a change that should be faster, but I didn't profile first — is that a problem?**
+It usually is, even when the change seems obviously correct. This chapter's whole premise is that intuition about where time goes in a network service is unreliable — I/O waiting, GC pressure, connection overhead, and goroutine misuse all masquerade as each other from the outside. A change made without a profile to justify it can easily add complexity for a bottleneck that was never the real one, which is exactly the trap the opening quote warns against.
+
+**Why does `sync.Pool` sometimes seem to not help at all, or even get slower?**
+Because objects sitting in a `sync.Pool` can be dropped by the garbage collector at any time, including between two `Get` calls in the same request — it's built purely to reduce allocation churn under load, not to guarantee reuse. Under light or bursty traffic the pool may end up allocating almost as often as if it weren't there at all; its benefit shows up specifically under sustained load with steady buffer turnover, which is why `-benchmem` before and after is the only reliable way to tell if it's actually paying for itself.
+
+**My benchmark shows a huge speedup, but production didn't get any faster — why?**
+A single-goroutine benchmark like `BenchmarkParseHeader` doesn't capture lock contention or cache effects that only appear once many goroutines call the function concurrently, which is exactly what a real server does. Reach for `b.RunParallel` to benchmark under the same kind of concurrent pressure your production traffic actually creates, rather than trusting a single-threaded number to predict multi-goroutine behavior.
+
+**Should I just raise `GOMAXPROCS` if my server feels slow?**
+Rarely — for most network servers the default (matched to detected CPU cores) is already correct, since the scheduler parks goroutines blocked on I/O and runs others in their place without your help. The more common real mistake is launching an unbounded goroutine per unit of work with no cap, which a worker pool fixes directly. The one case worth double-checking is inside a container, where `GOMAXPROCS` can default to the host's full CPU count even though a cgroup limits you to a fraction of it — that's what `automaxprocs` exists to correct.
+
+**Does connection reuse matter for a client that only makes one request occasionally?**
+Not much — the benefit of `http.Transport`'s idle pool compounds specifically when a client makes many requests to the *same* backend, since it avoids repeating TCP and TLS handshakes and avoids exhausting ephemeral ports. A client that fires off one infrequent request pays the handshake cost once either way, so tuning `MaxIdleConnsPerHost` upward only pays off once you're actually issuing concurrent or frequent requests to one host.
+
 ## Key Takeaways
 
 - Profile before optimizing: `net/http/pprof` and `go tool pprof` locate the actual bottleneck instead of a guessed one.

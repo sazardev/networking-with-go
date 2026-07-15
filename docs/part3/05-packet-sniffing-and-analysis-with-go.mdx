@@ -129,3 +129,22 @@ handleFromFile, err := pcap.OpenOffline("capture.pcap")
 Everything downstream — the `gopacket.NewPacketSource` loop, the layer inspection — works identically whether the handle came from a live interface or a saved file, which is one of `gopacket`'s more convenient design choices.
 
 <Axiom>The packet never lies about what crossed the wire — only about what the sender intended you to believe was inside it. Sniffing shows you the former; analysis is figuring out the latter.</Axiom>
+
+---
+
+## Frequently Asked Questions
+
+**My `pcap.OpenLive` call fails with a permissions error — is my code wrong?**
+Almost certainly not — capturing on a real network interface needs elevated privileges (root, or `CAP_NET_RAW`/`CAP_NET_ADMIN` on Linux) because reading raw frames off the wire is exactly the kind of power the OS gates behind permission checks. Capturing on a loopback interface like `lo0` for local testing usually needs less, which is why the chapter's example targets loopback rather than a live NIC.
+
+**If I sniff traffic on my home Wi-Fi, am I only seeing my own laptop's packets?**
+Not necessarily, and that's the whole reason the authorization warning above exists — on shared media, promiscuous mode hands you every frame crossing the segment, not just the ones addressed to your machine. That's precisely why intercepting communications you're not a party to is treated as its own offense in many places, separate from unauthorized access to a system.
+
+**Why does the example bother with a BPF filter instead of just reading every packet and checking types in Go?**
+Efficiency and focus — `SetBPFFilter` discards uninteresting traffic before it ever reaches your Go code, using the same filter syntax `tcpdump` relies on, so a busy interface doesn't drown your `analyze` function in packets you were going to ignore anyway. Once you're capturing on anything busier than a quiet lab VM, narrowing with a filter stops being a nicety and becomes the difference between a useful capture and an unreadable firehose.
+
+**Is it cheating to analyze a saved `.pcap` file instead of capturing traffic live?**
+Not at all — it's actually the more common real-world workflow. `pcap.OpenOffline` feeds the exact same `gopacket.NewPacketSource` loop used for live capture, which means the SYN-flood detection, encryption checks, and unexpected-destination analysis described above all work identically on a file you (or an authorized colleague) captured earlier.
+
+**How does spotting a SYN with no reply here connect back to the DoS chapter?**
+Directly — a lone SYN that never gets a SYN-ACK is one of the signatures of a SYN flood covered in Chapter 4.3, where an attacker exhausts a server's half-open connection table by never completing handshakes. Sniffing is often how you'd first notice that pattern in practice, turning an abstract attack description into something you can actually see crossing the wire.

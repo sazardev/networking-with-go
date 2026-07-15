@@ -294,4 +294,21 @@ srv.Shutdown(shutdownCtx)
 
 Frameworks like Gin and Fiber (covered next) add convenience — route grouping, built-in binding, richer middleware ecosystems — but `net/http` alone is enough for most services, has zero dependencies to audit or upgrade, and its APIs are stable across Go versions for the lifetime of your project. Many teams start here and only reach for a framework once the routing or middleware boilerplate becomes genuinely painful.
 
+## Frequently Asked Questions
+
+**Why does `Store` use a plain `sync.Mutex` instead of a `sync.RWMutex` for a map that's read far more often than it's written?**
+It would be a fair optimization for a read-heavy task list, but the extra complexity isn't worth it in a teaching example — a single `Mutex` is easier to reason about and impossible to get wrong. Once you've profiled a real service and found the lock genuinely contended by concurrent reads, swapping in an `RWMutex` is a mechanical, low-risk change.
+
+**Why call `dec.DisallowUnknownFields()` in `createTask` but not in `updateTask`?**
+`createTask` is the stricter of the two on purpose — it's the entry point where a typo in a client's JSON (like `"txt"` instead of `"text"`) should fail loudly rather than silently create a task with an empty description. `updateTask` only touches the `done` flag, so the risk of a silently ignored field is lower, but you could just as reasonably tighten it the same way.
+
+**My handler returns a 404 for `GET /tasks/{id}` even though the task exists — what's usually wrong?**
+Nine times out of ten it's a mismatch between the numeric ID in the URL and the one stored in the map, often because `strconv.Atoi(r.PathValue("id"))` succeeded but parsed a value that was never actually created. Add a quick log of the parsed `id` right after the `Atoi` call and compare it against `store.List()` — the bug is almost always upstream of the store itself.
+
+**Do I really need both a panic-recovery middleware and graceful shutdown, since `net/http` already recovers per-request panics?**
+Yes, and they solve different problems. Per-request recovery (built into `net/http` and reinforced by `recoverMiddleware`) stops one bad request from taking down the whole process; graceful shutdown makes sure that when you *do* deliberately stop the process — a deploy, a `SIGTERM` from your orchestrator — in-flight requests get to finish instead of being cut off mid-response.
+
+**How does the routing here compare to what Gin gives me?**
+The method-and-wildcard patterns on `http.ServeMux` (`"POST /tasks"`, `"GET /tasks/{id}"`) already get you most of what a router library provides — method matching and path parameters — which is exactly why this chapter could build a full CRUD API without a framework at all. What Gin adds on top is convenience: route grouping, built-in JSON binding and validation, and a larger middleware ecosystem, not capabilities that are fundamentally missing from the standard library.
+
 Next, we'll see how Gin trims that boilerplate down while keeping the same REST principles.

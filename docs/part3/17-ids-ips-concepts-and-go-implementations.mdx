@@ -147,6 +147,23 @@ Every accepted connection first passes through `monitor.Allow`. Under normal loa
 
 Real products layer far more on top of this idea: deep packet inspection against signature databases, protocol-aware parsers that understand HTTP or DNS well enough to spot malformed requests, and correlation across many sensors. But the sliding-window rate limiter above is the same fundamental primitive, and it is often the first line of defense before any of that heavier analysis runs.
 
+## Frequently Asked Questions
+
+**If IPS can block attacks automatically, why would anyone still run an IDS?**
+Because blocking is a privilege you earn, not a default you should trust on day one. An IDS sitting out-of-band on a mirrored port can never take down a legitimate connection, no matter how wrong its judgment is, which makes it the safe place to learn what your real traffic looks like before you ever let a device sit inline with the authority to drop packets.
+
+**Our brand-new IPS deployment just blocked a customer's connection. What did we do wrong?**
+Almost certainly it went straight into blocking mode with default signatures and no tuning window, which is exactly the mistake this chapter's tuning warning calls out. The fix isn't to abandon the IPS, it's to roll it back to detection-only mode, watch the alert volume against your actual traffic for days or weeks, and only promote the rules that prove themselves low-noise to active blocking.
+
+**Why does the connection monitor in the Go example block a source permanently once it crosses the threshold, instead of just slowing it down?**
+Because a scanner's whole strategy depends on speed and volume - dozens of attempts inside a short window is not something an ordinary user would ever do by accident. Once `Allow` sees a source cross `maxConns` inside the sliding window, treating every later attempt as hostile and refusing it outright is the cheapest possible defense, and it mirrors how real rate-based IPS heuristics catch port scans long before any deep packet inspection ever runs.
+
+**Can anomaly-based detection replace signature-based detection entirely?**
+Not in practice, no. Signatures give you fast, precise, low-noise matches for attacks that are already known, while anomaly detection exists specifically to catch the zero-day or never-before-seen tool that has no signature yet. Most production stacks run both together, on the same engine, because each covers the other's blind spot.
+
+**How does NIDS/HIDS placement connect to the segmentation ideas from the previous chapter?**
+Segmentation controls which paths traffic is even allowed to take between zones; IDS/IPS decides what to do with the traffic that's already permitted to flow along those paths. A network sensor at a chokepoint between segments can watch everything crossing that boundary, while a host-based sensor picks up local activity - like a process spawning oddly - that never crosses a segment boundary at all, so it never reaches a network sensor to begin with.
+
 ## Summary
 
 - IDS detects and alerts; IPS detects and blocks inline. Choose (or combine) based on how much risk of false-positive disruption you can tolerate.

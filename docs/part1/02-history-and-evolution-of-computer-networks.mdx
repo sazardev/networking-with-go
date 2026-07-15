@@ -203,6 +203,23 @@ Antiquity: [Drums, beacon towers, courier relays]
 - Talking drums encode actual sentences, not simple alerts — some West African drum languages can relay proverbs and full messages across distances a shouting human voice could never cover.
 - If the internet were a country, it would be among the largest in the world by population connected.
 
+## Frequently Asked Questions
+
+**Did computer networking really begin with ARPANET in 1969, or is that just the part that gets taught?**
+It's the part that gets taught, but it's really only the electronic chapter of a much older story. Talking drums, Chinese beacon towers, the Persian Royal Road, and Claude Chappe's 1793 optical telegraph were all solving the identical problem of nodes, links, and shared protocols long before a single electron carried a bit — ARPANET just swapped in copper and packet switching for wood, telescopes, and human eyesight.
+
+**Why does a chapter about network history spend so much time on Enigma, Bletchley Park, and codebreaking?**
+Because that thread isn't a detour — it's the direct hinge connecting "people trying to keep messages secret" to "the first electronic digital computer." Colossus was built entirely to break codes faster than Germany could change its settings, and many of the people who built it carried that expertise straight into the postwar computing research that produced the machines this chapter goes on to describe.
+
+**Was TCP/IP invented because ARPANET's original design didn't work?**
+Not because it didn't work, but because it didn't generalize. ARPANET only knew how to connect networks built the same way, and Cerf and Kahn's real achievement with TCP/IP was designing a protocol that didn't care what was underneath it — which is exactly why the same internet today runs over fiber, Wi-Fi, and satellite links without anyone needing to invent a new core protocol for each one.
+
+**What was "flag day" in 1983, and why does it matter that it happened all at once rather than gradually?**
+It was the single coordinated moment every machine on ARPANET switched from the older NCP protocol to TCP/IP simultaneously, with no gradual rollout — sites that didn't switch were simply cut off. It's a useful reminder that some of the internet's most foundational transitions weren't smooth incremental rollouts at all, but deliberate, disruptive, all-or-nothing coordination across every connected participant.
+
+**Is the World Wide Web the same thing as the internet?**
+No, and this chapter calls that out directly as a common misconception: the internet is the underlying network of networks and the TCP/IP protocols that make it function, and it had already existed for over two decades before Tim Berners-Lee built the Web at CERN as one application running on top of it, alongside email and file transfer.
+
 ### The Artifacts Are Still Here
 
 History left artifacts behind, and one of them is sitting on your machine right now: the network interfaces your operating system exposes — that Wi-Fi adapter, that Ethernet port, that quiet loopback interface named `lo` — are the direct descendants of the ARPANET's Interface Message Processors, dedicated hardware whose only job was ever to move packets in and out of a machine. Each one still carries a hardware address baked into it at the factory, a globally unique identifier that is a direct, unbroken descendant of Robert Metcalfe's 1973 Ethernet design, decades before IP addresses became the way most of us think about "who a machine is" on a network. Every device you own that connects to anything is still, quietly, running on decisions made in that chain of history — from a drumbeat crossing a valley, to a tower relaying a semaphore signal, to a codebreaking shed at Bletchley Park, to a handful of stubborn engineers at UCLA in 1969.

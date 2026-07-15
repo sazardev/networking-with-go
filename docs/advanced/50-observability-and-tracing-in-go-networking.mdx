@@ -194,6 +194,23 @@ Visiting `/debug/vars` returns a JSON object with every registered variable—si
 
 A well-observed Go network service typically layers all four techniques: `slog` for structured events, `httptrace` for diagnosing outbound call latency, OpenTelemetry spans for the end-to-end distributed picture, and either `expvar` or a Prometheus client for dashboards and alerts. None of them replace the others—metrics tell you something is wrong, traces tell you where, and logs tell you exactly what happened on the request that mattered.
 
+## Frequently Asked Questions
+
+**Do I need OpenTelemetry if I already have `httptrace` and `slog` in place?**
+It depends on how many services a request touches. `httptrace` is superb at explaining one hop—was this particular HTTP call slow because of DNS, TCP connect, or TLS—but it has no idea what happened four services downstream. If your slow request might be slow because of the fourth service in a chain rather than the first, that's exactly the gap OpenTelemetry's propagated trace ID is built to close; `slog` and `httptrace` still matter, they just answer a narrower question.
+
+**Why does `ClientTrace` matter more than just timing the whole request with `time.Since`?**
+Because a single end-to-end duration tells you *that* something was slow but not *which phase*. The DNS lookup, the TCP handshake, the TLS negotiation, and the server's actual response time are four different problems with four different fixes, and `httptrace`'s hooks fire synchronously at each phase boundary so you get exact numbers for each one instead of one lump total to guess about.
+
+**Is a trace ID by itself enough to call something "distributed tracing"?**
+No—and this chapter is explicit about it: a trace without a propagated ID is just an unusually detailed log. The value only appears once that ID crosses process and network boundaries, letting spans recorded by completely different services be stitched back into one timeline. Generating a request ID that dies at your service's edge gives you better logs, not tracing.
+
+**When is `expvar` the right choice instead of reaching for Prometheus client libraries?**
+When the service is small enough that a full metrics pipeline is more setup than the problem deserves. `expvar` needs no dependency and no configuration—registering a counter with `expvar.NewInt` and serving `/debug/vars` is often enough for an internal service or a debugging session. Once you need histograms, labels, or long-term retention across a fleet, that's the signal to graduate to a real metrics stack.
+
+**Which of metrics, logs, and traces should I add first to an existing service that has none?**
+Start with structured logs via `slog`—they're the cheapest to retrofit and immediately make "what happened on this one request" answerable. Metrics come next because they're what tells you *that* something is wrong at 2 a.m. before you go looking; tracing is the most valuable for multi-service systems but also the most involved to wire up, since it requires propagation across every hop, not just instrumentation at one.
+
 ## Key Takeaways
 
 - Metrics, logs, and traces are complementary, not interchangeable—each answers a different question.

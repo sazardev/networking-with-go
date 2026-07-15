@@ -328,6 +328,25 @@ in vocabulary and emphasis than in substance, as the next chapter explains.
 
 ---
 
+## Frequently Asked Questions
+
+**If Go has no `abstract class` keyword, how is this really "Clean Architecture" and not just a folder naming convention?**
+The folder names are scaffolding, not the substance — the substance is the dependency rule itself, and Go enforces the interesting half of it for free. Because interfaces are satisfied implicitly, `domain` and `usecase` never need to import a concrete database type just to describe what they need from one; the compiler only ever sees inward imports, and an outward one simply won't compile without adding an import that has no reason to exist. What Go doesn't enforce is *where* an interface is declared, which is exactly the discipline the `OrderRepository` warning above is about.
+
+**Why does `ShipOrder.Execute` return the domain error straight from `order.Ship()` instead of wrapping it in something HTTP-specific?**
+Because the use-case layer has no business knowing that HTTP exists. `ErrOrderNotPaid` is a domain concept — the adapter in `internal/adapter/http` is the one place responsible for deciding that this error becomes a 409 rather than a 500, and it can do that with a simple `errors.Is` check. If the use case pre-translated the error into a status code, that knowledge would leak inward, and a future gRPC adapter for the same use case would inherit an HTTP concept it has no use for.
+
+**What actually breaks if I skip `ToOrderResponse` and just add `json` tags to `domain.Order`?**
+Nothing breaks on day one — that's what makes it tempting. The cost shows up the first time the wire format and the domain model need to diverge: a client wants a computed `total_paid` field the domain has no reason to store, or a security review says the internal risk score must never serialize at all. Without a mapping function, that pressure lands directly on `domain.Order`, and the type that every use case depends on now has to think about API versioning too.
+
+**This chapter's `Order` only has an ID, customer ID, and status — is that too simplified to be useful?**
+Deliberately so. The point here is the shape of the boundaries, not a production-ready aggregate, and Chapter 6.41 picks this exact type back up and rebuilds it with unexported fields, order lines, and domain events once DDD is on the table. Learning the dependency rule is easier without also tracking a rich object model at the same time.
+
+**How does this relate to Hexagonal Architecture in the next chapter — do I need to pick one?**
+Not really, and the comparison table above is trying to make that visible: both put the same wall around your business logic, they just draw it with different vocabulary — rings versus a core with ports and adapters. Chapter 6.40 will feel very familiar once this chapter's dependency rule has landed, because "adapters depend on the core, never the reverse" is the same idea wearing a different name.
+
+---
+
 ## Key Takeaways
 
 - Clean Architecture's core rule is a dependency direction, not a specific

@@ -145,6 +145,25 @@ None of them introduced a fundamentally new networking concept beyond what earli
 
 ---
 
+## Frequently Asked Questions
+
+**Why does the chat server broadcast loop stall for everyone when only one client is slow?**
+Because a naive broadcast that does `client.send <- msg` in a simple loop blocks on the first channel that's full, and every client waiting behind that one in the same loop gets delayed by it too. The fix isn't a smarter data structure, just a bounded buffer per client plus a non-blocking send: if a client's channel is full, drop the message for that one client (and count it) or close its connection, rather than letting one laggard back up delivery to everyone else.
+
+**If `httputil.NewSingleHostReverseProxy` is so easy to call, why not just call it inside `ServeHTTP` like the simplest version shows?**
+Because it allocates a new `ReverseProxy` and its default `Director` on every single request, which is wasted work under real load and throws away any per-backend customization — a custom `Transport` with its own connection pool, a custom `ErrorHandler` — that you'd otherwise want configured once. Build one `*httputil.ReverseProxy` per backend when the backend list is constructed and reuse it on every request instead.
+
+**Why does the load balancer's round robin feel uneven when a backend keeps flapping between healthy and unhealthy?**
+The `pick` loop increments a shared counter and simply skips unhealthy backends, which is simple and lock-free but not perfectly fair — the requests that would have gone to a flapping backend get absorbed unevenly by whichever backend the counter happens to land on next, rather than spread evenly. Production load balancers usually maintain a separate list of currently-healthy backends, rebuilt as health checks complete, and round robin over just that list.
+
+**Why does the monitoring agent case study bother with exponential backoff instead of just retrying failed sends right away?**
+Because an immediate, fixed-interval retry across thousands of agents synchronizes all of them into resending at the same instant, turning a brief hiccup on the collector into a self-inflicted thundering herd. Exponential backoff with jitter spreads retries out over time instead of lockstep, which is the difference between a blip that resolves itself and an outage the retry traffic itself caused.
+
+**Do these case studies require learning new networking techniques beyond what Part 2 already covered?**
+No, and that's the entire point of this chapter — a load balancer is a reverse proxy plus backend selection and health checks, a file sync tool is framing plus NAT traversal plus authentication, and a monitoring agent is an HTTP or UDP client plus scheduling and graceful shutdown. Every case study here recombines primitives from earlier chapters rather than introducing anything genuinely new, which is exactly what makes real production systems less intimidating once you've seen the pattern.
+
+---
+
 ## Key Takeaways
 
 - Production network systems are rarely built from exotic new techniques — they compose the same primitives covered throughout this part.

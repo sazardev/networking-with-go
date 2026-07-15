@@ -123,3 +123,20 @@ func clientFromStoredToken(ctx context.Context, stored *oauth2.Token) *http.Clie
 Every call made through the returned client checks whether the current access token has expired and, if so, uses the refresh token to fetch a new one automatically before the request goes out — your application code never has to check expiry itself. The one operational responsibility this pushes onto you is persisting the refreshed token: `tokenSource.Token()` returns the current token including any renewal, and if your storage doesn't get updated when that happens, the next process restart falls back to the stale one.
 
 <Warning title="A refresh token is more sensitive than the access token it renews">An access token expires in minutes and its blast radius is limited by that short window; a refresh token can mint new access tokens indefinitely and is exactly what an attacker wants if your storage is compromised. Encrypt refresh tokens at rest and treat their storage with the same care you'd give a password hash, not the same casualness you might give a short-lived session token.</Warning>
+
+## Frequently Asked Questions
+
+**If a user is already authenticated with an OAuth2 access token, why do I still need OpenID Connect?**
+Because OAuth2 was never designed to answer "who is this," only "what has this app been granted." An access token lets your server call the userinfo endpoint on the provider's terms, but that endpoint is a convention, not a spec-guaranteed contract, and nothing about the token itself is signed proof of identity you can verify offline. OIDC's ID token is a signed JWT you can verify yourself against the provider's JWKS, which is why it's the right tool the moment "log this user in" is the actual goal.
+
+**Why store the `sub` claim instead of the email address as my local user's key?**
+Because email addresses are mutable — a user can change providers, change their email, or have it recycled by their employer after they leave — while `sub` is a stable identifier the provider guarantees won't be reassigned to someone else. Keying your foreign key off email invites a bug where a login three years from now silently resolves to the wrong account.
+
+**My callback handler works fine locally but fails in production with a state mismatch error — what's going wrong?**
+The most common cause is the state cookie not surviving the redirect, usually because of a `Secure` or `SameSite` cookie attribute mismatch between your local HTTP setup and production HTTPS, or a load balancer routing the login and callback requests to different backend instances that don't share cookie storage. Double-check that the cookie set in `loginHandler` uses attributes compatible with your production domain and that state isn't being stored in a way that assumes a single sticky server.
+
+**Do I need to implement SAML myself if an enterprise customer asks for it?**
+No — reach for `github.com/crewjam/saml/samlsp` rather than hand-rolling XML assertion parsing and signature verification, which is exactly the kind of security-critical parsing you don't want to get subtly wrong. Treat SAML as something you integrate at the edge via that middleware, the same way you'd treat OIDC as a library concern rather than something you reimplement from the discovery document up.
+
+**Can I skip refresh tokens entirely and just make the user log in again when their access token expires?**
+You can, and for a low-traffic internal tool that might even be the simpler choice, but for anything user-facing it trades a small amount of implementation effort for a real usability cost — access tokens are deliberately short-lived (often fifteen minutes to an hour), so without refresh tokens your users would be redirected to a login screen constantly. `oauth2.Config.TokenSource` handles the renewal transparently enough that there's rarely a good reason to skip it once you're already storing tokens.

@@ -237,6 +237,25 @@ much larger amount of unnecessary lookup failures.
 
 ---
 
+## Frequently Asked Questions
+
+**Does every `net.Dial` call really trigger a fresh DNS lookup?**
+Yes, unless you cache the result yourself — Go's `net` package has no built-in resolver cache. Call `net.Dial("tcp", "example.com:80")` a hundred times in a tight loop and you trigger a hundred lookups, which is exactly the repeated, avoidable traffic the tiny DNS cache built later in this chapter is meant to eliminate.
+
+**Why does `net.LookupHost` hang instead of just failing fast on a bad DNS server?**
+Because the package-level `Lookup*` functions predate `context.Context` and were never given a timeout parameter — they simply wait on whatever the operating system's resolver decides, which can be five seconds or more per configured server. That is precisely why the custom-resolver section reaches for `net.Resolver.LookupHost(ctx, host)` instead: wrapping the call in `context.WithTimeout` turns an indefinite hang into a bounded, predictable failure.
+
+**If I set `PreferGo: true`, do I lose `/etc/hosts` and `/etc/resolv.conf` support?**
+You do, and that is the whole trade-off. The cgo path calls the OS's native `getaddrinfo`, which transparently honors `/etc/hosts`, NSS modules, and corporate LDAP-backed resolution; the pure-Go path speaks DNS directly over the wire and skips all of that machinery. The payoff is a fully static, portable binary and the ability to redirect queries to a specific server via the `Dial` field, which the cgo path gives you no hook to do.
+
+**Why does Go's standard library not just validate DNSSEC for me?**
+Because `net` is deliberately a thin convenience layer over whatever answer comes back, not a security-hardened DNS stack — the same reasoning that keeps it from exposing real record TTLs. If your application needs cryptographic proof that a response actually came from the domain's authoritative servers, rather than merely "some server on the path answered," that is a job for a dedicated library like `miekg/dns`, not `net.LookupHost`.
+
+**My tiny DNS cache is a bottleneck under load — what's the first thing to change?**
+Look at the mutex before anything else. A plain `sync.Mutex` in the `lookup` method serializes every call, including cache hits that are read-only, so the fix is almost always swapping it for a `sync.RWMutex` (read lock on the hit path, write lock only when inserting) or a `sync.Map`, which is built exactly for a read-mostly, write-rarely workload like this one.
+
+---
+
 ## Key Takeaways
 
 - DNS is a hierarchical, cached lookup system that turns names into addresses (and back) — mostly over UDP, falling back to TCP for larger responses.

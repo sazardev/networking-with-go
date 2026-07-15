@@ -5,6 +5,15 @@ title: "Error Handling in Go"
 
 # Error Handling in Go
 
+If you've written code in almost any other mainstream language, you've
+lived with `try`/`catch`, and probably been bitten by it at least once —
+an exception thrown three layers deep in a library you didn't write,
+caught (or not) in a handler you can't easily find just by reading the
+function in front of you. Go's designers looked at that pattern and made
+a genuinely unusual choice: they left exceptions out entirely. Not as an
+oversight — as a considered rejection, and this chapter is about
+understanding why, and how the resulting style actually works in practice.
+
 > Go treats failure the way a careful engineer treats a warning light on a
 > dashboard: it doesn't stop the car for you and it doesn't hide the light
 > either — it puts the light directly in front of you, at the exact moment
@@ -62,13 +71,15 @@ fmt.Println("new balance:", newBalance)
 
 Languages with exceptions let an error thrown deep in a call stack
 propagate upward invisibly until some `catch` block, possibly many frames
-away, decides to handle it — or doesn't, and the program crashes. Go's
-designers considered this a readability problem: you cannot tell, just by
-reading a function, which of its calls might fail or where that failure
-will actually be handled. Returning errors as ordinary values makes every
-possible failure point visible in the function's own signature and body —
-the tradeoff is more `if err != nil` lines, in exchange for control flow
-that never has an invisible side door.
+away, decides to handle it — or doesn't, and the program crashes at a
+point that may be nowhere near where anything actually went wrong. Go's
+designers considered this a readability problem above all else: you
+cannot tell, just by reading a function, which of its calls might fail or
+where that failure will actually be handled. You have to go hunting.
+Returning errors as ordinary values makes every possible failure point
+visible in the function's own signature and body — the tradeoff is more
+`if err != nil` lines, in exchange for control flow that never has an
+invisible side door.
 
 <DeepDive title="This isn't a purity argument — it changes real code shape">Because errors are just values, they can be wrapped, compared, logged, and passed to other functions like anything else — you'll see exactly this in the wrapping and `errors.Is`/`errors.As` sections below. Exceptions, by contrast, unwind the stack automatically, which is powerful but makes it much harder to reason locally about what a given function does when something goes wrong, since the answer might live in a completely different file.</DeepDive>
 
@@ -186,6 +197,10 @@ if errors.As(err, &httpErr) && httpErr.Code == 404 {
 }
 ```
 
+This exact shape — a struct carrying a status code, wrapped and inspected
+with `errors.As` — is one you'll meet again almost unchanged once Part 2
+starts building real HTTP clients and servers.
+
 ## Combining Multiple Errors with errors.Join
 
 Sometimes a single operation can fail in more than one independent way at
@@ -219,8 +234,9 @@ if any one of the joined errors satisfies it.
 `panic` immediately stops normal execution and begins unwinding the call
 stack, running any deferred functions along the way; `recover`, called
 inside a deferred function, stops that unwinding and lets the program
-continue. This looks like exception handling, but idiomatic Go uses it far
-more narrowly:
+continue. This looks like exception handling, and it's tempting to reach
+for it that way — but idiomatic Go uses it far more narrowly than that
+first impression suggests:
 
 ```go
 func safeDivide(a, b int) (result int, err error) {
@@ -296,15 +312,36 @@ func validateAge(age int) error {
    `validateAge` to return it for `age > 130`, then handle both sentinels
    in the caller with two `errors.Is` checks.
 
-## Key Takeaways
+## Frequently Asked Questions
 
-- `error` is a one-method interface (`Error() string`) — Go has no
-  exceptions, so every fallible operation returns its error explicitly.
-- `fmt.Errorf` with `%w` wraps an underlying error while adding context;
-  plain `%v`/`%s` breaks the chain that `errors.Is`/`errors.As` rely on.
-- `errors.Is` checks for a specific sentinel value (even wrapped);
-  `errors.As` checks for (and extracts) a specific error type.
-- Custom error types implementing `Error() string` let callers act on
-  structured data, not just a message string.
-- `panic`/`recover` exist for unrecoverable programmer errors and
-  top-level safety nets — not as a substitute for ordinary error returns.
+**I wrapped an error with `fmt.Errorf("failed: %v", err)` and `errors.Is` still says it doesn't match — why?**
+Because `%v` only borrows the original error's text for the new message; it doesn't link the two errors together in any way `errors.Is` or `errors.As` can follow. Only `%w` preserves the chain, so the underlying error stays programmatically reachable, not just visible in the printed string. Swap `%v` for `%w` and the same check will succeed.
+
+**What's actually different between `errors.Is`, `errors.As`, and just writing `err == target`?**
+`err == target` checks identity only and never unwraps, so it silently fails the moment the error has been wrapped even once — a common trap this chapter calls out directly. `errors.Is` walks the whole wrapping chain looking for a specific sentinel value, which is what `==` should have done but doesn't. `errors.As` walks the same chain but looks for an error of a specific *type* and populates a variable with it, which is what you want when you need fields off a custom error like `ValidationError`, not just a yes/no on its presence.
+
+**Why doesn't Go just give me try/catch like every other language I've used?**
+Because Go's designers saw exceptions as a readability problem more than anything else: an exception thrown deep in a call stack can surface — or get silently swallowed — many frames away from where anything actually went wrong, and you can't tell just by reading a function which of its calls might fail. Returning errors as ordinary values keeps every failure point visible directly in the function's signature and body, at the cost of more `if err != nil` lines.
+
+**When is it actually correct to reach for panic instead of returning an error?**
+Only for programmer errors that should never happen in correct code at all — a genuinely out-of-range index, a precondition the calling code itself violated — never for expected, recoverable situations like a missing file or a timed-out connection, which should always come back as an ordinary `error`. A useful test from this chapter: if you'd tell a colleague "this should never actually happen," panic is reasonable; if you'd tell them "this happens sometimes and here's how to handle it," return an error instead.
+
+**Do I need `errors.Join` if I already know how to wrap one error with `%w`?**
+They solve different shapes of the same problem. `%w` links exactly one underlying error to a new, more specific message — use it when there's a clear single cause. `errors.Join` is for when several independent errors come out of the same operation with none of them being "the" cause, like closing three files where two failed — and the joined result still works correctly with `errors.Is` and `errors.As` against any error it contains.
+
+### Where This Goes From Here
+
+Stack every idea from this chapter next to each other and a single
+philosophy falls out: Go would rather make failure loud, local, and
+ordinary than make it rare-looking and mysterious. An `error` sits right
+there in the return signature. A `panic` is reserved for things that
+should never happen at all. Nothing important gets to fail silently three
+files away from where you're reading.
+
+You now have the full shape of "a Go program that does something and
+might fail doing it." The next chapter zooms out from a single function to
+an entire codebase: how Go organizes many files and many programmers'
+work into packages and modules, and how `go.mod` keeps track of exactly
+which version of exactly which dependency your code is actually running
+against — the part of Go that starts to matter the moment a project grows
+past one file.

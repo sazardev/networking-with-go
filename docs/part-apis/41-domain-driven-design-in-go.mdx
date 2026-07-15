@@ -391,6 +391,25 @@ is responsible for translating to and from rows, not the other way around.
 
 ---
 
+## Frequently Asked Questions
+
+**Why does `Lines()` copy the slice instead of just returning `o.lines` directly — isn't that wasteful?**
+It costs a small allocation to close a much bigger hole: if `Lines()` handed back the aggregate's own backing slice, a caller could append to it or overwrite an element in place, mutating `Order`'s internal state without ever going through `AddLine` and its pending-status check. The warning earlier in the chapter calls this out specifically because it's an easy mistake to make — the code compiles fine either way, and only a copy actually protects the invariant.
+
+**Why does `cancelWithRefund` exist as an unexported method instead of just making `Cancel` handle the refund itself?**
+Because `Order` is not allowed to call out to a payment gateway — that would violate the same inward-dependency rule from Chapter 6.39, just applied one layer deeper. `cancelWithRefund` is deliberately unexported so only `CancellationService`, living in the same package, can reach it after confirming a refund actually succeeded; nothing outside the domain package can skip that confirmation step and cancel a shipped order for free.
+
+**Is `Refunder` the same kind of thing as a Hexagonal Architecture port from Chapter 6.40?**
+Yes, mechanically identical — it's an interface the domain layer defines and something outside implements. What differs is ownership: `Refunder` lives in the `domain` package itself rather than in `usecase`, because the rule it protects ("a shipped order needs a confirmed refund before cancelling") is domain logic, not application orchestration. Chapter 6.40's ports mostly lived one layer further out, at the use-case boundary.
+
+**Why do the aggregate tests in this chapter not need any of the in-memory adapters from Chapter 6.40?**
+Because `Order` has no collaborators at all — every rule it enforces (`ErrOrderNotPending`, `ErrOrderNotPaid`) lives inside its own methods, operating only on its own unexported fields. That's the whole point of pushing invariants down into the aggregate: the innermost layer of the testing pyramid this arc has been building needs nothing but `go test`, while use-case tests still need fakes for ports and adapter tests still need the real Postgres or HTTP machinery.
+
+**What's actually wrong with having `Order`, `OrderEntity`, and `OrderResponse` all describing the same order in one codebase?**
+Nothing crashes, but every conversation about that order now needs a mental translation step between three names for one idea — and that translation step is exactly where bugs hide, as the ubiquitous-language deep dive above puts it. When a support ticket says "the order won't ship" and the code has a type called `Order` with a method called `Ship`, the distance between the report and the relevant code is nearly zero; three competing names widen that distance every time.
+
+---
+
 ## Key Takeaways
 
 - Entities have identity that persists across change; value objects

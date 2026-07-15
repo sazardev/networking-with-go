@@ -376,6 +376,25 @@ built a correctly cancelable fan-out.
 
 ---
 
+## Frequently Asked Questions
+
+**I called `cancel()` but my handler goroutine kept running — is `context` broken?**
+No, the context itself is working fine; the handler just never noticed. Cancellation only closes a channel that `Done()` exposes — nothing forces a blocking call to check it. A handler stuck in a plain `c.Read(buf)` with no `select` on `ctx.Done()` (and no context-aware API like `DialContext` underneath it) will sit blocked in the kernel until the peer disconnects, cancelled context or not, exactly as the Warning about goroutines ignoring `ctx.Done()` describes.
+
+**Why does the book insist on `defer cancel()` immediately after every `With*` call, even when I plan to call `cancel()` manually later?**
+Because `WithCancel`, `WithTimeout`, and `WithDeadline` all start real bookkeeping the moment you call them — a timer for the timeout variants, plus an entry in the parent's list of children — and that bookkeeping only gets cleaned up when `cancel` runs. Putting `defer cancel()` on the very next line guarantees it runs no matter which return path the function takes, including ones you didn't plan for, like a panic; calling it twice is always a safe no-op, so there's no cost to being defensive here.
+
+**Can I just use a plain string like `"userID"` as my context key if I'm careful about naming it uniquely?**
+It's tempting, but `context.Value` lookups happen across the entire dependency tree, not just your package, so "unique enough" is a promise you can't actually keep — some other package somewhere might pick the exact same string. The fix shown in this chapter is cheap: define an unexported key type (`type ctxKey int`), which no other package can ever construct a colliding value of, and use that instead of a bare string or int.
+
+**How do I tell whether work stopped because of a timeout or because someone explicitly cancelled it?**
+Check `ctx.Err()` after `Done()` fires — it's always exactly one of two sentinel values, `context.DeadlineExceeded` or `context.Canceled`, compared with `errors.Is`. The `dialWithContext` example earlier in this chapter branches on exactly this to decide whether a retry is worth attempting: a deadline that expired might be worth retrying with more time, while an explicit cancellation almost never is.
+
+**This chapter builds on the goroutine shutdown pattern from Chapter 8 — what's actually new here versus there?**
+Chapter 8 used just enough of `context.Context` to make a server's shutdown path work: cancel a context, watch `ctx.Done()` in a `select`, close the listener to unblock `Accept`. This chapter is where that same primitive gets its full treatment — timeouts and deadlines, propagating request-scoped values safely, telling apart *why* cancellation happened, and threading a single context through an entire call chain rather than just one shutdown signal.
+
+---
+
 ## Exercises
 - [Context Cancel Basic](../../exercises/part2/09-context-cancel-basic/main.go)
 - [Context Deadline](../../exercises/part2/09-context-deadline/main.go)

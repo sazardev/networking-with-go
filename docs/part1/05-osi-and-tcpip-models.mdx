@@ -117,6 +117,23 @@ It would be easy to read this chapter as a list of names to memorize for a quiz,
 
 Keep this mental picture close as you move forward: every time you use an app, a stack of these layers is quietly assembling and disassembling your data, each layer trusting the ones above and below it to do their one job correctly and nothing more. Once you start writing real networked programs in Go, beginning in the Go Fundamentals part of this book, you will find yourself working almost entirely at the Transport and Application layers — opening connections, sending requests, reading responses — while everything below silently keeps its own promises without you ever having to ask it to.
 
+## Frequently Asked Questions
+
+**If the internet actually runs on TCP/IP, why do engineers still talk about OSI's seven layers at all?**
+Because OSI never won the implementation race, but it did win the vocabulary war, and those are two separate contests. TCP/IP describes what is really running underneath this very sentence, while OSI survives as the shared language engineers reach for when they say something like "is this a Layer 2 or a Layer 3 problem" — a precision TCP/IP's folded-together Application layer simply cannot offer in the same way.
+
+**Was TCP/IP really designed to survive a nuclear war?**
+That is the popular legend, but it oversimplifies the actual history. The genuine design goal was resilience against the mundane failures researchers pictured day to day — a router crashing, a cable severed by construction equipment, a link down for maintenance — and a network resilient enough to shrug those off happens to also survive catastrophic damage as a fortunate side effect, not because catastrophe was the design brief.
+
+**Where did Session and Presentation actually go in the model the internet runs on?**
+They did not vanish, they just stopped getting their own dedicated shelf. TCP/IP folds both jobs into its single broad Application layer, on the theory that whatever real protocol sits at the top will simply absorb that responsibility itself — TLS, for instance, handles encryption, technically Presentation's job, while sitting logically between Transport and Application in essentially every real implementation.
+
+**Why does a router only look at the address on a packet and never peek inside it?**
+Because that is precisely what letting each layer trust the ones around it is for — the courier in the mailing-a-package analogy never opens the box, the same way a router only ever reads the destination address a Network-layer packet carries. If routers had to understand the contents of every packet they forwarded, the entire benefit of layering — engineers building on top of each other's work without understanding the whole stack — would collapse.
+
+**Now that I understand the layers, which ones will I actually be writing code against?**
+Almost entirely Transport and Application — opening connections, sending requests, reading responses — while everything below quietly keeps its own promises without you needing to ask. That is exactly where this book heads next: the Go Fundamentals part teaches you to write real networked programs sitting right at that boundary, without ever requiring you to understand how copper or glass physically carries a single bit first.
+
 ### Fun Facts and Notes
 
 - The OSI model is sometimes remembered with the mnemonic "Please Do Not Throw Sausage Pizza Away," one letter per layer from Physical up to Application — a genuinely silly sentence that has, by simple repetition, outlived several networking technologies it was coined to help people memorize.

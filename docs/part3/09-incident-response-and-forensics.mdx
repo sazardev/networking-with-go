@@ -108,3 +108,19 @@ This is intentionally simple — a real detection pipeline would use structured 
 ## Forensics vs. Response
 
 **Incident response** is about restoring safe, normal operation as quickly as reasonably possible. **Forensics** is about understanding, in as much verified detail as possible, exactly what happened — sometimes after the fact, sometimes in parallel with response. The two goals can pull in different directions: response wants to isolate and rebuild a compromised host immediately; forensics wants to preserve it exactly as-is for analysis. A mature IR plan decides in advance how to balance that tension rather than improvising it live, mid-incident.
+
+---
+
+## Frequently Asked Questions
+
+**If I find a compromised host, shouldn't I just unplug it right away?**
+Not necessarily, and this is exactly the tension the previous section describes — pulling power immediately can destroy volatile evidence like running processes and network connections that only exist in memory, while leaving it running risks the attacker noticing and covering their tracks further. A mature IR plan decides this tradeoff in advance (isolate at the network level first, capture memory before power-off, or whatever fits the organization) rather than someone guessing under pressure during the actual incident.
+
+**Why bother hashing evidence files if nobody's touched them?**
+Hashing immediately after collection isn't about distrust of the collector — it's about being able to prove, later, that nothing changed after that point, which is the entire substance of chain of custody. Without a hash taken at collection time, there's no way to demonstrate to a court, a regulator, or even your own legal team that the file you're presenting is identical to what was actually on the compromised system.
+
+**Can the log triage tool from this chapter replace a real SIEM?**
+No, and it isn't trying to — it's a deliberately small illustration of the core pattern-matching idea (read a line, check it against known-bad patterns, surface it for a human) that scales up into much more sophisticated tooling. A real detection pipeline correlates structured logs across many sources and scores findings rather than just matching substrings in a single file, but the underlying loop is genuinely the same shape.
+
+**How does incident response relate to the penetration testing from the last chapter?**
+They're mirror images pointed at the same risk from opposite directions — a pentest asks "could someone get in" under controlled, authorized conditions, while IR answers "someone got in, now what" for real. A well-run pentest report often becomes preparation-phase input for IR: knowing in advance which paths an attacker is likely to take makes detection and containment faster when a real incident eventually happens.

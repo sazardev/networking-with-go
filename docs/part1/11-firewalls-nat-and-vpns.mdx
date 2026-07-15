@@ -104,6 +104,23 @@ Line the three up and a modern home or office network turns out to run a small, 
 
 That whole sequence — wall, disguise, tunnel — happens in the time it takes to open your laptop and load your email, standing on the shoulders of a fire code from 1666, a worm outbreak in 1988, an address-exhaustion panic from the early 1990s, and a Cold War cable tap the public didn't learn about for years. None of this machinery announces itself. It just quietly works, the way a good wall always has.
 
+## Frequently Asked Questions
+
+**If my home router's NAT already blocks unsolicited inbound connections, do I even need a separate firewall?**
+Yes, and the chapter's warning box on NAT explains exactly why: NAT blocks unrequested inbound traffic only as a side effect of having nowhere to translate it to, not because it was designed to inspect or filter anything. A single port-forwarding rule, something plenty of people add without thinking twice, punches a hole straight through that side effect, and NAT still does nothing to stop malicious traffic between devices that are already inside the same private network.
+
+**Why can't two people behind home routers just video-call each other directly, the way two web servers can?**
+Because NAT breaks the internet's original promise of true end-to-end reachability — neither device has a real, publicly routable address the other side can dial into, only a temporary disguise assigned by its own router. That's exactly the problem NAT hole punching was invented to solve: both devices send outbound packets first, tricking their respective NATs into opening matching temporary mappings, so replies can slip through a door neither side ever officially opened.
+
+**Is a stateful firewall just a fancier version of a stateless one, or a fundamentally different idea?**
+It's a genuinely different idea, not just an upgrade in speed. A stateless firewall judges every packet in total isolation, which forces awkward, overly broad rules just to let ordinary web replies back in. A stateful firewall instead remembers which connections you actually started, so it can wave through only the replies that belong to those specific conversations — the same trick that quietly lets a home router work without you ever configuring a firewall rule yourself.
+
+**Does turning on a VPN mean nobody can track what I do online?**
+No, and this chapter's warning about VPNs is worth taking seriously: a VPN protects your traffic from your local network and your ISP, and it changes which IP address a website sees, but the VPN provider itself typically sees everything your ISP used to see, and anything traveling inside the tunnel — login cookies, account sign-ins, browser fingerprints — travels right along with you. A VPN defends the path your data takes, not your identity once that data arrives somewhere.
+
+**Why does the coffee-shop walkthrough bother layering a VPN on top of NAT and a firewall instead of just picking one?**
+Because each one is solving a completely different problem, and the coffee-shop scenario needs all three at once: NAT is still busy sharing the shop's one public address among every customer's device, your company's firewall is set to reject anything that doesn't arrive through the VPN, and the VPN is what makes your laptop look, from the firewall's point of view, like it never left the office at all. Drop any one layer and the other two stop cooperating the way the walkthrough describes.
+
 ## Fun Facts & Memes
 
 - The word "firewall" protected buildings and locomotives from real fire for over three centuries before it ever protected a single byte of data.

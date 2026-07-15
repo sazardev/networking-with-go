@@ -127,6 +127,23 @@ func (s *sessionStore) postOffer(w http.ResponseWriter, r *http.Request) {
 
 The other peer polls (or is notified over its own channel) for that offer, generates an answer locally, and posts it back to a matching `/answer` endpoint. Once both descriptions are exchanged this way, the signaling server has done its entire job -- everything from that point on is ICE negotiation and then a direct peer-to-peer path.
 
+## Frequently Asked Questions
+
+**Why can't I just skip the signaling server and connect two peers directly?**
+Because at the start neither peer has any way to reach the other -- they may not even have a public IP, let alone know each other's address or port. The signaling server is the "mutual friend" from this chapter's opening analogy: it exists purely to carry the offer, answer, and ICE candidates back and forth, and once that handshake finishes, it steps out and the peers talk directly.
+
+**My `OnICEConnectionStateChange` callback never reports `connected` -- what's going wrong?**
+The most common cause is that both peers sit behind symmetric NATs, which STUN cannot punch through -- in that case ICE needs a TURN relay as a fallback, and if you only configured a STUN server (like the public Google one used in this chapter's example), the connection simply has nowhere left to go. Also double-check that both sides actually exchanged their SDP through your signaling channel; a missing or stale `SetRemoteDescription` call will leave ICE with nothing to negotiate.
+
+**Is the public `stun:stun.l.google.com:19302` server fine to use in my deployed app?**
+Only for local testing, as the Warning box in this chapter calls out directly. A real deployment needs its own STUN/TURN infrastructure, such as `coturn`, with proper authentication -- an open relay you do not control is both a cost risk and an abuse vector once strangers start routing traffic through it.
+
+**Do I need a browser involved for any of this to work?**
+No. Everything demonstrated here runs as two plain Go processes using pion/webrtc, with no browser on either end -- useful for peer-to-peer file transfer tools or any system that wants to avoid routing bulk traffic through a central server. WebRTC is a general framework for direct peer connections; the browser video-calling use case is just its most famous application.
+
+**How does this relate to the manual NAT traversal and STUN/TURN material from the earlier P2P chapter?**
+This chapter is where that theory stops being abstract: `OnICECandidate` fires for every candidate address ICE discovers, exactly the kind of host/server-reflexive/relayed candidates described earlier. The difference is that you are no longer implementing the hole-punching algorithm by hand -- pion/webrtc runs the full ICE state machine for you, and your job shrinks to relaying handshake messages over whatever signaling channel you choose.
+
 ### Comparing This to What You Already Know
 
 If the NAT traversal chapter's STUN/TURN discussion felt abstract, WebRTC is where that theory becomes something you can watch happen: `OnICECandidate` fires once for every candidate address ICE discovers, and `OnICEConnectionStateChange` reports the moment a usable pair is confirmed. Unlike the manual UDP hole-punching techniques covered earlier, you are not implementing the NAT traversal algorithm yourself -- pion/webrtc implements the full ICE state machine, and your job is limited to relaying the handshake messages it produces.

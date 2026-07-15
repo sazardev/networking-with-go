@@ -260,6 +260,25 @@ The rendezvous and peer programs above are enough to punch a hole, but they don'
 
 ---
 
+## Frequently Asked Questions
+
+**Why can't two peers behind NAT just `net.Dial` each other directly?**
+Because NAT only remembers mappings it created for outbound traffic — nothing arrives at your router unless the router already expects it. Without a rendezvous step, neither peer even knows the other's public address, let alone has a mapping open to receive traffic on it, so a plain `net.Dial` from either side has nowhere real to land.
+
+**Why does hole punching use UDP instead of TCP?**
+Because UDP is connectionless: a peer can start firing packets toward the other's public address immediately, with no three-way handshake required before the router opens a mapping. TCP's handshake expects a listener actively accepting a `SYN`, which is exactly what neither NATed peer has, so the "Swap the transport" exercise in this chapter has both peers try a raw TCP dial specifically to watch it fail more often.
+
+**If hole punching succeeds, why do the peers keep sending pings every few seconds?**
+Because a NAT mapping is not a connection, it's a fading memory, as the chapter's opening axiom puts it — routers evict a UDP conntrack row after roughly 30 seconds of silence. The keepalive traffic in the "Try It Yourself" exercise exists purely to keep that row alive, not because the application has anything to say.
+
+**Why does the peer program reuse one socket for both the rendezvous exchange and the punch traffic?**
+Because the NAT mapping a router creates is keyed to a specific local source port. Opening a second `net.UDPConn` on a different port would get a brand-new external mapping that the rendezvous server never observed and the other peer never learned, so reusing the same socket is what guarantees the address exchanged during rendezvous is the one punch traffic actually comes from.
+
+**What happens when one peer is behind a symmetric NAT?**
+Hole punching usually fails, because symmetric NAT assigns a fresh external port per destination — the address the rendezvous server observed was learned from a different destination (the rendezvous server itself) than the eventual peer-to-peer target, so it can already be stale. That is the scenario the Limitations section falls back to a TURN-style relay for, the same role production ICE implementations reserve strictly as a last resort.
+
+---
+
 ## Key Takeaways
 
 - NAT breaks unsolicited inbound connections; hole punching works around it by having both peers punch outbound at the same time.

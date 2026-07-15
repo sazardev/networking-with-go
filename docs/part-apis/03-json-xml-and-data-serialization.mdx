@@ -162,4 +162,21 @@ Content-Type: application/json
 
 For a new API, JSON is almost always the right default: smaller payloads, native fit with JavaScript, and universal tooling support. Reach for XML only when a specific integration demands it — a partner system, a SOAP-based legacy service, or a regulatory format that's defined in XML Schema. Designing your Go types with both tag sets from day one, as shown above, costs almost nothing and keeps that door open.
 
+## Frequently Asked Questions
+
+**I called `json.Unmarshal` into an `interface{}` and my ID field came back wrong for large numbers - what happened?**
+This is the float64 pitfall this chapter calls out directly: when JSON is decoded into `interface{}` rather than a concrete struct, every number becomes a `float64`, and a `float64` can't represent very large integers exactly. The fix is to decode into a concrete typed struct whenever you can, or use `json.Number` via `dec.UseNumber()` when you genuinely need to decode into a dynamic shape but still preserve exact integer values, such as IDs or amounts in cents.
+
+**Why does my `PATCH` handler treat "the client sent 0" the same as "the client didn't send this field at all"?**
+Because `omitempty` and a bare `int` both collapse around the same zero value, so a struct field decoded from JSON can't tell you which case actually happened. Swapping the field's type to a pointer (`*int`) fixes this cleanly - `nil` means "the client didn't touch this field," and a non-nil pointer to `0` means "the client explicitly set it to zero," which is exactly the distinction a `PATCH` endpoint usually needs.
+
+**If I add a `json` tag and an `xml` tag to the same struct field, do I need to maintain two separate models?**
+No, and that's the whole point of the content negotiation example in this chapter - one Go type carries both tag sets, so the same struct feeds both `json.NewEncoder` and `xml.NewEncoder` without any duplication. The handler just checks the `Accept` header and picks which encoder to call, while the underlying data and its shape stay defined in exactly one place.
+
+**Should I trust `json.Unmarshal` to catch it if a client sends a field my struct doesn't expect?**
+Not by default - `encoding/json` silently ignores unrecognized fields unless you explicitly opt into strict behavior. If catching typos or unexpected payloads matters for your API, wrap the decoder with `DisallowUnknownFields()` as shown earlier in this chapter, since the default lenient behavior is a reasonable choice for public APIs evolving over time but a risky one when you need to validate input strictly.
+
+**This chapter said serialization is "a contract, not an implementation detail" - what does that actually mean in practice for the next chapter?**
+It means every struct tag you write today becomes a promise every future client will rely on, which is exactly the mindset the next chapter builds on when assembling a complete CRUD API: the request and response shapes you define here aren't just internal Go conveniences, they're the public surface that a real RESTful API commits to and has to keep stable once clients start depending on it.
+
 With serialization covered, the next chapter puts it to work: building a complete, CRUD-capable RESTful API using nothing but the Go standard library.

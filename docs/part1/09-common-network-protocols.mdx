@@ -84,6 +84,23 @@ Watch what actually happens, in order, the instant you press enter on a web addr
 
 <Axiom>A protocol is not the wire format alone — it's the agreed sequence of who speaks when, and what silence or a wrong answer is supposed to mean.</Axiom>
 
+## Frequently Asked Questions
+
+**If HTTPS is just HTTP wrapped in TLS, why does it need a completely different default port, 443 instead of 80?**
+Nothing about the HTTP request or response itself changes — the port difference exists purely so a server can tell, before a single byte of HTTP is even exchanged, whether it should expect a TLS handshake first or plain text right away. In the earliest days of the web, a server listening on one port had no reliable way to guess which flavor was coming down the wire, so the simplest fix was to give encrypted traffic its own front door entirely, and that convention has simply never needed to change since.
+
+**Why does FTP need two separate connections when HTTP manages everything over just one?**
+FTP was designed in 1971, decades before anyone had settled on the request-response pattern HTTP would later popularize, and its authors split the job the way a shipping company might: one line for talking business (usernames, passwords, which file you want) and a separate line for the actual freight. That separation is also exactly why FTP fights so badly with modern NAT and firewalls, since the data connection in active mode requires the server to reach back out to the client, something firewalls are built to block by default.
+
+**Is it a problem that DNS mostly runs over UDP, a protocol with no guaranteed delivery?**
+Not in practice, because a typical DNS query and its answer are so small that they fit in a single packet, and if that packet gets lost, the resolver simply asks again a moment later — a cost far lower than the overhead of opening and tearing down a full TCP connection for every single lookup. DNS only reaches for TCP when a reply grows too large for one UDP datagram, such as a DNSSEC-signed response or a full zone transfer between servers, which is a good example of a protocol choosing its transport deliberately rather than being stuck with one.
+
+**Why do so many people still confuse POP3 and IMAP, and does it actually matter which one you use?**
+It matters more than the "just email" framing suggests: POP3 was built for an era when a person owned exactly one computer, so it happily deletes messages off the server once they're downloaded, while IMAP was built for a world of multiple devices, keeping everything on the server and merely showing you a synchronized view of it. Someone who sets up POP3 today, expecting their phone and laptop to show the same inbox, will be genuinely confused when messages read on one device silently vanish from the other.
+
+**How is SSH different from just running Telnet with a password?**
+The difference isn't the password at all — it's that Telnet transmits that password, and everything else, as plain readable text across the network, so anyone quietly listening on the wire captures it outright. SSH negotiates an encrypted channel first and typically authenticates with a public/private key pair rather than a password, which is precisely the fix Tapio Ylönen built in 1995 after watching a password-sniffing attack tear through his own university's network.
+
 ## Carrying This Forward
 
 None of these protocols were handed down from on high — each one is a group of people, often just a handful of them, solving one specific, often quite mundane problem: physicists losing track of documents, a university getting its passwords sniffed, a room full of mainframes with no shared address book. What makes them worth learning as a set, rather than memorizing in isolation, is noticing how often the same shape reappears: a request and a response, a fixed well-known port waiting patiently for anyone to knock, a fallback plan for when the fast path isn't good enough. Once you can see that shape, a protocol you've never encountered before stops being intimidating, because you already know what questions to ask it. Starting in the Go Fundamentals part of this book, you'll get to ask those questions directly — resolving a name, opening a connection, and reading a response with your own code instead of your own imagination.

@@ -35,6 +35,23 @@ The boundary between traditional IT networks and operational technology (OT) - i
 
 <Axiom>The specific tools change every year; the underlying principles in this book - least privilege, defense in depth, verify rather than trust, patch what's known, and assume compromise will eventually happen - have remained the load-bearing ideas across every shift the field has gone through so far, and there is no strong reason to expect that to change.</Axiom>
 
+## Frequently Asked Questions
+
+**Should I be worried today about quantum computers breaking the encryption protecting my traffic?**
+Not for the encryption itself happening right now - a quantum computer capable of breaking RSA or elliptic-curve cryptography at scale doesn't exist yet. The real, present-tense risk is "harvest now, decrypt later": an adversary can record your encrypted traffic today and simply wait for the capability to catch up, which is exactly why anything with a long confidentiality requirement is already worth protecting with post-quantum or hybrid key exchange.
+
+**If AI is making phishing more convincing, does that mean the old advice about spotting awkward phrasing and typos is now useless?**
+That specific tell is fading, yes, since generative AI can produce fluent, personalized messages at a volume no human copywriter could match. But the underlying discipline behind that advice - verify the request through a separate channel, question unexpected urgency, confirm identity before acting on a message's instructions - never actually depended on bad grammar; it depended on skepticism toward unverified claims, which still holds regardless of how polished the wording is.
+
+**Ransomware-as-a-service sounds almost like a business supply chain - does disrupting one player in the chain actually help?**
+It helps less than you'd hope, precisely because of the specialization described in this chapter. Taking down one initial-access broker or one affiliate group tends to just shift that link of the chain to a different specialist using the same tooling and the same purchased access, which is part of why the ecosystem has proven so resilient to piecemeal law-enforcement action.
+
+**Encrypted Client Hello and DNS-over-HTTPS sound like clear wins for user privacy - so why would a network defender see them as a problem?**
+They are a genuine privacy win, and that tension is the point: the same technique that hides your browsing destination from an eavesdropping ISP also hides it from your own organization's defenders trying to spot a compromised host talking to a malicious domain. Neither side of that tradeoff is wrong, which is why the chapter frames it as an ongoing tension rather than a problem with a clean resolution, pushing detection toward metadata and behavior instead of payload content.
+
+**This is the last chapter of Part 3 - what's actually supposed to stick with me after all these chapters on threats, defenses, and now emerging trends?**
+Not any specific tool or exploit name, since those are the parts most likely to be obsolete in a few years. What's meant to stick is the short list of principles the Axiom above names directly - least privilege, defense in depth, verify rather than trust, patch what's known, assume compromise will happen - because those are the ideas that kept showing up as the actual lesson underneath every incident and every trend covered across this entire part.
+
 ## Summary
 
 - AI is lowering the cost of convincing social engineering while simultaneously strengthening anomaly-based defense - which side benefits more is still an open question.

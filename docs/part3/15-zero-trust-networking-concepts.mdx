@@ -68,6 +68,20 @@ Most organizations adopt zero trust incrementally: starting with the most sensit
 
 ---
 
+## Frequently Asked Questions
+
+**If a request is coming from inside our own VPN, from a device we issued, isn't that already trustworthy?**
+That's precisely the assumption zero trust exists to retire. Being on the internal network only tells you where a request originated, not who or what is actually making it — a phished laptop, a compromised internal server, or a misconfigured VPN can all put an attacker at that same trusted location, which is why the chapter treats location as no longer sufficient evidence of trust on its own.
+
+**Does adopting zero trust mean we have to rip out our perimeter firewall?**
+No — the chapter is explicit that the firewall doesn't disappear, it simply stops being the *only* control, and eventually stops being the primary one. Most organizations adopt zero trust incrementally, starting with the most sensitive systems and requiring mTLS and strong authentication there first, then expanding outward rather than attempting an all-or-nothing rewrite.
+
+**We already use mutual TLS between two services — does that mean we've "done" zero trust?**
+Not by itself. Mutual TLS, as shown with `ClientAuth: tls.RequireAndVerifyClientCert` from Chapter 4.12, is one building block that satisfies the "verify explicitly" principle for a single connection, but zero trust also asks for least-privilege access, an assume-breach design posture, and microsegmentation. One authenticated connection is a good start, not the whole architecture.
+
+**What's the actual division of labor between the policy decision point and the policy enforcement point?**
+The decision point is the brain: it evaluates identity, device posture, the requested resource, and context, then decides yes or no. The enforcement point is the hands: it's the thing actually sitting on the connection allowing or blocking traffic based on that decision, without needing to understand the reasoning behind it — a separation of concerns similar to how an authentication service and a reverse proxy divide responsibility in a typical web architecture.
+
 ## Where This Leads
 
 Zero trust and network segmentation are two sides of the same coin: zero trust is the *policy* philosophy (verify everyone, trust no default position), and segmentation, covered next in Chapter 4.16, is the *structural* tool that makes enforcing that policy practical at scale — by making sure there are fewer, smaller, more controllable boundaries to enforce it at in the first place.

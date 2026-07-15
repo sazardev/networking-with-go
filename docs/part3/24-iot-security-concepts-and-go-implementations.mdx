@@ -130,6 +130,20 @@ func handleDevice(conn net.Conn, logger *slog.Logger) {
 
 The server refuses the TLS handshake entirely for any client that can't present a certificate signed by the trusted CA - the connection never reaches application-level code at all. Revoking a single compromised device becomes a matter of adding its certificate to a revocation list or simply not renewing it, without touching credentials for any other device on the fleet.
 
+## Frequently Asked Questions
+
+**If a device is too constrained to run a full TCP/TLS stack, how can it possibly do mutual TLS like the heartbeat example?**
+There's a real spectrum here: genuinely constrained sensors often rely on CoAP with DTLS instead, which is designed for exactly that resource budget, while devices with enough compute to run a small TLS stack - which describes far more "IoT" hardware than the stereotype suggests, including most smart home hubs and industrial gateways - can absolutely do certificate-based mutual TLS the way the example shows. The right protocol choice depends on the specific device's constraints, not a blanket rule for "IoT" as a category.
+
+**Our devices connect over MQTT without TLS today - is that automatically a critical problem?**
+It depends heavily on the network segment those devices sit on. Unencrypted MQTT on a properly segmented, tightly firewalled IoT VLAN with no untrusted party able to reach it is a smaller risk than the same unencrypted traffic on a flat network anyone on the guest Wi-Fi can sniff - though enabling TLS is still the safer default whenever the device and broker can support it, since segmentation can fail or be misconfigured too.
+
+**Why does the example use `tls.RequireAndVerifyClientCert` instead of just checking a device ID sent in the JSON payload?**
+Because a value inside the payload is just data the client asserts about itself, and an attacker who can reach the port at all can send any device ID they like. Requiring a certificate signed by your own CA moves the identity check into the TLS handshake itself, before any application code runs, so a device without a valid certificate never even gets far enough to send a fake device ID.
+
+**What happens to a device if the vendor stops supporting it but it's still working fine?**
+It becomes exactly the risk this chapter describes: a device that will eventually run known-vulnerable firmware forever, since there's no update mechanism left to close new vulnerabilities as they're discovered. The practical mitigations at that point shift from "patch it" to containment - tighter network segmentation, stricter egress allowlisting, and treating the device as permanently untrusted on the network even though it still does its job.
+
 ## Summary
 
 - IoT devices routinely violate the assumptions traditional endpoint security relies on: limited compute, rare patching, and long service life.

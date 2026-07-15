@@ -101,3 +101,20 @@ Every major cloud API enforces request rate limits, and automation that runs in 
 ### A Note on Multi-Cloud Code
 
 It is tempting to build an abstraction layer over AWS, GCP, and Azure so the rest of your codebase calls one generic `CreateNetwork` function. In practice, the underlying primitives diverge enough -- AWS security groups are stateful by default, Azure network security groups are not identical in behavior, GCP firewall rules apply at the VPC level rather than per-instance -- that a thin abstraction either leaks those differences back through anyway or hides a real behavioral difference that matters during an incident. Most production Go tooling in this space calls each provider's SDK directly behind a narrow, use-case-specific interface, rather than a broad generic one.
+
+## Frequently Asked Questions
+
+**Why does the AWS example call `config.LoadDefaultConfig` instead of hardcoding an access key?**
+Because `LoadDefaultConfig` walks the same credential resolution chain the AWS CLI itself uses -- environment variables, shared config files, then an instance or task role -- which means the exact same Go binary runs unchanged on your laptop today and inside a CI pipeline or EC2 instance tomorrow. Hardcoding credentials would work locally but silently break, or worse leak a secret, the moment that code moves anywhere else.
+
+**My retry logic keeps creating a second security group every time a call times out -- what am I missing?**
+You are hitting the idempotency problem the DeepDive on this chapter calls out directly: automation gets retried by CI, by an on-call engineer, by you, and a naive `CreateSecurityGroup` run twice just creates two of them. Check whether the resource already exists before creating it, or use the provider's idempotency tokens where they are offered, so a rerun is safe rather than merely usually safe.
+
+**Should I write my own abstraction layer so the same Go function works across AWS, GCP, and Azure?**
+Resist that urge unless you have a very narrow, well-understood use case. As the "Note on Multi-Cloud Code" section explains, AWS security groups being stateful while GCP firewall rules apply at the VPC level are the kind of behavioral divergence a thin wrapper either leaks straight back through or papers over dangerously during an incident -- most production tooling calls each SDK directly behind a use-case-specific interface instead.
+
+**Why does the chapter warn about IAM permissions when the code itself doesn't touch security at all?**
+Because the credentials your automation runs as are just as much a part of its blast radius as the code -- a script with `AdministratorAccess` that has a bug in it can do administrator-level damage, whereas the same bug in a narrowly-scoped role is contained. Least privilege is not an optional hardening step layered on afterward; it is part of designing the automation correctly in the first place.
+
+**When does it actually make sense to reach for the Go SDK instead of just writing Terraform?**
+When the logic genuinely needs to be dynamic rather than declarative -- provisioning an isolated network the moment a new tenant signs up, a controller reconciling live cloud firewall rules against an internal policy source of truth, or anything conditional on runtime state that Terraform's HCL cannot express cleanly. For infrastructure that is static and "always the same," Terraform's state tracking and diffing still win; many real teams run both side by side.

@@ -158,3 +158,20 @@ Once metrics exist, the temptation is to alert on everything measurable — CPU 
 A rule like this fires when the actual error rate a user experiences crosses a meaningful threshold for a sustained period, not on a single noisy spike — the combination of a rate-based threshold and a `for` duration is what keeps this from paging someone over a two-second blip that resolved on its own.
 
 <Axiom>Instrumentation isn't something you add once a service breaks — it's what tells you it's about to, in time to do something about it.</Axiom>
+
+## Frequently Asked Questions
+
+**Why bother with `log/slog` and JSON output when `log.Printf` is so much easier to read in a terminal?**
+Because readability in a terminal and queryability at scale are different goals, and the moment you have more than a handful of instances, you need to filter and aggregate logs rather than eyeball them. `slog.NewJSONHandler` gives every log line consistent field names like `user_id` and `duration_ms`, so your aggregation system can filter on `user_id="42"` or build a histogram from `duration_ms` instead of you writing regular expressions against free text.
+
+**Why is `requestDuration` a histogram instead of a simple gauge tracking average latency?**
+Because an average hides exactly the information that matters for latency — a handful of very slow requests can vanish into an average dominated by many fast ones, while Prometheus can compute p50/p95/p99 directly from the bucketed histogram data. The chapter calls this the same lesson from the load-testing chapter, just applied to production traffic instead of a test run.
+
+**What actually goes wrong if I use the raw request path as a Prometheus label?**
+Cardinality explosion — if `r.URL.Path` includes something like a user ID or UUID (`/users/8f3a2b91-...`), Prometheus creates a brand new time series for every distinct value it ever sees, and with enough distinct IDs that can produce millions of series and overwhelm the metrics backend, as the Warning above describes. The fix is always normalizing to the route pattern, `/users/{id}`, never the resolved path.
+
+**Why does a failing readiness check not restart the pod the way a failing liveness check does?**
+Because the two questions mean different things to Kubernetes: liveness asks whether the process is stuck and needs killing and restarting, while readiness asks whether it can currently serve traffic even though it's otherwise healthy. A database failover making `readinessHandler` fail is the system working as intended — traffic routes away until the dependency recovers — whereas putting that same database check in liveness would trigger unnecessary restarts across every instance at once, exactly the mixup the DeepDive warns against.
+
+**If I have metrics on CPU, memory, and queue depth, why not just alert on those directly?**
+Because alerting on every measurable resource metric produces alert fatigue fast, and fatigued on-call engineers start ignoring pages, including the ones that matter. The chapter's guidance is to alert on symptoms users actually feel first — elevated error rate, elevated p99 latency, failed readiness checks — and treat resource-level metrics as diagnostic information you consult once a symptom-based alert has already fired, not as alert sources in their own right.

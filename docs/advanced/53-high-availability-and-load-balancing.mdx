@@ -189,6 +189,23 @@ Requiring several consecutive missed checks (`maxMisses`) before failing over av
 
 Everything above operates at layer 7 (HTTP). Production stacks often add HA underneath that too: **VRRP/keepalived** lets two machines share a virtual IP, with one active and one on standby at the network layer; **DNS-based** load balancing and failover (short TTLs, health-checked DNS answers) route clients away from a dead region entirely before a single HTTP request is attempted. Go doesn't typically implement these protocols itself—they're handled by the OS or dedicated infrastructure—but understanding where they sit relative to the L7 balancer above is important: a real production topology usually layers DNS-level, L4-level, and L7-level redundancy together, each catching failures the others miss.
 
+## Frequently Asked Questions
+
+**If my load balancer round-robins requests across backends, doesn't that already give me high availability?**
+No, and this is the confusion the chapter opens by untangling. Round robin alone will happily keep sending a fraction of requests to a backend that's dead, because nothing in plain round robin ever checks health. It's `startHealthChecks` and the `atomic.Bool` health flag that turn the `LoadBalancer` into something HA-aware—`Next()` explicitly skips any backend whose flag says unhealthy, and that skip is the actual availability guarantee.
+
+**Why use a TCP dial in `checkBackend` instead of an HTTP request to the backend?**
+Mostly for simplicity in the example—but it's worth noticing the limitation the chapter calls out directly: a TCP-level check only proves the port is accepting connections, not that the application behind it can actually serve traffic. A backend that lost its database connection will still happily accept a TCP handshake while every real request it serves fails, which is why production checks usually hit a dedicated `/healthz` endpoint instead.
+
+**Why does `watchPrimary` wait for three consecutive missed checks instead of failing over on the first one?**
+Because a single dropped packet is not the same thing as an outage, and treating it that way turns normal network jitter into a disruptive, unnecessary promotion—the classic "flapping" problem. Requiring `maxMisses` consecutive failures before calling `onFailover()` is a deliberate tradeoff: it adds a little detection latency in exchange for not promoting a standby every time one heartbeat gets lost.
+
+**Can I just add more standbys to `watchPrimary`'s pattern to make failover safer?**
+Not without more than what's shown here. Multiple standbys watching the same primary independently is exactly how split-brain happens: a network partition can leave two nodes each convinced the other is unreachable, and each unilaterally promotes itself. The DeepDive on split-brain is explicit that this needs a consensus protocol requiring majority agreement—systems like etcd, ZooKeeper, or Consul—rather than letting any single standby decide on its own.
+
+**Where do VRRP and DNS-based failover fit if I already have this L7 load balancer running?**
+They sit below it, not instead of it. This chapter's `ReverseProxy`-based balancer only helps once a request already reaches your HTTP layer; VRRP/keepalived handles failover at the network layer by moving a virtual IP between machines, and DNS-based failover can route clients away from an entire dead region before any HTTP request is even attempted. A real production topology layers all three—DNS, L4, and L7—so each catches the failures the others miss.
+
 ## Key Takeaways
 
 - High availability (surviving failure) and load balancing (distributing load) are related but distinct; production systems need both.

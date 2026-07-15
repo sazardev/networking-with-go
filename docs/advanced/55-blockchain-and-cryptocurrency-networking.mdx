@@ -210,6 +210,23 @@ With this in place, mining a new block and calling `node.broadcast(newBlock, nil
 
 Go is not a toy choice here—**go-ethereum** (`geth`), the reference Ethereum client used by a large share of the network's nodes, is written in Go, as is much of the tooling around it. Its `devp2p` networking layer solves exactly the peer discovery and gossip problems sketched above, at production scale and hardened against years of adversarial conditions. If you want to go further than this chapter's toy node, reading `devp2p`'s discovery and gossip code is a natural next step—the concepts translate directly from what you just built.
 
+## Frequently Asked Questions
+
+**Is this toy node's proof-of-work actually secure enough to protect real value?**
+No, and the chapter is explicit about that in the warning above—`mine`'s tiny difficulty and the absence of transaction signing, a mempool, miner incentives, or fork resolution mean this is a teaching illustration of the mechanics, not a hardened system. Real chains like the one `go-ethereum` implements layer substantial additional machinery on top of the same core idea of chaining hashes and making block creation expensive.
+
+**Why does changing one old block break the whole chain instead of just that block?**
+Because each block's hash is computed over its own data plus the previous block's hash, so altering block 3 changes block 3's hash, which no longer matches what block 4 recorded as `PrevHash`. `isChainValid` walks the chain checking exactly that link, and because every node runs this check independently on any chain a peer sends it, a tampered history is detectable without trusting whoever sent it.
+
+**Do I need to understand cryptocurrency economics before this chapter?**
+No—the chapter deliberately strips away the cryptocurrency hype to focus on the networking problem underneath: peer discovery, gossip propagation, and consensus over an unreliable network. Concepts like mining rewards and mempools are mentioned only to show what a real chain adds on top, not as prerequisites for understanding the P2P layer built here.
+
+**My node's chain isn't converging with its peers—what should I check first?**
+Start with `handleIncomingBlock`'s validity check: a block is only accepted and re-broadcast if `PrevHash` matches the local chain's last hash and its own hash recomputes correctly. If a node's chain has diverged even slightly (say, from a race during startup), every subsequent block from peers will fail that check and silently get dropped rather than causing an error—worth logging `valid` explicitly while debugging.
+
+**How does the gossip/flooding pattern here relate to how Bitcoin or Ethereum actually propagate blocks?**
+It's the same fundamental pattern—forward what you receive to everyone except whoever sent it to you—just without the optimizations real networks add, like tracking which peers have already seen a given block hash to avoid redundant retransmission. `go-ethereum`'s `devp2p` layer solves exactly this problem at production scale, and its discovery and gossip code is a natural next read once this toy version makes sense.
+
 ## Key Takeaways
 
 - A blockchain is fundamentally a peer-to-peer networking problem: peer discovery, gossip propagation, and consensus over an unreliable network.

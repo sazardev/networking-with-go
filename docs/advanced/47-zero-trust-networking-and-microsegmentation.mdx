@@ -111,3 +111,20 @@ func main() {
 The traditional model asks "is this traffic coming from inside or outside?" -- a question about topology. Zero trust asks "do I have cryptographic proof of who is asking, and are they allowed to ask for exactly this?" -- a question about identity and policy, evaluated fresh at every connection. That shift is what lets zero trust architectures remain meaningful even when "inside the network" no longer reliably means anything -- when services span clouds, when employees work from anywhere, and when the old perimeter has, for most organizations, already effectively disappeared.
 
 <Warning title="Certificate management is the operational cost you are signing up for">mTLS everywhere means issuing, rotating, and revoking certificates for every service, at scale, without human intervention holding it together. Underestimating this operational burden is the most common reason zero trust rollouts stall -- plan for automated certificate lifecycle management from the start, not as an afterthought.</Warning>
+
+## Frequently Asked Questions
+
+**If a request comes from our own data center's IP range, doesn't that already prove it's trustworthy?**
+No, and that assumption is exactly what zero trust rejects. A source IP address is trivially spoofable and tells you nothing about which specific service or identity is really on the other end -- it is a fact about topology, not about who is asking. That is why the `handler` function in this chapter's example never looks at the caller's address at all; it reads `r.TLS.PeerCertificates[0].Subject.CommonName`, a cryptographically verified identity, instead.
+
+**Why does the server need `tls.RequireAndVerifyClientCert` instead of just normal HTTPS?**
+Ordinary HTTPS is server-authenticated only -- the client verifies the server's certificate, but the server has no idea who the client actually is beyond "someone who connected." Setting `ClientAuth: tls.RequireAndVerifyClientCert` and populating `ClientCAs` turns that into mutual TLS, where the handshake fails outright unless the client also presents a certificate signed by a trusted CA, which is the mechanism that makes "verify explicitly, every time" something the network layer actually enforces rather than just a policy statement.
+
+**Does mTLS alone stop an attacker who has already compromised one of my services?**
+Not by itself, and the DeepDive above says so directly: mTLS proves who is calling, but if an attacker steals a legitimate service's private key, every call it makes will look perfectly authentic. That is why real deployments pair it with least privilege -- narrow certificates scoped to specific services, short-lived certs rotated frequently, often via SPIFFE/SPIRE -- rather than treating identity verification as the whole solution.
+
+**Our zero trust rollout keeps stalling -- is that unusual?**
+Not at all; the Warning at the end of this chapter calls it the most common failure mode. mTLS everywhere means issuing, rotating, and revoking certificates for every service, at scale, continuously, and teams that treat certificate lifecycle management as an afterthought rather than planning automation for it from day one are the ones who get stuck.
+
+**How is microsegmentation different from just running a stricter firewall?**
+A traditional firewall enforces policy at a handful of chokepoints, like the network edge or the boundary between two major zones, and trusts everything within a zone by default. Microsegmentation pushes that same enforcement down to individual workloads, so every service is its own segment boundary and compromising one host does not hand an attacker a clear path to everything else -- which is also why service meshes like Istio and Linkerd, with their per-service sidecar proxies, come up so often in the same breath as zero trust.

@@ -37,6 +37,20 @@ Hardcoded credentials in source code or container images remain a persistent sou
 
 The zero trust principles covered earlier in this book apply naturally to cloud networking: rather than trusting traffic because it originates inside a VPC, each request is authenticated and authorized on its own merits, typically through short-lived service identities and mutual TLS between internal services rather than implicit trust based on network location alone. This matters more in cloud environments than traditional data centers precisely because the traditional network perimeter is far less meaningful when workloads span multiple regions, providers, and third-party services.
 
+## Frequently Asked Questions
+
+**If our security groups are locked down tightly, do we still need Network ACLs too?**
+Yes, because they protect against different failure modes. A security group is stateful and attached to a specific resource, so a single misconfigured or newly launched instance can silently miss the rules you intended; a subnet-level NACL acts as a blunter but subnet-wide backstop that applies regardless of how any individual resource was configured, catching mistakes that a resource-by-resource approach can miss entirely.
+
+**We haven't been breached, so does that mean our IAM permissions are scoped tightly enough?**
+Not necessarily - overly broad IAM permissions are a latent risk, not an active alarm, and they typically only surface once a single credential is leaked or a service is compromised for some unrelated reason. The safer way to check is auditing what permissions are actually used against what's actually granted, rather than waiting for an incident to reveal the gap.
+
+**Is a publicly exposed storage bucket really more dangerous than a sophisticated zero-day exploit?**
+In terms of how often it actually happens, yes - the pattern behind an enormous share of publicly disclosed cloud incidents is a misconfigured access policy on a bucket, database, or management interface, not an exotic exploit. It's a useful reminder that attackers overwhelmingly go after the easiest available path, and a default-private, explicit-allow posture closes off far more real-world risk than most exotic defenses would.
+
+**Does "zero trust" in the cloud mean we no longer need VPCs and security groups?**
+No - zero trust changes what you rely on for authorization, not whether network-layer segmentation still exists. VPCs, subnets, and security groups still shape what can reach what at the network level; zero trust adds an additional layer on top, authenticating and authorizing each individual request on its own merits instead of assuming that anything already inside the VPC boundary can be implicitly trusted.
+
 ## Summary
 
 - The shared responsibility model means the provider secures the infrastructure, but the customer is always responsible for configuring their own network, identity, and data controls correctly.

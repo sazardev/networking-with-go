@@ -127,6 +127,23 @@ func TestTenantIsolation(t *testing.T) {
 
 This test asserts something more specific than "the query works" — it asserts that a tenant explicitly attempting to read another tenant's resource by ID gets a not-found result, not a permission error that would reveal the resource exists at all, and not the resource itself. Running this pattern against every resource type in the system, as part of the normal test suite rather than a one-off manual check, is what actually catches a missing `tenant_id` filter before a customer does.
 
+## Frequently Asked Questions
+
+**Why derive the tenant ID from a JWT claim instead of just trusting an `X-Tenant-ID` header?**
+Because anything the client sets on a request can be forged by that same client — a header is just a string a curious or malicious user can edit before sending the request. A claim inside a token your server already verified the signature of is tied to something cryptographically checked, which is why `tenantMiddleware` reads it from `claims.TenantID` in the request context rather than from a header.
+
+**With shared tables and a `tenant_id` column, isn't it just a matter of time before someone forgets the `WHERE` clause?**
+Yes, and that's exactly the gap Postgres row-level security is there to close. Application-level filtering is only as strong as every developer's discipline forever, so pairing it with an RLS policy that enforces `tenant_id = current_setting('app.tenant_id')` at the database level means a forgotten filter fails safely instead of leaking a row.
+
+**Why does `TestTenantIsolation` check for `ErrNotFound` instead of a permission-denied error?**
+Because a permission error would confirm to Globex that an order with that ID exists at all, which is itself information leakage about Acme's account — order volume, ID sequencing, or just the bare fact of the resource's existence. Returning not-found for a resource that exists but belongs to someone else is the same response shape as a resource that never existed, so no side channel is available.
+
+**Should every tenant get their own database, or is the shared-table approach with `tenant_id` always fine?**
+It depends on how many tenants you expect and how strict the isolation guarantee needs to be — separate databases per tenant give the strongest guarantee but become expensive to migrate and back up past a few dozen tenants, while shared tables scale operationally the best but put all the isolation weight on consistent query filtering (ideally backed by RLS). Separate schemas in one database is the middle ground worth reaching for if you want stronger isolation than a shared table without the operational cost of fully separate databases.
+
+**How is per-tenant rate limiting different from the general rate limiting you'd add to any API?**
+A global rate limit protects the service as a whole but does nothing to stop one tenant's traffic spike from starving every other tenant sharing the same infrastructure — the "noisy neighbor" problem. Keying the limiter by tenant ID, as `perTenantRateLimit` does, means one tenant hitting their ceiling only affects that tenant's own token bucket, leaving everyone else's quota untouched.
+
 <Axiom>In a multi-tenant system, every shared resource is a potential leak or a potential bottleneck — isolation and fairness are the same design problem viewed from two angles.</Axiom>
 
 Getting multi-tenancy right is less about clever code and more about consistency: pick one place tenant identity is established, one place data is scoped, and make deviating from that path harder than following it.

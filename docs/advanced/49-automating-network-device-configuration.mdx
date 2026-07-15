@@ -176,6 +176,23 @@ Automation that applies changes instantly and irreversibly is automation that tu
 
 None of these are exotic—the network simulation and virtual lab techniques from the previous chapter are exactly where you should be testing this kind of automation before it ever touches production hardware.
 
+## Frequently Asked Questions
+
+**Why not just automate against the CLI everywhere—why bother with NETCONF or gNMI at all?**
+Because screen-scraping is fundamentally guessing. When you parse the text output of `show version`, you're relying on wording that a vendor is free to change in the next firmware release, and your regex has no idea that happened until it silently returns garbage. NETCONF and gNMI exchange data validated against a YANG schema, so you get a typed structure back instead of a paragraph to reverse-engineer. The honest answer is that both approaches matter today: structured APIs are where the industry is heading, but screen-scraping is still how a lot of real, older hardware gets automated.
+
+**Is `ssh.InsecureIgnoreHostKey()` ever okay to use?**
+Only in a lab, and only because you already know exactly which device you're talking to. In production it defeats the entire point of host key verification—it will happily hand your credentials and configuration commands to an attacker sitting in the middle of the connection, and never tell you anything went wrong. Swap it for `ssh.FixedHostKey` or a callback that checks a known-hosts file before this code goes anywhere near real infrastructure.
+
+**Why generate configuration from a `text/template` instead of just building the string with `fmt.Sprintf`?**
+`fmt.Sprintf` works until the config gets complicated enough that you're concatenating conditionals and loops into a string by hand—exactly the conditions that produce a typo nobody notices until it's live on four hundred switches. A template separates the shape of the configuration from the data filling it in, so the same tested skeleton produces correct output whether you're rendering one interface or ten thousand, and you can diff or unit-test the rendered text before it ever reaches a device.
+
+**What happens if `applyToFleet` hits a device that's down or refuses the SSH connection?**
+That device's goroutine records its own `Result{Device: device, Err: err}` and moves on—the failure is isolated per device rather than aborting the whole run. That's deliberate: a fleet-wide rollout where one unreachable switch stops progress on the other three hundred devices is worse than a rollout that reports "these five failed, here's why" and keeps going. It's also why the takeaways call for canary devices and a rollback plan—a program applying changes uniformly is only safe if there's a well-tested way to undo it.
+
+**Do I need to have gone through the network simulation chapter before trying any of this?**
+It helps a lot. The safety nets section leans directly on the virtual-lab techniques from the previous chapter—dry runs, canary rollouts, and rollback plans are things you want to rehearse against simulated devices, not discover for the first time against production hardware at 2 a.m.
+
 ## Key Takeaways
 
 - Manual CLI configuration doesn't scale; drift, human error, and lack of audit trails are structural problems, not skill problems.

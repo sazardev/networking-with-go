@@ -247,6 +247,23 @@ Take `parseHeader` from this chapter and write `FuzzParseHeader` as shown above.
 
 ---
 
+## Frequently Asked Questions
+
+**If `go test -race` passes, does that mean my concurrent code is race-free?**
+No, and this is one of the most common misreadings of the tool in the whole chapter. The race detector only flags races that actually occur during the instrumented run — it can't see a data race hiding in a code path your test never exercised, or one that only shows up under a different scheduler timing than your laptop happened to produce. Treat a clean `-race` run as evidence, not proof, and keep it running continuously in CI rather than as a one-time checkbox.
+
+**Why bother with `net.Pipe` when I could just bind a real port on `localhost` for tests?**
+A real listener works, but it's slower to set up and tear down, and it opens the door to port collisions and OS-level flakiness that have nothing to do with your handler logic. `net.Pipe` gives you two connected `net.Conn` values with zero socket or kernel involvement, and because your handler only ever sees the `net.Conn` interface, it genuinely cannot tell the difference — the same test doubles as a fast, deterministic exercise of the exact code that will run against a real TCP connection in production.
+
+**My test using `net.Pipe` just hangs forever — what did I do wrong?**
+Almost certainly a synchronous write with no reader on the other end. Unlike a real socket, `net.Pipe` has no OS buffer, so `Write` blocks until a matching `Read` consumes the bytes. If you write and read on the same goroutine without first spinning off the other side of the conversation, you'll deadlock the test rather than fail it — always drive one end from `go handleConn(serverConn)` or similar, as shown earlier in this chapter.
+
+**Table-driven tests already cover my parser — do I still need to fuzz it?**
+Yes, because a table only contains the inputs a human thought to write down. Wire-format parsers like `parseHeader` are exactly the code that breaks on inputs nobody imagined trying, like a length prefix that overflows an `int` or a slice one byte short of what the header claims. Go's built-in fuzzer mutates your seed corpus looking specifically for those blind spots, and any panic it finds gets saved under `testdata/fuzz/` as a permanent regression test — cheap insurance for a few minutes of `go test -fuzz`.
+
+**Why not just always reach for `delve` when something's wrong on a live server?**
+Because `dlv attach` pauses every goroutine in the entire process the instant it connects — there's no way for the Go runtime to freeze just the one goroutine you care about. On a server handling real traffic, that means every in-flight request stalls for as long as your debugging session holds the process. `net/http/pprof`'s goroutine dump captures the same stack information without stopping execution, so it's worth reaching for first; save `delve` for the cases a snapshot genuinely can't explain.
+
 ## Key Takeaways
 
 - Prefer `httptest` and `net.Pipe` over real sockets in tests — they're faster, deterministic, and exercise the exact same handler code.

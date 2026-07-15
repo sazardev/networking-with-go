@@ -144,6 +144,20 @@ A raw database error returned directly to an HTTP response can reveal schema det
 
 ---
 
+## Frequently Asked Questions
+
+**Go doesn't have buffer overflows like C, so is it basically immune to the vulnerabilities covered elsewhere in Part 3?**
+No — Go's memory safety removes an entire historical category of bugs, but every vulnerability class in this chapter (injection, path traversal, predictable randomness, leaked secrets) is a logic mistake, not a memory-safety one, and Go offers no automatic protection against any of them. The language closing one door doesn't close the others; it just means the remaining set of habits to learn is smaller and more learnable than in C or C++.
+
+**My `os/exec` call passes user input as a separate argument instead of a shell string, so is it fully safe now?**
+Safer, but not automatically finished — `exec.Command` with separate slice elements prevents shell metacharacters like `;` or `&&` from being reinterpreted as additional commands, which closes the command-injection door. It doesn't validate that the input is a sane value in the first place, so a malformed or unexpected argument can still reach the underlying program unchecked; the chapter's own example still recommends validating that a hostname looks like a hostname before use.
+
+**Why does it matter whether I use `math/rand` or `crypto/rand` if both just produce random-looking numbers?**
+Because "random-looking" and "unpredictable to an attacker" are different properties. `math/rand` is a deterministic pseudo-random generator designed for simulations, and its future output can be predicted by anyone who observes enough samples or knows its seed. Anything security-sensitive — a session token, a password reset code, an API key — needs `crypto/rand`, whose output is designed specifically to resist that kind of prediction.
+
+**A raw database error message seems harmless to return to a client — why treat it as a security issue?**
+Because "harmless" from the developer's chair looks very different from an attacker's chair — a raw database error can quietly reveal schema details, internal file paths, or library versions, which is exactly the kind of reconnaissance detail covered in Chapter 4.4 that an attacker would otherwise have to work to discover. Logging the detail for yourself while returning a generic message to the caller keeps that information on your side of the trust boundary.
+
 ## A Habit, Not a Checklist
 
 None of the above is exotic. Every item is a normal Go idiom applied with one extra question asked: *where did this value come from, and what happens if it's hostile?* That question, asked consistently at every trust boundary, prevents far more real-world incidents than any single clever defensive technique.

@@ -181,3 +181,17 @@ session := driver.NewSession(ctx, neo4j.SessionConfig{
 If your API lets a client immediately re-read data it just wrote (a common expectation after a `POST`), verify that the read path actually provides that guarantee rather than assuming it — this is precisely the kind of detail that works fine in local testing against a single node and fails intermittently in a production cluster.
 
 <Axiom>The database shape should change how you query, not how your API responds.</Axiom>
+
+## Frequently Asked Questions
+
+**If MongoDB doesn't enforce a schema, why bother decoding into a typed Go struct at all?**
+Flexible schema means the database will happily store whatever you send it, not that your API should skip validation. Decoding into a typed `Product` struct and validating required fields explicitly catches malformed data before it ever reaches a client, which is exactly the distinction the chapter's warning about "flexible schema is not the same as no schema" is making.
+
+**Why does the "friends of friends" logic live entirely inside the Cypher query instead of a Go loop over results?**
+Graph databases are built to make relationship traversal fast at the storage layer, so pushing the `MATCH ... FOLLOWS ... FOLLOWS` pattern down to Neo4j lets the database do what it's optimized for. Pulling every user's follow list into Go and traversing it yourself would mean re-implementing a graph engine badly, on top of shipping far more data over the wire than the ten recommended IDs the query actually needs.
+
+**Why can't I just paginate MongoDB results with `OFFSET` and `LIMIT` the way I would in SQL?**
+`OFFSET` forces the database to walk past and discard every skipped document before it can return the page you asked for, so performance degrades the deeper a client pages in. Cursor-based pagination, passing the last `_id` seen as `afterID` and querying `$gt` that value, stays fast regardless of how far into the collection the client has gone.
+
+**A client just wrote data and then reads it back, but doesn't see the write — what happened?**
+This is a consistency guarantee problem, not a bug in your handler: a MongoDB replica read from a secondary, or a Neo4j causal cluster read without a bookmark, can legitimately return slightly stale data. If your API needs read-your-own-writes behavior, use the appropriate mechanism, like passing Neo4j's `Bookmarks`, rather than assuming it happens automatically just because it worked in local testing against a single node.

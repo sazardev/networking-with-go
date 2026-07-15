@@ -67,4 +67,18 @@ Treat any certification as a supplement to hands-on practice, not a replacement 
 
 <Axiom>The tools and frameworks you'll use five years from now don't exist yet. What carries forward is the habit built in this part of the book: model the threat, question the assumption, verify before you trust.</Axiom>
 
+## Frequently Asked Questions
+
+**Do I need a certification before I can get taken seriously in security work?**
+No — the chapter is deliberately blunt about this: certifications are a supplement, not a prerequisite. A structured curriculum helps some people learn faster, and a certification can be a useful signal to an employer scanning resumes, but the actual skill is built the same way you built it across Chapters 4.4 through 4.7 of this book — by writing and running code against real, legally sanctioned targets.
+
+**Is it legal to practice against the vulnerable-by-design labs and CTFs mentioned here?**
+Yes, and that's exactly why they're worth seeking out — they exist specifically to be attacked, with explicit permission baked into their design, unlike a random server you happen to find on the internet. The legal line from Chapter 4.10 is about scope and authorization, and these platforms are built to give you unambiguous scope: you own the environment, or the organizer has explicitly granted you access to it.
+
+**Why does the chapter point to `govulncheck` specifically instead of just "keep dependencies updated"?**
+Because reachability matters more than raw version mismatches — `govulncheck` cross-references the Go vulnerability database against your module's actual dependency graph and reports only the vulnerabilities your code can actually reach, which is a far more actionable signal than a blanket "37 known CVEs in your dependency tree" report that buries the two that matter among dozens that don't apply to how you're using the library.
+
+**How does this chapter connect to the rest of Part 3 that follows it?**
+It's the hinge point: everything before it built hands-on skill in scanning, sniffing, testing, and responding, and everything from here forward — intrusion detection, log analysis, malware behavior, cloud and container security — assumes that foundation is solid. Treat this chapter as a bookmark to revisit periodically, not a one-time reading list, since the specific tools it names will age but the categories (standards, practice platforms, Go-specific resources, communities) won't.
+
 Part 3 continues from here into more specialized ground — intrusion detection, log analysis at scale, malware behavior, red team and blue team dynamics, cloud and container security, and more. The foundation in these first eleven chapters is what makes all of that legible.

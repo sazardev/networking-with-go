@@ -68,6 +68,23 @@ The words "client" and "server" describe a relationship, not a technology, and n
 
 That last row is worth lingering on, because it resolves what feels, at first glance, like a contradiction: how can a server "listen on port 443" and also be "connected to" thousands of different clients on that same port at once? The answer is that a listening socket and a connected socket are two different things, even when they share a port number. The listening socket is really more like a doorbell than a conversation — its only job is to notice someone arriving and hand them off. Each time it does, a brand-new connected socket is created just for that one visitor, uniquely pinned down by the 4-tuple described earlier, while the original listening socket goes right back to waiting for the next knock.
 
+## Frequently Asked Questions
+
+**If a web server only listens on one port, like 443, how does it talk to a hundred thousand clients at once without mixing them up?**
+Because a single TCP connection is never really identified by the server's port alone — it takes all four numbers together, source IP, source port, destination IP, destination port, the combination called a socket pair or 4-tuple. Every client shares the identical destination address and port, but each one brings its own unique source IP and source port, and that pairing is exactly what keeps a hundred thousand simultaneous conversations sorted correctly.
+
+**Does port 80 requiring root access mean anything running there is automatically trustworthy?**
+No, and this is a genuinely common misconception worth correcting directly. The privileged-ports convention is an operating-system-level restriction meant to raise the cost of impersonating a legitimate service, not a law of physics baked into TCP/IP itself — it says nothing about whether the actual program answering on that port was written well or is behaving honestly, only that whoever started it had administrator privileges to do so.
+
+**Why does my browser's port number keep changing every time I open a new tab to the same website?**
+Because the client side of a connection almost always uses a fresh, essentially random port borrowed from the ephemeral range, while the server's port stays fixed and well-known so it can always be found. Each tab gets its own distinct ephemeral port, which is precisely why ten tabs can all talk to the identical server address at once without the operating system ever confusing one tab's replies for another's.
+
+**Can a TCP service and a UDP service both use port 53 at the same time without conflicting?**
+Yes, because the transport protocol is actually part of a socket's true identity, even though people casually drop it when writing host:port. TCP port 53 and UDP port 53 are two completely independent doors, which is exactly why DNS can run ordinary lookups over UDP and fall back to TCP for larger responses, both simultaneously, on the same machine, with zero ambiguity.
+
+**How can a server "listen" on a port and also be "connected" to thousands of clients on that same port?**
+Because a listening socket and a connected socket are two genuinely different things, even though they share a port number. The listening socket behaves like a doorbell, whose only job is noticing someone arriving and handing them off, while each new visitor gets a brand-new connected socket pinned down by its own unique 4-tuple, leaving the original listening socket free to keep waiting for the next knock.
+
 ## Carrying This Forward
 
 Every idea in this chapter — the numbered door, the four-number address that keeps a crowd of strangers straight, the fixed address a server commits to versus the borrowed one a client uses once and returns — is something you are about to build with your own hands, not just read about. Starting in the Go Fundamentals part of this book, you'll write the first lines of code that open a listening socket, dial an endpoint, and watch a 4-tuple resolve into two matching pairs of addresses on your own screen. Until then, next time you have a dozen browser tabs open and a chat client pinging in the background, notice what you now know is happening underneath: one IP address, a swarm of ephemeral ports quietly checked out and returned like library books, and an operating system sorting all of it without ever handing you the wrong mail.

@@ -383,6 +383,25 @@ func main() {
 
 ---
 
+## Frequently Asked Questions
+
+**My HTTP server hangs forever on a slow or misbehaving client — why doesn't Go stop it automatically?**
+Because `http.ListenAndServe(":8080", nil)` builds an `http.Server` with every timeout field left at its zero value, which literally means "wait forever" — nothing protects you from a Slowloris-style client trickling in one byte every few seconds. The fix is to construct the `http.Server` explicitly, as shown earlier in this chapter, and set `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, and `IdleTimeout` rather than relying on the convenience function's defaults.
+
+**Do I need to close `resp.Body` even if I never read from it?**
+Yes, every time, with no exceptions — skipping `resp.Body.Close()` means the underlying TCP connection can never be returned to the client's connection pool, and under sustained load that quietly leaks sockets until you run out of file descriptors. Pair every successful `http.Get`/`client.Do` call with `defer resp.Body.Close()` immediately after checking the error, exactly like the basic HTTP client example does.
+
+**Is it better to create a fresh `http.Client` for each request so nothing gets shared between calls?**
+No, and this is a common overcorrection: each `http.Client` owns its own connection pool through its `Transport`, so a new client per request throws away keep-alive reuse and forces a fresh DNS lookup plus TCP (and TLS, for HTTPS) handshake every single time. Create one `http.Client` with an explicit `Timeout` at package level and reuse it across your whole program, the way the reusable-client example does.
+
+**What's the actual difference between a context deadline on a request and `Server.Shutdown`'s context?**
+A request-scoped context (like `r.Context()` in the cancellation example) governs one in-flight request and fires when that specific client disconnects or its deadline passes. `Server.Shutdown(ctx)`'s context is different: it bounds how long the *whole server* will wait for every currently running handler to finish before giving up and returning, acting as a safety valve on the shutdown process itself rather than on any single request.
+
+**If I upgrade a connection to a WebSocket, will `Server.Shutdown` wait for it to close gracefully too?**
+No — `Shutdown` only tracks ordinary HTTP handlers; hijacked connections such as WebSockets fall outside its bookkeeping entirely. If your server upgrades connections, you're responsible for closing those yourself, typically by fanning your own cancellation signal out to each connection's goroutine alongside the server's shutdown signal.
+
+---
+
 ## Key Takeaways
 - HTTP is the backbone of web communication: request/response, stateless, text-based.
 - Go’s `net/http` package makes building servers and clients easy and concurrent.

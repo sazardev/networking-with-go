@@ -142,6 +142,23 @@ client := &http.Client{Transport: transport}
 
 Micro-benchmarks measure a function or a handler in isolation; validating an entire running server under realistic concurrent load calls for a dedicated load-testing tool rather than `testing.B`. Two real, commonly used Go-based options are `hey` (a simple HTTP load generator) and `vegeta` (a more configurable constant-rate HTTP load tester with detailed latency-distribution reporting). Both are worth knowing exist, even though the fine details of their command-line usage are outside a chapter focused on Go's own benchmarking primitives.
 
+## Frequently Asked Questions
+
+**My benchmark's time-per-op looks great, so why is my server still slow under load?**
+Because time-per-op is only one of several numbers that can move independently—throughput, latency percentiles, and allocations per operation are the others, and this chapter's whole opening point is that optimizing one can quietly hurt another. A handler can look fast in a micro-benchmark while allocating heavily, and those allocations show up as GC-driven latency spikes only once you're under sustained concurrent load, which `b.ReportAllocs()` and `-benchmem` are there to catch before that happens.
+
+**Why does the chapter push `net.Pipe()` instead of just benchmarking against a real `localhost` connection?**
+A benchmark that dials `localhost` measures the OS's TCP stack and scheduler along with your own code, which is useful for an end-to-end number but noisy if you're trying to isolate your handler's own logic. `net.Pipe()` gives you two connected, fully in-memory `net.Conn` values with no real socket underneath, so `BenchmarkEcho` measures only the read/write/parsing overhead you actually wrote.
+
+**Do I need a third-party framework to benchmark Go network code?**
+No—`testing.B`, part of the standard library's `testing` package, is real and sufficient for most micro-benchmarks. Between `-bench`, `-benchmem`, `b.ReportAllocs()`, and `b.ResetTimer()`, you get timing, allocation counts, and the ability to exclude setup work from the measurement without installing anything extra.
+
+**I ran `go test -bench=.` and the numbers jump around between runs—what should I check?**
+Make sure setup work (allocating test data, spinning up a background goroutine) happens before `b.ResetTimer()`, not inside the timed loop, since that's exactly what it exists to exclude—`BenchmarkCopySmallBuffer` calls it right after `bytes.Repeat` for this reason. Beyond that, background CPU load, thermal throttling, and GC timing can all introduce run-to-run noise, which is part of why percentiles and repeated runs matter more than a single number.
+
+**Is raising `MaxIdleConnsPerHost` always the right fix for a slow HTTP client?**
+It's frequently the highest-leverage one specifically because the default of 2 is tuned for clients talking to many different hosts, not a client hammering a single backend—every connection beyond that default has to pay a fresh TCP (and, for HTTPS, TLS) handshake instead of reusing a pooled one. It isn't universal, though; profile with `net/http/pprof` first to confirm connection setup, rather than something else entirely, is actually where the time is going.
+
 ## Key Takeaways
 
 - "Performance" for network code is really throughput, latency percentiles, and allocation rate together—improving one can cost another.

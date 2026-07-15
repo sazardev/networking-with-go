@@ -167,6 +167,23 @@ Horizontal scaling only works cleanly if any instance can handle any request. Th
 
 **After**: 3 replicas running `myapi:1.5.0`, with zero dropped requests throughout, assuming the readiness probe and graceful shutdown timeout were both configured correctly.
 
+## Frequently Asked Questions
+
+**Why bother with a multi-stage Docker build instead of just building the binary and copying it into a normal Linux base image?**
+Because the whole point of the final `distroless/static` stage is removing everything an attacker or a bloated image could use — no shell, no package manager, no OS utilities, just the binary itself. A single-stage build built on a full base image would still work, but you'd ship a Go toolchain and module cache you don't need at runtime, and a shell an attacker could use if they ever compromised the process.
+
+**If Kubernetes gives a 30-second grace period by default, does that mean my `shutdownCtx` timeout should also be 30 seconds?**
+Not necessarily — it should comfortably fit inside that grace period, not match it exactly. If `srv.Shutdown` is still waiting on in-flight requests when Kubernetes's own grace period expires, it sends `SIGKILL` regardless of what your code intended, so leaving margin (this chapter's example uses 15 seconds against a 30-second default) protects against the shutdown logic itself getting cut off mid-drain.
+
+**My readiness probe passes and the rolling deploy still drops requests — what's the usual cause?**
+The real-world example at the end of this chapter names the two most common culprits directly: a readiness probe that reports healthy before the server can actually serve traffic, or a graceful shutdown timeout that's shorter than your slowest real request. Both are worth testing deliberately under load rather than assuming they're fine because the deploy "looked" clean.
+
+**Why can't I just store user sessions in an in-memory map on each instance the way earlier chapters did for simplicity?**
+Because horizontal scaling only works cleanly when any instance can handle any request, and a session tied to one process's memory breaks that the moment a load balancer routes a follow-up request to a different replica. This chapter's statelessness section points to two real fixes: a shared store like Redis for session data, or the stateless JWTs from chapter 10 that any instance can verify independently without shared state at all.
+
+**Does horizontal scaling mean I never need to worry about a single instance's performance anymore?**
+No — the two are complementary, not substitutes for each other. Adding replicas behind a `Service` protects against one instance or node failing and spreads load, but a genuinely slow handler or an unindexed query (the kind of thing chapter 16's tracing example diagnosed) will still be slow on every single replica; scaling out multiplies capacity, it doesn't fix a per-request performance problem.
+
 That last assumption is the one worth testing deliberately — a readiness probe that returns healthy before the server is actually ready to serve traffic, or a shutdown timeout shorter than your slowest real request, are the two most common causes of dropped requests during an otherwise routine deploy.
 
 Next, we'll go beyond the basic rate limiting from earlier in this part and look at defending an API against more sophisticated abuse at scale.

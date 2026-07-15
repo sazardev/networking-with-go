@@ -113,6 +113,23 @@ You do not need a data center to see subnetting at work — it is already runnin
 
 Everything in this chapter reduces to one small, sturdy idea: an address only means something once you know how much of it is a neighborhood name and how much of it is a house number, and a subnet mask is nothing more than the tool that draws that line, bit by bit, as precisely as you like. Once that distinction is genuinely comfortable — once you can glance at an address and a `/prefix` together and know, without reaching for a calculator, roughly how many neighbors share that address's network and which ones do not — you have learned the single piece of networking mechanics that shows up more often than almost any other, in router configurations, in cloud provider dashboards, in firewall rules, and in the CIDR blocks you will type into real Go programs the moment this book hands you your first ones in the Go Fundamentals part just ahead.
 
+## Frequently Asked Questions
+
+**Why does a smaller number after the slash mean a bigger network? It feels completely backwards.**
+It feels backwards until you remember what that number is actually counting: not the size of the network, but the number of bits reserved for identifying it, which leaves fewer bits free for hosts as it grows rather than more. A `/8` spends only 8 bits naming the neighborhood and leaves 24 bits free for houses, over 16 million of them, while a `/30` spends 30 bits on the neighborhood and leaves only 2, barely enough for two routers on either end of one dedicated link.
+
+**If my laptop shows an address like `192.168.1.10`, can someone on the other side of the world reach me there directly?**
+No, and this trips up nearly everyone the first time they think about it. Private addresses like the `192.168.0.0/16` range are never routed on the open internet at all — the internet's backbone routers are configured to simply drop any packet addressed to one of the reserved private ranges, on the assumption it has wandered somewhere it does not belong. Only your own router, and whatever NAT translation it performs on your behalf, actually connects you to the wider internet.
+
+**Why do two completely unrelated devices on opposite sides of the planet get to use the exact same private address without ever conflicting?**
+Because a private address is only ever meaningful inside its own network, the same way an apartment number only means something to people already inside that specific building. NAT is what makes this workable at internet scale — your router rewrites the address on every outgoing packet and remembers, for each conversation, exactly which internal device the reply belongs to, so `192.168.1.10` behind your router and `192.168.1.10` behind a router on another continent never need to know the other one exists.
+
+**Why can't a /24 subnet actually use all 256 of its addresses for devices?**
+Because two of those 256 values are permanently reserved for bookkeeping rather than for any device: the network address, with every host bit set to zero, names the subnet itself the way a building's address refers to the building and not any tenant, and the broadcast address, with every host bit set to one, is reserved for messages meant for every device on the subnet at once. That is exactly why a /24, with 256 total values, only ever offers 254 usable host addresses.
+
+**Now that IPv6 has 340 undecillion addresses, does that mean NAT and subnetting stop mattering?**
+Subnetting keeps mattering regardless of address supply, because its real job was never scarcity in the first place — it is about containing broadcast traffic, walling off a compromised guest device from the finance department, and keeping a large network small and human-sized enough to reason about. IPv6's enormous address space does remove the *scarcity* problem NAT was invented to patch around, but the interior-walls reasoning behind subnetting is just as necessary on an IPv6 network as it ever was on IPv4.
+
 ### Fun Facts and Notes
 
 - The address `0.0.0.0` is reserved for special use — commonly meaning "any address" or "not yet assigned" — and is never handed out to a real device on a real network.

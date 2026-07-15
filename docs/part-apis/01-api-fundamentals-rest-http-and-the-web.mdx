@@ -289,4 +289,21 @@ sequenceDiagram
     Server-->>Client: 200 OK + User Data
 ```
 
+## Frequently Asked Questions
+
+**Is REST the same thing as an API, or the same thing as JSON?**
+No to both, and mixing them up is one of the most common beginner confusions. API is the general concept of a menu-and-order contract between two programs; REST is one popular style of designing that contract around resources, URLs, and HTTP methods; JSON is just one of the data formats a REST API happens to speak most often. You could build an API that isn't RESTful, or a RESTful API that returns XML instead of JSON, and both would still be "an API."
+
+**If REST is stateless, how does a site keep me logged in between requests?**
+The waiter genuinely doesn't remember your last order - statelessness means the server itself doesn't rely on remembering anything about you between requests. What actually happens is that the client resends proof of who it is with every single request, usually a token in a header, so from the server's point of view each request is still self-contained even though the experience feels continuous to you.
+
+**Why do PUT and DELETE even need to exist when POST could just include an "action" field saying what to do?**
+Because the whole value of the uniform interface is that the method itself already tells you the action, before anyone has to read the request body or documentation. A GET is safe to retry and cache by default, a DELETE is unambiguous from a server log line alone, and any generic HTTP tool (a proxy, a browser, a load balancer) can make reasonable decisions just by reading the method - none of that works if every action is disguised as an identical POST.
+
+**I got a 500 error calling an API - is that my fault or the server's fault?**
+Almost always the server's, and that's exactly why the status code ranges exist: codes starting with 4 (like 404) mean the client asked for something in a way that was invalid or didn't exist, while codes starting with 5 (like 500) mean the server itself failed while trying to handle an otherwise valid request. Learning to read the first digit of a status code before digging further will save you a lot of debugging time.
+
+**Do I need to pick HTTP/2 or HTTP/3 myself when building an API?**
+Rarely as an explicit choice - which version is used is typically negotiated automatically between the client and server, and Go's standard library handles this for you in most setups. What matters more for you as an API builder is understanding what each version buys you (HTTP/2's multiplexing, HTTP/3's QUIC-based transport) so you know why a client might behave differently across environments, not manually selecting a version yourself.
+
 HTTP is the universal translator of the web, ensuring clients and servers can communicate seamlessly. Let’s explore how Go makes working with HTTP even easier!

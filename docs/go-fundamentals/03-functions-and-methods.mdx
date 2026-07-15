@@ -5,6 +5,15 @@ title: "Functions and Methods"
 
 # Functions and Methods
 
+The previous chapter was about data sitting still — a labeled box, holding
+a value, refusing to change shape. This chapter is about motion: taking
+that data and doing something to it, in a way you can name, reuse, and
+trust to behave the same way every single time you call it. That's the
+entire idea of a function, and Go's take on it carries a few genuinely
+unusual design choices that are worth understanding properly, because
+they shape the look of nearly every piece of Go code you'll read for the
+rest of this book.
+
 > A function in Go is a small machine with a clearly labeled input slot and
 > output slot — and Go, unusually, lets that output slot have more than one
 > compartment. A method is that same machine, permanently bolted to one
@@ -13,9 +22,10 @@ title: "Functions and Methods"
 Functions are how Go breaks a program into named, reusable pieces of
 behavior. Methods extend that idea by attaching a function to a type, which
 is how Go achieves what other languages get from classes — without
-classes. This chapter covers both, along with a handful of Go-specific
-features (multiple return values, named returns, variadic parameters,
-closures) that shape how idiomatic Go code looks and reads.
+classes, and without the tangled inheritance trees that come with them.
+This chapter covers both, along with a handful of Go-specific features
+(multiple return values, named returns, variadic parameters, closures)
+that shape how idiomatic Go code looks and reads.
 
 ## Function Basics
 
@@ -45,9 +55,11 @@ sum := add(3, 4) // 7
 
 ## Multiple Return Values
 
-This is one of Go's most consequential design decisions, and it appears
-everywhere in idiomatic Go code: a function can return more than one
-value, most commonly a result paired with an `error`:
+Here's where Go starts to feel genuinely different from most languages
+you may have touched before, and it's worth pausing on, because this one
+decision ripples through nearly every chapter left in this book. A Go
+function can return more than one value, most commonly a result paired
+with an `error`:
 
 ```go
 func divide(a, b float64) (float64, error) {
@@ -72,10 +84,12 @@ fmt.Println("result:", result)
 
 <Axiom>Go's multiple return values, combined with its lack of exceptions, mean an error is not something exceptional that interrupts control flow — it's an ordinary value, checked at the exact point it can occur, right next to the code that produced it.</Axiom>
 
-Chapter 5 covers error handling in depth; for now, notice the pattern: the
-zero value of the successful return type (`0` for `float64` above) is
-paired with a non-nil error, so callers who forget to check `err` at least
-get a harmless zero rather than a value that looks plausible but isn't.
+The next chapter after this one covers error handling in real depth; for
+now, just notice the pattern, because you'll see it in literally every
+networking example from here to the end of the book: the zero value of the
+successful return type (`0` for `float64` above) is paired with a non-nil
+error, so callers who forget to check `err` at least get a harmless zero
+rather than a value that looks plausible but isn't.
 
 ## Named Return Values
 
@@ -92,10 +106,10 @@ func split(sum int) (x, y int) {
 ```
 
 Named returns are most useful in short functions where the names document
-intent, and in functions using `defer` to modify a return value (common in
-error-wrapping patterns you'll see in Chapter 5). Overusing them in long
-functions tends to hurt readability, since the bare `return` no longer
-shows at a glance what's being returned.
+intent, and in functions using `defer` to modify a return value (a
+pattern you'll meet properly in the error-handling chapter). Overusing
+them in long functions tends to hurt readability, since the bare `return`
+no longer shows at a glance what's being returned.
 
 <Warning title="Naked returns in long functions">A bare `return` relies on the reader remembering what `x` and `y` were set to several lines earlier. In a function longer than about ten lines, this becomes a real readability cost — prefer writing `return x, y` explicitly once the function grows past a trivial size, even though the names remain declared in the signature.</Warning>
 
@@ -128,7 +142,8 @@ total := sum(values...)
 ```
 
 `fmt.Println` and `fmt.Printf` are themselves variadic — that's how they
-accept any number of arguments of any type.
+accept any number of arguments of any type, which you've already been
+relying on since the very first "Hello, Go!" without necessarily noticing.
 
 ## defer: Guaranteed Cleanup
 
@@ -153,7 +168,10 @@ func readFile(path string) error {
 actually executes, which is exactly why "open, then immediately defer the
 matching close" is one of the most common two-line idioms in Go — it puts
 the cleanup right next to the setup that requires it, instead of leaving
-it to be duplicated at every exit point.
+it to be duplicated at every exit point. Once you start writing networking
+code that opens files, sockets, and database connections, you'll type this
+particular idiom often enough that your fingers learn it before your brain
+does.
 
 Deferred calls stack up in last-in-first-out order when a function defers
 more than one, and — a detail worth knowing before it surprises you — the
@@ -225,7 +243,10 @@ Calling `rect.Area()` looks like calling a method in an object-oriented
 language, but underneath it is ordinary function dispatch: the compiler
 resolves `rect.Area()` to a call of `Area` with `rect` passed as the
 receiver. There is no hidden `this`-like runtime lookup — Go decides which
-function to call at compile time, based on the receiver's type.
+function to call at compile time, based on the receiver's type. If you've
+come from a language with heavier object machinery, this is often the
+moment Go starts to feel refreshingly literal: there's no magic here, just
+a function with one extra, conveniently-placed parameter.
 
 ## Value Receivers vs. Pointer Receivers
 
@@ -302,17 +323,37 @@ func (c *Circle) Grow(amount float64) {
 
 <Axiom>A method with the wrong receiver kind doesn't crash — it just quietly does nothing useful, which is exactly why this mistake survives code review more often than it should.</Axiom>
 
-## Key Takeaways
+## Frequently Asked Questions
 
-- Functions can return multiple values; pairing a result with an `error`
-  is the idiomatic Go pattern this entire book relies on.
-- Named return values pre-declare zero-valued variables for a bare
-  `return` — useful in short functions, a readability risk in long ones.
-- Variadic parameters (`...T`) accept any number of arguments and can be
-  fed an existing slice with `slice...` at the call site.
-- Closures capture enclosing variables by reference, not by value at
-  creation time — each call to the outer function creates fresh captured
-  state.
-- Methods are functions with a receiver; value receivers operate on a
-  copy, pointer receivers operate on the original — pick pointer receivers
-  whenever the method mutates the receiver or the type is large.
+**Why does Go let a function return two values instead of just throwing an exception like most languages?**
+Because Go's designers wanted every possible failure point visible right in the function signature, not hidden behind a `catch` block somewhere else in the codebase. Pairing a result with an `error` — as `divide` does in this chapter — means the caller checks failure at the exact line it can happen, which is the pattern you'll see in literally every networking example for the rest of this book.
+
+**I called `Scale` on my `Rectangle` and nothing changed — what went wrong?**
+You almost certainly declared `Scale` with a value receiver, `func (r Rectangle) Scale(...)`, which means the method only ever modifies its own private copy of `r` and the caller's original struct is untouched. This is exactly the "classic silent bug" covered in this chapter: there's no compiler error because the code is perfectly valid Go, it just isn't doing what you meant. Switch the receiver to a pointer, `func (r *Rectangle) Scale(...)`, and the mutation will stick.
+
+**Do I need to fully understand closures before I get to goroutines later in the book?**
+It helps enormously to at least understand the core idea now: a closure captures variables by reference, not by taking a snapshot of their value. That's precisely what explains the classic loop-variable-capture bug in concurrent code, and while Go 1.22 fixed the most common version of it by giving each loop iteration its own variable, the underlying rule of "closures hold a live reference" is worth having internalized before you're debugging a goroutine that captured the wrong thing.
+
+**When should I actually use named return values instead of just writing `return x, y`?**
+Named returns pull their weight in short functions, where the names in the signature double as documentation, and in functions that use `defer` to adjust a return value on the way out. Once a function stretches past ten lines or so, a bare `return` forces the reader to remember what you set several lines earlier, so writing the values out explicitly is the better call at that point.
+
+**Why does `rect.Scale(2)` work even though `rect` isn't declared as a pointer?**
+Go automatically takes the address of `rect` for you when you call a pointer-receiver method on an addressable value — it's a convenience the compiler handles at the call site, not something that happens by magic at runtime. The same convenience runs in reverse too: calling a value-receiver method on a pointer automatically dereferences it.
+
+### Where This Goes From Here
+
+You've now got the two ingredients Go uses to build almost everything:
+functions that take data and produce results, honestly reporting failure
+as a second return value instead of hiding it in an exception; and
+methods, which are just functions with a permanent, dedicated piece of
+data to work on. Neither of those ingredients defines what that data
+*looks like* yet, though — a `Rectangle` showed up in this chapter as if
+it had always existed, and it's fair to wonder how you build a type like
+that in the first place.
+
+That's exactly where the next chapter picks up: structs, for grouping
+data together, and interfaces, for describing behavior without caring
+what concrete type provides it. Between what you already know from this
+chapter and what's coming next, you'll have essentially everything Go
+offers instead of classes — and, once you see it work, you may find
+yourself not missing classes much at all.

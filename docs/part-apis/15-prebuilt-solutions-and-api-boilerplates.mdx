@@ -138,6 +138,20 @@ myapi/
 
 <Axiom>A boilerplate's job is to remove repetitive setup, not to remove understanding — use one to save the first afternoon, not to avoid learning what each moving part actually does.</Axiom>
 
+## Frequently Asked Questions
+
+**If `internal/` is just a convention everywhere else in the Go ecosystem, why call it "enforced" here?**
+Because unlike most layout conventions, this one isn't a gentleman's agreement — the Go compiler itself refuses to let code outside the parent of an `internal/` directory import anything inside it. Rename that directory to `pkg/` or `lib/` and you lose the guarantee entirely; call it `internal/` and the toolchain polices your API surface for you, for free.
+
+**Should I reach for `gorm` or `ent` by default since they're full ORMs, or is `sqlx` the safer starting point?**
+Neither is a safe universal default — it depends on whether your data model is CRUD-heavy or query-heavy. If most of your tables map cleanly to structs and you want migrations generated for you, `gorm` or `ent` earns its keep; the moment queries get hand-tuned and complex, fighting an ORM's query builder costs more than `sqlx`'s slightly more manual `rows.Scan` style ever would.
+
+**Is adopting `google/wire` overkill for a small API with just a store and a couple of handlers?**
+Usually, yes. Plain constructor functions called directly from `main` are clearer for small dependency graphs, and `wire` only starts paying for itself once there are enough branches in the graph that wiring by hand becomes genuinely error-prone. Reaching for a DI framework before you have that problem just adds a build step and a `wire_gen.go` file to explain to the next person who opens the project.
+
+**Does picking `go-blueprint`'s Gin option instead of Fiber or the standard library lock the project into that framework's patterns forever?**
+Not really — the chapter's closing point is that whichever framework a generator defaults to, the underlying shape stays the same: a router, a handler signature, and a JSON encoder. The CRUD patterns from earlier chapters transfer across Gin, Fiber, Echo, and plain `net/http` with only cosmetic differences, so the generator's choice is far less permanent than it looks on day one.
+
 Whether you start from a generator like `go-blueprint` or grow this structure by hand as your project needs it, the goal is the same: a layout that scales from a weekend project to a production service without a disruptive rewrite in between.
 
 Next, we'll turn to keeping a running API healthy: performance monitoring and observability.

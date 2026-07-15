@@ -217,6 +217,25 @@ gcloud container clusters create myapi-cluster \
 
 ---
 
+## Frequently Asked Questions
+
+**If Cloud Run scales to zero, doesn't that mean the first request after idle time is always slow?**
+Yes, and that's exactly the cold start this chapter keeps circling back to — a fresh instance has to start before it can answer, which is precisely why the distroless image from Chapter 6.38 matters here: a Go binary with no language runtime to bootstrap starts in milliseconds, keeping that penalty small. If a specific latency requirement can't tolerate even that, `--min-instances=1` removes the cold start entirely, at the cost of paying for an idle instance around the clock, which is why the warning above insists it be a deliberate choice, not a default.
+
+**Why does the Go code connect to Cloud SQL over a Unix socket path instead of a normal host and port?**
+Because `--add-cloudsql-instances` attaches a Cloud SQL Auth Proxy sidecar that Cloud Run manages for you, and that sidecar exposes the database at a fixed socket path rather than a TCP address. The DSN in this chapter builds its connection string from `DB_SOCKET` for exactly that reason — your code never opens a direct, self-managed TLS connection to the database or runs the proxy binary itself; Cloud Run and the sidecar handle that transport underneath.
+
+**Why put the database password in Secret Manager instead of just another `--set-env-vars` entry?**
+Because `--set-env-vars` values are visible in the service's plain configuration, which is fine for a log level but not for anything that grants access to something sensitive. Secret Manager keeps the actual value out of that configuration and lets Cloud Run mount its current version into the container at deploy time — and referencing it with a pinned version instead of `:latest` gives you an immutable value you won't discover has silently rotated out from under a running revision.
+
+**What actually happens to the old revision after I run `gcloud run deploy` again?**
+It doesn't disappear — every deploy creates a new, immutable revision alongside the previous ones, which is exactly what makes traffic splitting and rollback close to free. Splitting traffic across two revisions with `update-traffic` gives you a canary rollout with no extra infrastructure, and rolling back a bad deploy is just another traffic update pointing 100% at the last known-good revision, not a redeploy of old code.
+
+**My team already runs GKE for other services — does that mean Cloud Run is the wrong choice for a new Go API?**
+Not automatically, but it's one of the three situations this chapter names as a real reason to lean toward GKE instead of Cloud Run's default simplicity. An existing Kubernetes footprint means one more `Deployment` in a cluster you already operate, monitor, and secure, rather than standing up a second platform — that's a genuine operational cost worth weighing, distinct from the networking-control and custom-autoscaling reasons that also push teams toward GKE.
+
+---
+
 ## Real-World Example: A Team's First Six Months
 
 A small team ships their Go API to Cloud Run with `--min-instances=0`: near-zero cost during the early, low-traffic weeks, since scale-to-zero means idle time is genuinely free. As usage grows, they set `--min-instances=1` in the region with the most latency-sensitive traffic, accepting a small fixed cost specifically to remove cold starts from their busiest hours — a deliberate trade, made after measuring cold-start latency, not a default flipped out of habit. Secrets move into Secret Manager the same week they add a real database, and Cloud SQL connects over the built-in Unix-socket integration rather than the team hand-rolling proxy management.

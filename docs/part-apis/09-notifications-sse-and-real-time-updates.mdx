@@ -180,4 +180,23 @@ Any part of the system that wants to notify a client publishes to Redis instead 
 
 <Axiom>Choose the simplest transport that satisfies the direction of your data flow — SSE for one-way pushes, WebSockets only when the client genuinely needs to talk back over the same connection.</Axiom>
 
+---
+
+## Frequently Asked Questions
+
+**Why does my SSE endpoint just hang and never deliver anything, even though `Publish` is clearly being called?**
+Nine times out of ten it's a missing flush somewhere in the chain — either the handler forgot `flusher.Flush()` after every write, or a reverse proxy in front of it (Nginx is the classic offender) is buffering the response body until it fills a chunk size. Set `Content-Type: text/event-stream`, flush after every event, and make sure any proxy in the path has buffering disabled for that route.
+
+**Can I just use `http.ResponseWriter` without checking for `http.Flusher`?**
+You can write to it, but nothing will reach the client until Go's HTTP server decides the buffer is full enough to send, which for a low-traffic notification stream might be never. The type assertion `flusher, ok := w.(http.Flusher)` costs nothing and protects against a genuinely broken response, so there's no reason to skip it.
+
+**What happens to a subscriber's channel if the client's connection drops mid-write?**
+The `select` on `r.Context().Done()` catches this within one loop iteration, the handler returns, and the deferred `unsubscribe(notify)` call removes and closes that channel. Without that context check the goroutine would sit blocked on `<-notify` forever, one leaked goroutine per disconnected client.
+
+**Why does `Publish` drop events instead of blocking when a subscriber is slow?**
+Because blocking one slow subscriber would stall delivery to every other subscriber sharing that same call to `Publish`. The buffered channel with a `default` case trades perfect delivery for fairness — a design that's correct for "current state" notifications like an unread count, but wrong if you need guaranteed delivery, in which case pair SSE with a durable event log and the `Last-Event-ID` replay mechanism instead.
+
+**Do I need Redis specifically to scale SSE across multiple instances?**
+No — Redis `PUBLISH`/`SUBSCRIBE` is just the simplest widely-available option. Any pub/sub transport that every instance can subscribe to works the same way: NATS, a Kafka topic, or a cloud provider's pub/sub service all fill the same role of getting an event published on instance A to the broker running on instance B.
+
 With real-time delivery covered from both directions, the next chapter turns to protecting these endpoints: authentication, tokens, and API security best practices.

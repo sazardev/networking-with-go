@@ -175,6 +175,23 @@ Position updates can be dropped safely because the next tick supersedes them. So
 
 Sending every player's full state every tick scales poorly as player count grows. A common optimization is **delta compression**: only send the fields that changed since the last acknowledged state, rather than the whole struct. This trades CPU (tracking what changed) for bandwidth (sending less), which is almost always the right trade for a server pushing updates to many clients at once.
 
+## Frequently Asked Questions
+
+**If UDP drops packets and doesn't guarantee order, isn't that just worse than TCP?**
+It's worse for some things and better for others, and the whole chapter hinges on telling those apart. A dropped position update is fine because the very next tick supersedes it—there's no value in retransmitting a location the player has already left. TCP's insistence on delivering that stale packet in order is exactly what causes the stutter this chapter opens with, so for continuous state, "unreliable but current" beats "reliable but late."
+
+**Do I need to build my own reliability layer for every message?**
+No—only for the small set of messages where losing one actually changes the game, like "player fired" or "match ended." The pattern is to tag those with an ID, resend on a timeout if no ack comes back, and dedupe on arrival. Position and rotation updates skip all of that machinery entirely, which is the whole point of selective reliability.
+
+**My client is rendering players moving backward in time—what's going on?**
+That's a classic symptom of applying UDP packets in the order they arrive rather than the order they were sent. The fix is exactly what `ClientState.Apply` does in this chapter: compare the incoming `Seq` against the last one applied for that player, and silently drop anything that isn't newer. If you skip that check, an out-of-order packet will yank a player's position backward for one frame before the next update corrects it.
+
+**Why 20 Hz specifically for the simulation tick rate?**
+20 Hz (a tick every 50ms) is a common baseline because it balances bandwidth against responsiveness—faster-paced competitive titles often run higher, slower-paced ones can get away with less. What matters more than the exact number is that the tick is fixed and decoupled from simulation variability, via `time.Ticker`, so clients get a steady cadence instead of updates bursting whenever the server happens to finish a frame.
+
+**Should I just use QUIC instead of hand-rolling all of this?**
+It's a legitimate option, and `quic-go` is real production-grade Go tooling for it—QUIC gives you multiplexed streams with per-stream ordering guarantees, so you could keep chat and inventory reliable while leaving position unreliable, without writing the ack/resend logic yourself. The tradeoff is per-packet overhead and connection setup cost, which is why raw UDP still wins at very high tick rates or on constrained platforms.
+
 ## Key Takeaways
 
 - Real-time games favor low latency and freshness over TCP's guaranteed, ordered delivery—UDP is the right base transport.

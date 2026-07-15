@@ -322,6 +322,23 @@ Go services, the real choice in practice is between REST and gRPC.
 
 <Warning title="Don't gRPC-ify a public API just because it's newer">gRPC's strict contracts are a strength for services you and your team both control, but a liability for anyone consuming your API from a browser, a shell script, or a language ecosystem with weak protobuf support. Forcing gRPC on external consumers trades their convenience for your internal purity -- grpc-gateway exists precisely so you don't have to make that trade.</Warning>
 
+## Frequently Asked Questions
+
+**If gRPC is faster and stricter, why doesn't every internal service just switch to it?**
+Speed and strictness aren't free -- a gRPC contract has to be written in protobuf, compiled with `protoc`, and regenerated whenever a field changes, which is real friction compared to a REST handler you can edit and redeploy in one step. Teams that adopt gRPC internally are trading that upfront ceremony for a compiler-checked contract and native streaming, which is a good trade for service-to-service traffic but overkill for, say, a small internal admin tool with one caller.
+
+**My gRPC handler returns a plain Go `error` instead of a `status.Errorf` -- is that actually broken?**
+It won't crash anything, but it quietly throws away information the client needs. A bare error maps to the generic `codes.Unknown` on the wire, so a caller trying to branch on `codes.NotFound` the way it would branch on an HTTP `404` has nothing to check. Whenever a failure is something an API client is expected to react to differently, wrap it with `status.Errorf` and a real code, as the `GetItem` example does for a missing SKU.
+
+**Do I have to give up REST entirely if I build my internal services with gRPC?**
+No -- that's exactly the gap grpc-gateway is built to close. It reads extra annotations in the same `.proto` file and generates a reverse-proxy HTTP server that translates incoming REST/JSON requests into gRPC calls against your existing service, so one schema and one implementation can serve both an internal gRPC client and an external browser client without maintaining two codepaths.
+
+**What actually happens to a context deadline when service A calls B which calls C?**
+Because every generated gRPC method takes a `context.Context` as its first argument, a deadline set once at the edge -- say, a 2-second timeout at A -- travels automatically through B's call into C, shrinking as time passes rather than resetting at each hop. This is the behavior the DeepDive on deadline propagation calls out, and it's something you'd have to wire up by hand with headers and timers in a plain REST client chain.
+
+**Is JSON-RPC worth learning if this chapter mostly talks about REST and gRPC?**
+Mostly by name rather than by practice for new Go services -- it's a thin JSON envelope (`method`, `params`, `id`) for RPC-style calls without any of gRPC's code generation, streaming, or binary efficiency. It's worth recognizing because it still shows up in specific niches, like some blockchain node APIs and simple internal tools, but for a new backend the real decision in this chapter remains REST versus gRPC.
+
 ### Key Takeaways
 
 - RPC-style APIs model a remote call as invoking a named function with

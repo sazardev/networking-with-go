@@ -256,4 +256,21 @@ func TestGetTask(t *testing.T) {
 
 Gin's appeal is speed (its router is one of the fastest in the Go ecosystem, benchmarked repeatedly against alternatives), a huge middleware ecosystem (CORS, JWT, rate limiting, Swagger generation all have mature Gin integrations), and an API that stays close to plain `net/http` concepts — `*gin.Context` wraps `http.ResponseWriter` and `*http.Request` rather than hiding them, so you can drop down to the standard library at any point (`c.Writer`, `c.Request`) when you need to.
 
+## Frequently Asked Questions
+
+**Is `gin.H` a special Gin type I need to learn, or something simpler?**
+It's nothing more than `map[string]any` with a shorter name — Gin defines it purely so you don't have to type out the full map type every time you build an ad-hoc JSON body. Anywhere you see `gin.H{"error": "..."}` in this chapter, feel free to mentally substitute a plain map; the behavior is identical.
+
+**Why does `ShouldBindJSON` return an error instead of just failing the request itself?**
+Gin also ships `BindJSON`, which does abort the request automatically on failure — `ShouldBindJSON` is the more explicit sibling, handing the error back so you decide exactly what status code and body to send. This chapter sticks with `ShouldBindJSON` everywhere so every handler follows the same "check the error, respond consistently" shape, which is also why the `abortWithError` helper later in the chapter exists.
+
+**When should I reach for `gin.New()` instead of the `gin.Default()` used in every example here?**
+Stick with `gin.Default()` until you have a concrete reason not to — its bundled `Logger()` and `Recovery()` middleware are exactly what most services want on day one. Reach for `gin.New()` only once you're replacing that default logging or recovery behavior with something else, like structured logging or OpenTelemetry tracing middleware, since attaching your own stack on top of Gin's defaults would just mean running two loggers at once.
+
+**My validation tag like `binding:"required,min=1,max=280"` doesn't seem to fire — what's the usual cause?**
+The most common culprit is a struct field that isn't exported (lowercase) or missing the `json` tag Gin needs to populate it in the first place — `ShouldBindJSON` can't validate a field it never filled in. Double-check the request's `Content-Type` header too; Gin's JSON binding only kicks in when the client actually sends `application/json`.
+
+**How is testing a Gin handler different from testing the plain `net/http` handlers from the previous chapter?**
+It isn't, really, and that's the point — `router.ServeHTTP(rec, req)` drives an `httptest.NewRecorder()` through Gin's routing and middleware exactly the way `net/http`'s own `ServeHTTP` would, so the pattern you learned in the standard-library chapter carries over unchanged. The one Gin-specific addition is `gin.SetMode(gin.TestMode)`, which just keeps Gin's request logger quiet while your tests run.
+
 Next, we'll build the same API again with Fiber, a framework that takes a different — and even faster — path by building on `fasthttp` instead of `net/http`.

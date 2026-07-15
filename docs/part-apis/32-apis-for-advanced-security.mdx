@@ -148,3 +148,20 @@ func revokeToken(
 Setting the denylist entry's TTL to match the token's remaining lifetime keeps the denylist small — there's no reason to remember a revoked token past the point it would have expired anyway.
 
 <Axiom>Advanced API security is rarely about a cleverer algorithm — it's about making the boring parts (rotation, expiry, revocation, and where the secret actually lives) impossible to skip.</Axiom>
+
+## Frequently Asked Questions
+
+**Why embed a `kid` in the JWT header instead of just rotating the signing key outright?**
+Because a hard cutover invalidates every token already in circulation the instant you rotate, which is exactly the quiet failure mode the chapter opens with. Keeping both `"2026-07"` and `"2026-04"` valid in the `signingKeys` map lets tokens issued right before rotation keep verifying until they naturally expire, so you retire the old key only once nothing valid still references it — rotation becomes a window, not an instant break.
+
+**If HMAC (`HS256`) and RSA (`RS256`) both sign tokens, why does the chapter push toward RSA for anything verified outside your own service?**
+Because of how rotation and distribution behave, not the cryptographic strength — a public key can be published freely for others to verify against, but a shared HMAC secret has to reach every verifying party before rotation completes, and there's no safe way to publish it to third parties at all. That asymmetry is why `RS256`/`ES256` are recommended for tokens anyone outside your own service needs to check.
+
+**Does mTLS replace the need for bearer tokens or API keys between services?**
+For service-to-service authentication, yes — that's the point of `tls.RequireAndVerifyClientCert`: the TLS handshake itself fails before your handler code ever runs if the client doesn't present a certificate signed by a trusted CA, which is a stronger guarantee than checking a header after the fact. You still read `r.TLS.PeerCertificates[0].Subject.CommonName` to know which service called you, but there's no separate token to issue, store, or leak in logs.
+
+**Why does `signRequest` include a timestamp in the HMAC payload instead of just signing the body?**
+Because a signature over the body alone doesn't stop someone from capturing a valid signed request and resending it verbatim later — a replay attack. Including the timestamp lets the receiver reject anything outside a short acceptable window, say five minutes, which closes off exactly that gap without changing what's actually being signed.
+
+**If I've already rotated my signing key, why do I also need a revocation denylist?**
+Because rotation and revocation solve different problems — rotating stops new tokens from being forged with a compromised key, but it does nothing about a token that was already issued and is still inside its expiry window. For cases that need to be killed immediately, like an offboarded employee or a reported stolen session, `isRevoked` checked against a denylist is what actually invalidates a specific token before it would otherwise expire on its own.

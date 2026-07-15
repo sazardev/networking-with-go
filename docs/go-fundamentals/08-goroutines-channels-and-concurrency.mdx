@@ -5,6 +5,17 @@ title: "Goroutines, Channels, and Concurrency"
 
 # Goroutines, Channels, and Concurrency
 
+Everything in this part of the book so far has been building toward this
+one chapter, whether or not it said so out loud. Go wasn't designed by
+people trying to build a slightly nicer C. It was designed by people who
+had spent years at Google fighting one specific, recurring problem: how do
+you write software that juggles thousands of things happening at once —
+connections, requests, background jobs — without the code turning into an
+unreadable tangle of manual thread bookkeeping? This chapter is the answer
+they built, and it's the single biggest reason this book pairs networking
+with Go in the first place. Every server you write from Part 2 onward
+will lean on exactly what you're about to learn here.
+
 <Axiom>Concurrency is about dealing with lots of things at once; parallelism is about doing lots of things at once — Go gives you the first as a language feature and lets the runtime decide, moment to moment, how much of the second you actually get.</Axiom>
 
 That distinction, popularized by Rob Pike, is the single most important
@@ -47,7 +58,10 @@ freed thread. This is precisely why goroutines are cheap: a goroutine
 starts with a stack of only about 2 KB, which the runtime grows and shrinks
 on demand, compared to the typically megabyte-sized, fixed stack an OS
 thread commits up front. Launching 100,000 goroutines is routine; launching
-100,000 OS threads would exhaust most machines.
+100,000 OS threads would exhaust most machines. That gap — kilobytes versus
+megabytes, thousands versus a handful — is the entire reason a Go server
+can shrug off tens of thousands of simultaneous connections that would
+bring a naively-threaded server to its knees.
 
 ```go
 package main
@@ -256,9 +270,11 @@ racing a real channel against a timer channel — is exactly this `select`.
 
 ## The sync Package
 
-Channels are Go's preferred way to coordinate goroutines, but the `sync`
-package covers cases where sharing memory directly, guarded by a lock, is
-simpler or more efficient.
+Channels are Go's preferred way to coordinate goroutines — you'll hear the
+phrase "share memory by communicating" a lot in Go circles, and it's
+almost a cultural motto at this point — but the `sync` package covers
+cases where sharing memory directly, guarded by a lock, is simpler or
+more efficient.
 
 **`sync.WaitGroup`** waits for a collection of goroutines to finish. Call
 `Add(n)` to register `n` goroutines before starting them, have each
@@ -372,7 +388,10 @@ either writes its update back, and one increment is silently lost. Running
 this with plain `go run main.go` will often print something below 1000,
 and the exact number changes between runs — a hallmark of a race, since
 correct concurrent code should behave identically every time regardless of
-scheduling.
+scheduling. This is precisely the kind of bug that can hide in production
+code for months, passing every test on a quiet machine, and then surface
+the one day traffic spikes and the scheduler happens to interleave two
+goroutines unluckily.
 
 Compiling and running it with the race detector — `go run -race main.go`
 — makes the bug undeniable instead of merely suspicious. The detector
@@ -380,11 +399,10 @@ instruments every memory access at compile time and, at runtime, reports a
 `DATA RACE` block naming the exact memory address, the goroutine and line
 number of the conflicting write, and the goroutine and line number of the
 conflicting read, whether or not the race happened to corrupt the final
-answer on that particular run. This matters: a race can exist and stay
-invisible in ordinary runs for years, then surface in production the day
-the scheduler happens to interleave two goroutines unluckily. `-race`
-finds it deterministically, every time, by watching the accesses rather
-than the output.
+answer on that particular run. `-race` finds it deterministically, every
+time, by watching the accesses rather than the output — which is exactly
+why serious Go teams run their entire test suite with `-race` enabled in
+CI, catching this class of bug long before it ever reaches a real user.
 
 The fix guards the shared variable with a mutex, turning the three-step
 read-modify-write into one atomic-from-the-outside operation:
@@ -494,6 +512,9 @@ lets each worker's `range jobs` loop end naturally once the channel drains.
 The separate goroutine that waits on `wg` before closing `results` is the
 key detail: `results` must not close until every worker has stopped
 sending to it, or a worker would panic trying to send on a closed channel.
+You will write something extremely close to this exact pattern once
+Part 2 asks you to handle many simultaneous connections with a bounded
+pool of goroutines instead of an unbounded one per connection.
 
 ### Fan-In
 
@@ -585,29 +606,39 @@ case where the other side never shows up.
    the kind of race that benefits from being run many times, and from
    `-race`.
 
-## Key Takeaways
+## Frequently Asked Questions
 
-- Concurrency is a way of structuring independently executing, communicating
-  pieces of a program; parallelism is whether they run at the same physical
-  instant — `GOMAXPROCS` governs the latter without changing the former.
-- Goroutines are cheap, runtime-managed units of concurrency with growable
-  KB-scale stacks; `main()` returning does not wait for them, so every
-  goroutine you care about needs an explicit synchronization point.
-- Unbuffered channels synchronize sender and receiver at the moment of
-  transfer; buffered channels decouple their timing up to a fixed capacity.
-- Only the sender should close a channel, and only once; sending on a
-  closed channel panics, receiving from one yields the zero value forever,
-  and both operations on a nil channel block forever instead of erroring.
-- `select` multiplexes across channels, `default` makes it non-blocking,
-  and racing a channel against `time.After` implements a timeout.
-- `sync.WaitGroup` waits for a batch of goroutines, `Mutex`/`RWMutex`
-  guard shared state, `sync.Once` runs initialization exactly once, and
-  `sync/atomic` handles simple lock-free counters.
-- Data races are silent and nondeterministic; `go run -race` finds them
-  deterministically by instrumenting memory accesses, not by chance.
-- Worker pools bound concurrency to a fixed number of consumers; fan-in
-  merges multiple channels into one; real code adds `context.Context`
-  (Part 2) for clean cancellation that these minimal examples omit.
-- A deadlock is every goroutine blocked with no possible progress; Go's
-  runtime detects and reports the total case, but a partial deadlock
-  between just two goroutines stalls silently while the rest keep running.
+**If goroutines are so cheap, why not just launch one per unit of work and skip worker pools entirely?**
+You can, and plenty of simple programs do exactly that, but "cheap" is not the same as "free" — a hundred thousand goroutines each holding open a database connection or a large buffer will still exhaust real memory and real file descriptors, even at 2 KB of stack apiece. The worker pool pattern exists for precisely that case: bounding concurrency on purpose once the *cost per unit of work* matters more than the cost of the goroutine itself.
+
+**Does an unbuffered channel's send actually wait for the receiver to finish processing the value, or just to receive it?**
+Just to receive it. The guarantee is that the value has been handed off to a waiting receiver at the moment the send returns — not that the receiver has finished doing anything with it. That's a subtle but important distinction if you're using a channel send as a proxy for "the other side is done," since it only proves the handoff happened, not the work that follows.
+
+**Why doesn't Go just detect every race condition automatically, the way it detects total deadlocks?**
+Because those are fundamentally different problems for the runtime to catch. A total deadlock is provable at runtime — the scheduler can see that literally every goroutine is asleep with nothing left to wake it. A data race depends on the particular interleaving that happened to occur during one execution, which is exactly why `-race` only reports races it actually observes rather than proving their absence, and why running suspicious code many times under `-race` matters so much.
+
+**I called `wg.Add(1)` and `defer wg.Done()` correctly, so why does my program still deadlock with "all goroutines are asleep"?**
+Check whether every one of those goroutines is also blocked on a channel with no matching send or receive anywhere in the program — a `WaitGroup` used correctly doesn't protect you from an unrelated channel operation elsewhere hanging forever. The deadlock detector doesn't care which mechanism caused the total stall; it just needs the whole process to be provably stuck.
+
+**Do I need to understand `context.Context` before this chapter makes sense?**
+No — this chapter deliberately builds worker pools and fan-in without it, using `time.After` inside `select` for the one timeout example that needs one, and calls out plainly that neither pattern here has real cancellation. `context.Context` is Part 2's job precisely because it needs goroutines and channels as a foundation first; you're meeting the raw mechanism before meeting the tool that makes it production-ready.
+
+### Where This Goes From Here
+
+Stop for a second and look back at what this one chapter actually handed
+you: a way to launch thousands of lightweight, independent units of work;
+typed pipes to move data between them safely; a way to wait on several of
+them at once; a toolbox for the cases where locking beats messaging; and
+the vocabulary to name and catch the two ways this can go wrong — races
+and deadlocks — before they reach production instead of after.
+
+That closes out Go Fundamentals. Everything from here forward assumes you
+have all eight chapters of this part in your hands: variables that never
+lie about their type, functions that report failure honestly, structs and
+interfaces instead of classes, errors instead of exceptions, packages and
+modules for real projects, tests built into the toolchain, and now,
+goroutines and channels for doing many things at once. Part 2 picks up
+exactly where this chapter left off, and the very first thing it does is
+open a real network socket — at which point every one of these eight
+chapters stops being an exercise and starts being the thing you actually
+reach for, on every single page, for the rest of this book.

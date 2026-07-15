@@ -273,6 +273,23 @@ keeps the pool honest about which connections are actually still good.
 
 <Axiom>A connection pool is a promise to the database about how much of it you'll ask for at once -- break that promise and every client pays for it.</Axiom>
 
+## Frequently Asked Questions
+
+**Should I always reach for `pgxpool` instead of `database/sql`?**
+For a brand-new service, yes -- `pgxpool` is what the pgx maintainers themselves recommend, and it gives you a richer, Postgres-aware API with typically better performance than going through the generic `database/sql` layer. The exception is a codebase that already leans on `database/sql`, for example because it shares repository code across multiple drivers or depends on a library expecting `*sql.DB` -- in that case, register pgx through `pgx/v5/stdlib` instead and keep the standard interface.
+
+**Why does `defer tx.Rollback(ctx)` sit right after `BeginTx`, before anything could even fail?**
+Because it's always safe to call, even when nothing went wrong. Once `tx.Commit(ctx)` succeeds, the transaction is closed on both the client and server, so the deferred `Rollback` finds nothing left to undo and just returns a harmless `pgx.ErrTxClosed` that idiomatic code discards. Writing it unconditionally right after `BeginTx` means you never have to thread a `committed bool` through every return path just to decide whether cleanup is needed.
+
+**My queries work fine locally but Postgres starts rejecting connections in production -- what's going on?**
+This is almost always pool sizing arithmetic, not a code bug. `max_connections` on the Postgres server is a ceiling shared across every client hitting that instance, not a per-replica allowance -- so ten replicas each configured with `MaxConns = 50` can offer the database 500 simultaneous connections against a server that only accepts 100. Size each pool as a fraction of `max_connections` divided by your expected replica count, with headroom left for migrations and admin tools.
+
+**Why bother with a migration tool like golang-migrate when I could just run `CREATE TABLE` by hand once?**
+Hand-running schema changes works until you have more than one environment, at which point it's exactly how schemas quietly drift out of sync with the code that expects them. A migration tool tracks every change as an ordered, version-controlled, reversible SQL file and records which ones already ran, so a laptop, a staging server, and production all end up with the identical schema history applied in the identical order.
+
+**Is checking `rows.Err()` after a `for rows.Next()` loop really necessary if I'm already checking `Scan`'s error?**
+Yes -- they catch different failures. `rows.Next()` returning `false` is ambiguous by itself: it means either "there are no more rows" or "an error interrupted iteration partway through," and only `rows.Err()` after the loop tells you which one actually happened. Skipping it means a truncated result set from a dropped connection can look identical to a query that simply finished normally.
+
 ### Key Takeaways
 
 - `database/sql` is Go's driver-agnostic interface; `pgx/v5` is the modern

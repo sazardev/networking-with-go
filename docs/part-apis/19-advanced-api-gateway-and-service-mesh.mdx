@@ -112,3 +112,17 @@ This is a reasonable starting point for a small system. Once you have dozens of 
 Most systems that operate at meaningful scale end up with both: a gateway (or several, per API surface) at the edge, and a mesh handling internal service-to-service traffic. As a Go developer, the practical takeaway is that neither one requires you to embed a vendor SDK into your business logic. Gateways are usually configured declaratively (routes, plugins) outside your service; meshes are usually transparent at the network layer. Your Go code's job is to expose a clean HTTP or gRPC interface, respect context cancellation and deadlines passed down to it, and emit the metrics and trace headers that let the surrounding infrastructure do its job well.
 
 <Warning title="Don't duplicate mesh policy in application code">If your platform team already enforces retries and mTLS via a mesh, don't also hardcode a competing retry loop with different timeouts in your service — the two policies can interact badly (retries stacking on retries) and turn a minor blip into a self-inflicted overload. Ask what the mesh already guarantees before adding your own resilience layer on top.</Warning>
+
+## Frequently Asked Questions
+
+**Isn't a service mesh just a gateway that lives deeper inside the system?**
+It's tempting to think of them as the same idea at different scales, but they answer different questions about traffic direction. A gateway handles north-south traffic, the requests arriving from outside your system, while a mesh handles east-west traffic between your own services, and a call from one internal service to another never passes through the edge gateway at all.
+
+**Why reach for `sony/gobreaker` instead of writing my own retry-and-give-up loop?**
+A hand-rolled circuit breaker is easy to get subtly wrong: forgetting the half-open probing state, or never resetting after recovery, so it just stays open forever. `gobreaker` already implements the closed, open, and half-open states correctly, tripping after consecutive failures and probing with a limited number of requests before fully reopening, which is exactly the behavior that protects a struggling downstream service without permanently locking it out.
+
+**My mesh sidecar retries failed calls, and my Go service also retries the same call — is that a problem?**
+Yes, and it is one of the most common self-inflicted outages in a meshed system. If the sidecar retries three times and your application code retries three more times on top of that, a single slow downstream call can multiply into nine attempts, turning a minor blip into a pile-up. Check what your mesh already guarantees before adding a competing resilience layer in application code.
+
+**Where should authentication live, at the gateway or inside each service?**
+The gateway is the natural place for coarse-grained checks like "does this caller have a valid token at all," since every external request already passes through it. Finer-grained authorization, such as "can this specific user modify this specific order," usually still belongs in the service itself, because the gateway does not know your domain's business rules.

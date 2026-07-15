@@ -210,6 +210,23 @@ You don't need to build mesh routing from scratch to use it in production—two 
 
 Both are worth reading as source code once the fundamentals above feel solid—they solve the same distance-vector-style problems this chapter covers, at a scale and robustness level worth aspiring to.
 
+## Frequently Asked Questions
+
+**Why does `RoutingTable.Update` adopt a route "from the neighbor we're already routing through" even when the new cost is worse?**
+This is the part that trips people up: it looks like it should only accept better routes, but distance-vector protocols also need bad news to propagate, not just good news. If a link degrades and your current next hop reports a higher cost, you have to update to that higher cost too—otherwise your table keeps believing a route that no longer exists is still the cheap one, which is exactly how the classic "count-to-infinity" problem starts.
+
+**Why UDP instead of TCP for the advertisement loop, given that TCP guarantees delivery?**
+Because that guarantee is wasted effort here. A routing advertisement describes a snapshot of "my costs right now," and it gets superseded by the next advertisement a few seconds later regardless—paying for TCP's retransmission and ordering machinery to reliably deliver a message that's about to be stale anyway buys nothing. UDP's lossy-but-cheap nature actually matches the self-correcting design of the protocol: a missed packet just gets corrected next interval.
+
+**Is this chapter's distance-vector sketch safe to run in production as-is?**
+No, and the Warning callout says so directly: it omits split-horizon and hop-limit handling, which real protocols like RIP need to avoid routing loops when a route disappears. This implementation is deliberately a learning vehicle for internalizing how distance-vector convergence behaves, not a deployable mesh router—production code needs the loop-prevention machinery layered on top.
+
+**Why does this chapter pick distance-vector over link-state for the hands-on example?**
+Mostly because it's simpler to build and reason about at the scale of a learning exercise—each node only needs to know "cost to destination via this neighbor," not the full network topology. Link-state protocols converge faster and are what real internet-scale meshes often prefer, but they require flooding the whole topology to every node and running Dijkstra locally, which is more machinery than a first mesh-routing implementation needs.
+
+**How does this relate to Tailscale or Yggdrasil—are they just bigger versions of this code?**
+Conceptually, yes, in that they solve the same core problem of discovering neighbors and computing routes over a changing topology. But they add entire layers this chapter doesn't touch: Tailscale layers a mesh on top of WireGuard with NAT traversal and peer discovery, and Yggdrasil uses a name-independent, spanning-tree-based scheme built to scale to internet-sized networks without central coordination. Reading their source once the distance-vector fundamentals feel solid is the natural next step this chapter points toward.
+
 ## Key Takeaways
 
 - Mesh networks trade a central point of failure for redundant paths and continuously recomputed routes.

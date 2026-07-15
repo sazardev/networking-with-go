@@ -173,4 +173,23 @@ Documentation that drifts from the actual behavior of the API is worse than no d
 
 <Axiom>Documentation that isn't generated from the same source as your handlers will eventually lie — treat drift between the two as a bug, not a documentation nitpick.</Axiom>
 
+---
+
+## Frequently Asked Questions
+
+**I ran `swag init` but `/swagger/index.html` still shows the old response shape — what did I miss?**
+The generated `docs/` package only reflects the state of your `@`-prefixed annotations as of the last time `swag init` ran, so any handler comment you've edited since then hasn't been picked up yet. Rerun `swag init` after every annotation change, and treat forgetting to do so as exactly the kind of spec-drift the chapter warns about.
+
+**Should I write the OpenAPI YAML by hand or use `swaggo/swag` to generate it from comments?**
+It depends on which team is the source of truth. Spec-first keeps the contract stable and lets frontend and backend build in parallel from an agreed shape, while code-first with `swaggo/swag` keeps the documentation physically next to the handler it describes, which is usually the more practical default for a smaller team.
+
+**Does Swagger UI's "Try it out" button send a fake request, or does it actually hit my server?**
+It's a real request — clicking "Try it out" and executing sends an honest `GET /tasks/3` (or whatever the entry describes) to your running server and shows the actual response body, not a canned example. That's what makes it useful for manual QA and for a new engineer exploring the API's real behavior.
+
+**Once I have an OpenAPI document, is validating requests against it optional, or does it happen automatically?**
+It's entirely opt-in — the spec is just documentation until you wire up something like `github.com/getkin/kin-openapi` as middleware to actually check incoming requests against it. Without that middleware, a client can send an extra field or the wrong type and your handler will still see it; the middleware shown in this chapter is what turns the spec into an enforced `400`-on-mismatch contract.
+
+**If I add a `/v2/tasks` endpoint, do I edit the existing OpenAPI document in place?**
+No — publish a separate `v2` OpenAPI document rather than mutating the `v1` one, the same way the API itself should expose `/v2/tasks` as a new route rather than silently changing `/tasks`'s behavior. Versioning the spec alongside the API keeps clients still on `v1` from being blindsided by a document that no longer matches what they're calling.
+
 With the API surface now discoverable and documented, the next chapter turns to proving it actually behaves as documented: testing and mocking APIs in Go.

@@ -150,4 +150,21 @@ The `context.Context` you pass in is not decoration -- gRPC uses it to propagate
 
 gRPC earns its complexity when you control both ends of a call, typically internal microservices: strongly typed contracts catch mismatches at compile time instead of in production logs, HTTP/2 multiplexing lets many calls share one connection without head-of-line blocking, and streaming is a first-class concept instead of something you bolt on with Server-Sent Events. It loses its advantage the moment a browser or an untrusted third party is the client -- for that audience, plain JSON over HTTP (covered in the API Fundamentals section) remains the more approachable, more cacheable, more universally supported choice.
 
+## Frequently Asked Questions
+
+**Can I just change a field's name in my `.proto` file without breaking anything?**
+Yes, and this is one of the most freeing things about protobuf once it clicks. The wire format only cares about the field tag -- that trailing `= 1` in `string name = 1;` -- so renaming `name` to `full_name` in the schema changes nothing for a service already running in production. What you must never touch casually is the number itself; that is the actual contract, not the label a human reads.
+
+**Do I need to run a gRPC server on a raw port and manage that myself?**
+You still call `net.Listen("tcp", ":50051")` exactly like you did in the TCP chapter, so nothing about sockets changes. What gRPC adds on top is the HTTP/2 framing, the generated `GreeterServer` interface, and `grpcServer.Serve(lis)` handling the accept loop for you -- you are not writing a byte-parsing loop by hand the way you might have for a raw TCP protocol.
+
+**Why did my client hang or fail with a deadline error I never set?**
+Check whether you passed a bare `context.Background()` with no timeout attached -- an RPC with no deadline can wait forever if the server never responds, which looks like a hang rather than an error. The fix is the same pattern shown in this chapter's client: wrap the call in `context.WithTimeout`, exactly as you already do for `net/http` requests, so gRPC can cancel the in-flight call on both ends when time runs out.
+
+**Is `insecure.NewCredentials()` something I can leave in when I deploy?**
+No -- that call is flagged in this chapter specifically because it is easy to copy into a real deployment by accident. It disables transport encryption entirely, so anything you send, including credentials or business data, travels in the clear. Swap it for `credentials.NewTLS` before the service ever talks to anything outside your laptop, and consider mutual TLS if both sides need to authenticate each other.
+
+**Which of the four RPC shapes should I reach for first?**
+Start with unary -- it is the RPC equivalent of a normal function call and covers the vast majority of request/response use cases, including the `SayHello` example built in this chapter. Reach for server streaming when a single request produces results incrementally, client streaming for chunked uploads that end in one acknowledgment, and bidirectional streaming only when both sides genuinely need to push independently, like chat or live telemetry -- it is the most powerful shape but also the one with the most moving parts to reason about.
+
 <Axiom>A schema you can compile is a contract you cannot silently break.</Axiom>

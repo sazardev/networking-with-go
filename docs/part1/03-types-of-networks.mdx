@@ -81,6 +81,23 @@ One more wrinkle is worth carrying with you before you close this chapter: real 
 
 The best way to make any of this stick is to start noticing it. The next time you connect a pair of headphones, glance at the Wi-Fi icon on your laptop, or watch a video buffer for a moment during an international call, ask yourself which of these four circles you are actually standing inside — and remember that every one of them, from the tightest to the widest, is running on the same three ingredients you met in the first chapter: nodes, links, and an agreed-upon set of rules. Once you begin writing real networked code, starting in the Go Fundamentals part of this book, you will find yourself building software that has to behave differently depending on exactly this distinction — a chat server built for a LAN can make assumptions about latency that the same server, deployed across a WAN, simply cannot afford to make.
 
+## Frequently Asked Questions
+
+**Are PAN, LAN, MAN, and WAN just arbitrary labels for "small," "medium," and "large," or do they mean something more precise?**
+They're closer to engineering decisions than casual size labels — each boundary marks a point where the priorities that matter most (battery life, trust, ownership, latency) genuinely change, not just the raw distance involved. A PAN gives up range and speed specifically to sip power for an earbud battery the size of a lentil; a WAN gives up low latency specifically because no amount of money buys back the time light needs to physically cross an ocean.
+
+**Why do PAN technologies like Bluetooth exist at all instead of everything just using Wi-Fi at short range?**
+Because Wi-Fi is built to reach across a house, and reaching across a house costs far more power than a coin-sized earbud battery can spare. Bluetooth and Bluetooth Low Energy are deliberately engineered to trade away that range in exchange for sipping power instead of gulping it, which is a completely different design goal than what Wi-Fi is optimized for.
+
+**Is my home Wi-Fi network "the internet"?**
+No — this chapter calls that out directly as a common misconception. Your home Wi-Fi is a LAN, and everything behind your router (your laptop, your smart TV, your printer) lives on that LAN; the public internet only begins on the other side of your router, which merely introduces your LAN to it.
+
+**What's actually going on when a corporate VPN makes a remote office "feel" like it's on the same LAN as headquarters?**
+The software running on those machines has no idea it's actually crossing a WAN link at all — the VPN is deliberately making one kind of network behave like another for convenience. This chapter flags that blurring on purpose: the tidy PAN-LAN-MAN-WAN boundaries in the table are a useful mental model, but real infrastructure regularly disguises one category as another when it's useful to do so.
+
+**Why does a MAN get its own category instead of just being called "a really big LAN" or "a small WAN"?**
+Because it sits in a genuinely distinct sweet spot: large enough that a single building's LAN can't cover it, but small enough — usually one to a hundred kilometers — that a university or private company can still justify laying and owning its own dedicated fiber, unlike a WAN's continent-spanning scale. That in-between quality is exactly why it's the category most people benefit from daily without ever consciously naming it.
+
 ### Fun Facts and Notes
 
 - The first LAN parties were gamers in the 1990s physically lugging heavy desktop towers and tangles of cable to a friend's house so their machines could be wired together directly for a weekend of multiplayer.

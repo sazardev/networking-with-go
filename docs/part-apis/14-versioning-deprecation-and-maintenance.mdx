@@ -138,4 +138,21 @@ func sunset(next http.Handler) http.Handler {
 - **Feature-flag risky changes** where possible, so a change can roll out to a subset of traffic and roll back instantly if something's wrong (covered in more depth in a later chapter on feature flags).
 - **Never reuse a version number** — once `/v2` has shipped and been used, don't redefine what `/v2` means later; cut a `/v3` instead, even if `/v2` had a short lifetime.
 
+## Frequently Asked Questions
+
+**Do I need to bump the version for every single change I make to an API?**
+No, and treating every change as version-worthy is how teams end up with a dozen barely-different versions nobody wants to maintain. Stick to the rule of thumb from the top of this chapter: additive, optional changes ship in place, and only changes that would force an existing client to update its code deserve a new version.
+
+**Why does path-based versioning win out over header-based versioning here, when plenty of API design guides prefer headers?**
+Both work, but path-based versioning is chosen as the pragmatic default because it's visible where it matters most: in server logs, in a browser address bar, in a quick `curl` command during an incident at 2 a.m. Header-based versioning is philosophically tidier — the URL for a resource never changes — but that tidiness costs you the ability to eyeball which version a request hit without inspecting headers, which matters more in practice than it sounds.
+
+**What actually happens to clients still calling `/v1` after the sunset date — does it just silently keep working?**
+No — that's exactly the failure mode this chapter's deprecation timeline is designed to prevent. Once the announced sunset date passes, the old version should return a clear, terminal `410 Gone` rather than quietly changing behavior or vanishing without explanation, so a broken integration fails loudly and obviously instead of mysteriously.
+
+**Is it ever okay to bring back a version number once it's been retired, say reusing `/v2` for something new after it's sunset?**
+No — this is one of the few hard rules in the chapter. Once `/v2` has shipped and real clients have used it, its meaning is permanently spoken for; a later, incompatible change gets `/v3` instead, even if `/v2` only lived for a few months. Reusing a number breaks the one guarantee versioning exists to provide: that a given version number always means the same contract.
+
+**How do the `Deprecation` and `Sunset` headers help if most client code doesn't even parse them?**
+They're not only for automated tooling — though a well-behaved client or monitoring dashboard absolutely can key off them, which is real value on its own. Just as importantly, they create a paper trail: every single response from the deprecated version carries a machine-readable timestamp of when it dies, so there's never an argument later about whether clients were warned or for how long.
+
 Versioning and deprecation are ultimately about trust: an API that changes without warning teaches its integrators to distrust every future release. Predictable, well-signaled change is what lets an API keep evolving for years without accumulating clients too afraid to upgrade. Next, we'll look at prebuilt solutions and boilerplates that can jump-start a new Go API project from day one.

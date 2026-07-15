@@ -99,6 +99,22 @@ This is intentionally minimal, but it captures the shape every real report is bu
 
 ---
 
+## Frequently Asked Questions
+
+**If I have good intentions, is it still illegal to test a system without permission?**
+Yes, and intent barely matters legally — unauthorized access statutes in essentially every jurisdiction care about whether you had permission, not whether you meant well or planned to report what you found responsibly. The Warning above isn't a formality; a scan or exploitation attempt run without a signed rules-of-engagement document is the same crime whether it's done by a curious hobbyist or a malicious attacker.
+
+**Why does black box testing exist if white box finds more vulnerabilities faster?**
+Because "find the most vulnerabilities" isn't always the actual goal — sometimes the client specifically wants to know what a real external attacker with zero inside knowledge could achieve, and handing over source code and architecture diagrams would answer a different question than the one they're asking. Grey box exists precisely because it splits the difference: realistic enough to mirror a plausible attacker, efficient enough not to waste the engagement's limited time on pure discovery.
+
+**What should I do if an exploitation attempt during a test causes an unexpected outage?**
+Stop immediately and follow the emergency stop conditions agreed upon before testing began — that's exactly why they're a mandatory line item in the rules of engagement, not an optional nicety. Continuing to poke at a system that's already misbehaving, hoping to finish the finding, is how a contained accident during an authorized test turns into a real incident with real consequences.
+
+**I found a critical vulnerability with a great exploit chain — isn't that the deliverable?**
+Not on its own. As the chapter stresses, reporting is the actual value most clients are paying for, and an exploit chain that never gets written up with reproducible steps, evidence, and a concrete fix delivers close to nothing to a client who now has to decide what to patch first. A "verified" finding with no clear writeup is barely more useful to the client than a "reported but unconfirmed" one — the report is what turns the work into action.
+
+---
+
 ## Why This Matters Even If You Never Do This Job
 
 Most readers of this book will build software, not run pentests professionally — but understanding this workflow reshapes how you read a pentest report handed to you about your own system: you'll know why scope matters, why "verified" is different from "reported but unconfirmed," and why a well-written finding always includes clear reproduction steps and a concrete fix, not just a scary severity label.

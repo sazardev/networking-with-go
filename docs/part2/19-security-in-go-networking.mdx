@@ -209,6 +209,25 @@ With `ClientAuth: tls.RequireAndVerifyClientCert`, the handshake fails outright 
 
 ---
 
+## Frequently Asked Questions
+
+**Is `InsecureSkipVerify: true` ever an acceptable shortcut for talking to a self-signed server?**
+Only inside an isolated test harness that never ships. Setting it disables certificate verification entirely, so the client loses any way to tell a real server from an attacker impersonating it — exactly the authentication guarantee TLS exists to provide. The chapter's own local-testing example reaches for a proper `x509.CertPool` loaded with the self-signed certificate instead, which is the pattern worth reusing in real code.
+
+**Why does an ephemeral ECDHE key exchange matter if the server already has a certificate?**
+Because a certificate only proves who signed a public key — it doesn't protect past traffic if that long-term private key is ever stolen. The handshake's key-exchange keypair is generated fresh and discarded right after use, which is what gives TLS forward secrecy: an attacker who steals tomorrow's private key still can't decrypt a session recorded today.
+
+**My TLS client fails with "certificate signed by unknown authority" even though `server.crt` looks fine — what's going on?**
+Check whether `pool.AppendCertsFromPEM` actually succeeded. It returns a `bool`, not an `error`, so a missing, malformed, or empty CA file silently leaves `pool` empty instead of raising anything at load time — the confusing failure only surfaces much later, during the handshake itself, disguised as an unrelated-looking authority error.
+
+**What's the difference between `RootCAs` and `ClientCAs`, and why do mTLS setups get them backwards?**
+`RootCAs` is what a client uses to verify the server's certificate; `ClientCAs` is what a server uses to verify the client's certificate during mutual TLS — mirror-image roles serving opposite directions of trust. They're easy to mix up specifically when client and server certificates happen to share an internal CA, since pointing both fields at the same pool still "works" until a genuinely different CA is introduced and the confusion becomes visible.
+
+**Connecting to a server by IP address instead of its hostname breaks certificate validation — why?**
+Because the address passed to `tls.Dial` does double duty: it's the address to connect to, and, unless `tls.Config.ServerName` is set explicitly, it's also the name checked against the server's certificate via SNI. A raw IP or an internal load-balancer hostname won't match a certificate issued for the public domain, so verification fails even though the certificate itself is perfectly valid — the fix is setting `ServerName` to the name the certificate was actually issued for.
+
+---
+
 ## Key Takeaways
 
 - TLS adds confidentiality, integrity, and authentication on top of the plain TCP connections built earlier in the book.

@@ -103,6 +103,23 @@ Jitter is like potholes on the road — sometimes your car bounces, sometimes it
 
 Four metrics, four different failure modes, and — as that Atlantic cable from 1858 makes plain — a century and a half of engineers chipping away at every one of them, mostly by fighting distance, noise, and the sheer stubbornness of physics one hard-won millisecond at a time. The race car analogy at the top of this chapter turns out to undersell things slightly: a race car only has to worry about speed and handling on a track someone else already built. A network engineer has to worry about the width of the road, the reaction time of every driver, the smoothness of every pothole, and the actual number of cars that survive the trip — often all at once, often across an ocean, and usually without anyone outside the field ever noticing the difference between the four.
 
+## Frequently Asked Questions
+
+**I just paid for a faster internet plan — why does my video call still lag?**
+Because a faster plan buys you more bandwidth, not lower latency, and a laggy call is almost always a latency and jitter problem, not a capacity one. This chapter's warning box on the subject exists precisely because the two get conflated constantly: a gigabit connection to a server on the other side of the planet still carries however many milliseconds that distance costs in propagation delay, and no amount of extra lanes on the highway shortens how far the cars actually have to drive.
+
+**Why can't engineers just build faster satellites to fix geostationary latency?**
+Because the delay isn't a hardware limitation at all — it's roughly 71,600 km of physical distance the signal has to cover twice, bound by the speed of light in a way no amount of engineering improves. That's exactly why the fix that actually worked wasn't a faster satellite but a completely different orbit: LEO constellations like Starlink cut latency by flying at 550 km instead of 35,786 km, trading the complexity of managing many satellites for a physical shortcut around a law of physics rather than an attempt to beat it.
+
+**If bandwidth is always greater than or equal to throughput, why does that gap matter in practice?**
+Because that gap is where most real-world "why is this slow" complaints actually live — packet loss forcing retransmissions, TCP's congestion control deliberately throttling itself the moment it senses trouble, or a long high-bandwidth path where the flow-control window caps throughput well under the link's true ceiling. A connection can advertise a generous bandwidth number and still deliver a fraction of it, and the bandwidth-delay product is exactly the tool for figuring out how much should be in flight to close that gap.
+
+**Does a jitter buffer fix jitter, or just hide it?**
+It hides it, deliberately and usefully — a jitter buffer doesn't make packets arrive more evenly spaced, it holds the ones that arrive early so playback can proceed at a steady pace despite the underlying unevenness. That's a real trade, not a free fix: you're accepting a small, fixed amount of added latency in exchange for smoothing out a much more disruptive, unpredictable one, which is exactly the kind of trade-off this whole chapter has been asking you to reason about explicitly rather than by instinct.
+
+**Looking back over all of Part 1, why does it keep circling back to the same handful of ideas — distance, trust, and the gap between what a system promises and what it actually delivers?**
+Because those aren't separate lessons scattered across twelve chapters by accident — they're the same handful of hard truths about moving information across distance, wearing a different costume in every chapter. Latency is distance refusing to be rushed, exactly like the Atlantic cable of 1858; a firewall is trust refusing to be assumed, exactly like Creeper and Reaper chasing each other across the ARPANET; and throughput falling short of bandwidth is the same gap between promise and delivery that runs through NAT's disguises, a protocol's fallback plan, and a moth taped into a logbook as proof that the culprit was finally found. Carry that pattern with you into the Go Fundamentals chapters ahead, because you're about to start writing the actual code that has to reckon with all of it directly.
+
 ## Fun Facts & Memes
 
 - Multi-terabit-per-second research links have been demonstrated in labs — enough bandwidth, in principle, to move an entire large streaming catalog in seconds, though no home connection is anywhere close to that yet.

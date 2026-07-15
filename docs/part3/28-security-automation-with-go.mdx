@@ -122,6 +122,23 @@ The pattern here generalizes well past certificates: `tls.Dialer.DialContext` re
 
 A standalone binary like the one above becomes genuinely useful once it runs on a schedule (a simple cron entry, a Kubernetes CronJob, or a scheduled cloud function) and its output feeds somewhere a human will actually see it: a chat webhook, a ticketing system, or directly into the SIEM pipeline as a new log source. The goal is always the same regardless of the specific glue: turn a recurring manual check into a background process that only interrupts someone when there's genuinely something to act on.
 
+## Frequently Asked Questions
+
+**Isn't automating containment actions risky - shouldn't a human always be in the loop?**
+For high-stakes or ambiguous decisions, yes, but the whole point of this chapter's approach is to reserve automation for scenarios where the false-positive risk is genuinely low and the action is reversible. Automatically blocking a known-bad IP for an hour is a very different bet than automatically deleting an account permanently; the warning earlier in the chapter about scoping containment carefully exists precisely because it's tempting to automate more aggressively than the false-positive rate actually justifies.
+
+**My concurrent certificate checker hangs instead of finishing quickly when one host is unreachable - what's wrong?**
+Check whether the per-request timeout is actually wired into the dial call, the way `checkHost` above passes `ctx` into `dialer.DialContext`. If a goroutine dials without respecting the shared context deadline, one unreachable host can block its own check far longer than intended, and depending on how results are collected, that can stall the whole batch instead of just reporting one failure and moving on.
+
+**Do I need to learn a workflow engine or a SIEM's built-in scripting language before writing tools like this?**
+Not to get real value out of it. The example in this chapter is a plain Go binary with no external dependencies, and that's deliberate - a static binary on a cron schedule or a Kubernetes CronJob already covers a large share of what security automation needs. Reaching for heavier orchestration tooling makes sense once you have many interdependent playbooks to coordinate, but it's not a prerequisite for starting.
+
+**Is it legitimate to point one of these automated scanners at production infrastructure without telling anyone?**
+No - even when the infrastructure is your own employer's, running scheduled scans or checks against production systems should go through the same authorization and change-management expectations as any other security tooling in this part of the book. A silent, unannounced automated scan can trigger the very alerting and incident-response pipelines it's meant to support, and it can also look indistinguishable from an actual attack to anyone else watching the logs.
+
+**How does this chapter connect to the alert triage ideas from the SIEM material earlier in this part?**
+Directly - the alert enrichment category described here is essentially automating the first thirty seconds of what a SIEM analyst would otherwise do by hand: looking up WHOIS data, checking threat intelligence feeds, and confirming asset ownership before deciding whether an alert matters. Emitting results as structured `log/slog` events, as the certificate example does, means that enrichment can feed straight back into the same SIEM pipeline as a new, pre-processed log source rather than living in a separate tool nobody checks.
+
 ## Summary
 
 - Automation's real value is filtering: routine checks run continuously and silently, freeing analyst attention for the events that actually need judgment.

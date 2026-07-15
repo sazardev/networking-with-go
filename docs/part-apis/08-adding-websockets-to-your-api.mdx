@@ -224,6 +224,25 @@ Sending a close frame lets the client distinguish a graceful shutdown from a net
 
 ---
 
+## Frequently Asked Questions
+
+**My server panics or corrupts frames once I add broadcasting — what went wrong?**
+Almost certainly two goroutines called `WriteMessage` on the same `*websocket.Conn` at once, which the `<Warning>` earlier in this chapter warns about explicitly: `gorilla/websocket` only supports one concurrent writer per connection. The hub pattern sidesteps this entirely by making `run()` the only goroutine that ever writes to any client connection, so every broadcast is naturally serialized instead of racing.
+
+**Why does the hub use channels (`register`, `unregister`, `broadcast`) instead of just locking the `clients` map directly from every goroutine?**
+It's the same one-writer discipline applied to the whole hub, not just individual writes — funneling every state change through `run()`'s `select` loop means you never have to reason about which goroutine is allowed to touch `h.clients` at any given moment. A mutex around the map would technically work for the map itself, but it wouldn't stop two goroutines from both calling `WriteMessage` on the same connection concurrently, which is the actual failure this design avoids.
+
+**Why validate the auth token before calling `upgrader.Upgrade` instead of after?**
+Because the upgrade is a one-way door — once `Upgrade` succeeds, the HTTP connection has already been repurposed to speak the WebSocket protocol, and you can no longer send back a normal `http.Error` with a 401 status. Checking `parseToken` first, while the request is still plain HTTP, is the only point where rejecting an unauthenticated client with a proper status code is even possible.
+
+**If browsers can't set custom headers on a WebSocket handshake, isn't putting the token in a query parameter insecure?**
+It's the accepted workaround given the constraint, but it does mean the token can end up in server access logs or browser history, so short-lived tokens and HTTPS (which upgrades to `wss://`) are what keep the practice reasonably safe. When the client isn't a browser and can set headers freely, an `Authorization` header on the upgrade request avoids that exposure entirely.
+
+**Why bother with ping/pong heartbeats if the TCP connection would eventually time out on its own anyway?**
+Because idle connections are often the ones silently killed first — proxies and load balancers between client and server frequently drop connections that go quiet for too long, well before any OS-level TCP timeout would ever fire. The 30-second ping in this chapter keeps the connection visibly active to every hop in between, and the read-deadline reset on each pong is what lets the server actually notice when a client has gone away instead of holding a dead connection open indefinitely.
+
+---
+
 ## When WebSockets Are the Right Tool
 
 WebSockets earn their complexity when you need low-latency, bidirectional, high-frequency updates — live collaboration, gaming, trading dashboards. If the server only ever needs to push updates to the client, and the client never needs to send data back over the same channel, the next chapter's topic — Server-Sent Events — is a simpler protocol that solves that narrower problem with plain HTTP.

@@ -245,6 +245,25 @@ Note the distinct status codes: `401 Unauthorized` means "I don't know who you a
 
 ---
 
+## Frequently Asked Questions
+
+**If a token has a valid signature, why does the code still check a revocation list?**
+Because a signature only proves the payload wasn't tampered with — it says nothing about whether the token is still wanted, which is exactly what the closing axiom of the token section calls out. That's why `verifyToken` checks `revoked.isRevoked(parts[1])` even after the HMAC check passes: a user who logs out should stop being trusted immediately, not merely once their still-unexpired token finally times out on its own.
+
+**Why does the chapter bother hand-rolling an HMAC token instead of just reaching for a JWT library from the start?**
+So the mechanism is visible: a signed token really is just a payload plus a signature the server can re-derive and compare, with no database round trip needed. Once that's clear, the JWT deep dive shows how a real JWT is the same three-part, base64url, dot-separated shape — just with the payload formalized as JSON claims like `sub` and `exp`, and a header naming the signing algorithm.
+
+**Should I ever compare a submitted password or token with `==`?**
+No — `==` on secrets leaks timing information an attacker can exploit to guess a value byte by byte, since a mismatch on the first byte returns fractionally faster than a mismatch on the last. This chapter uses `crypto/subtle.ConstantTimeCompare` for the Basic Auth credentials and `hmac.Equal` for the token signature specifically to close off that side channel.
+
+**Why bcrypt instead of just hashing passwords with SHA-256?**
+Because SHA-256 is designed to be fast, and fast is exactly the property that makes brute-forcing a stolen password database cheap. `bcrypt.GenerateFromPassword` is deliberately slow and adaptive, embedding its own salt, and remains battle-tested with no known practical break — though the chapter's deep dive notes `argon2id` as OWASP's current pick for new systems, since it can also be tuned for memory cost.
+
+**What's the actual difference between a 401 and a 403 response, and why does it matter?**
+`401 Unauthorized` means the server doesn't know who is making the request — authentication failed or was never attempted. `403 Forbidden` means the server knows exactly who you are and has decided the answer is still no — authorization failed. Returning the wrong one blurs the authn/authz split the whole chapter is built around, which is why `requireRole` in this chapter deliberately returns different status codes for those two failure paths.
+
+---
+
 ## Key Takeaways
 
 - Authentication proves identity; authorization decides what that identity may do. Keep the checks separate.

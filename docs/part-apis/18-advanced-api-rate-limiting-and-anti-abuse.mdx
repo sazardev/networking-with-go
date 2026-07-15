@@ -158,6 +158,23 @@ Exposing `X-RateLimit-Limit` and `X-RateLimit-Remaining` (a de facto standard, t
 
 ## Putting It Together
 
+## Frequently Asked Questions
+
+**My in-memory rate limiter worked fine in testing — why did a client suddenly get through at three times the configured limit in production?**
+Almost certainly because production is running multiple replicas behind a load balancer, exactly the scenario this chapter opens with. With 3 instances each independently tracking a per-client limit of 5 requests/second in memory, a client can land roughly a third of its traffic on each one, and every instance sees itself as well within limit while the client actually gets up to 15 requests/second through. The fix is a shared counter like the Redis-backed one in this chapter, not a bigger in-memory map.
+
+**Why increment first and only set the expiry on `count == 1`, instead of always calling `EXPIRE` after every `INCR`?**
+Because calling `EXPIRE` unconditionally would keep resetting the key's time-to-live on every single request, meaning an active client's window would never actually close — the counter would just keep sliding forward forever instead of resetting every `window`. Setting the expiry only on the first increment is what turns this into a proper fixed-window counter with a real reset boundary.
+
+**Should I always fail open when Redis becomes unreachable, since that's what the chapter says most public APIs do?**
+No — the chapter is explicit that this is a judgment call tied to your own threat model, not a universal default. Failing open keeps the API available but temporarily removes your rate limiting protection at precisely the moment something's already wrong; failing closed protects you but turns a Redis blip into a full outage. The "most APIs fail open and alert loudly" guidance is a common starting point, not a rule to apply blindly regardless of what you're actually defending against.
+
+**If a client stays under my rate limit the entire time, can I assume it isn't abusing the API?**
+No, and this is exactly the gap the "Beyond Request Counting" section addresses. Credential stuffing paced deliberately slowly, or content scraping one request at a time over days, both comfortably stay under a numeric limit while still being clearly malicious — which is why behavioral signals like unusually regular timing, many usernames from one source, or sequential resource-ID walking exist as a separate layer from request counting.
+
+**What's the actual difference between a rate limiter and a circuit breaker like `gobreaker` — don't they both just reject requests?**
+They protect different things in different directions. A rate limiter protects your API from a client sending too much traffic; a circuit breaker protects your API — and its own callers — from a downstream dependency that's already struggling, by failing fast instead of piling up slow, doomed requests once the failure rate crosses a threshold. One guards against too much demand, the other guards against a dependency that can't currently meet any demand at all.
+
 A mature anti-abuse strategy layers several of these mechanisms rather than relying on any single one: a distributed, tiered rate limiter as the first line of defense, circuit breakers protecting downstream calls from cascading failures, and behavioral analysis catching patterns that stay under the numeric limit but are still clearly abusive. None of these replace the basic rate limiting and CORS from the earlier chapter — they extend it for APIs operating at a scale where simple per-IP counting is no longer enough.
 
 This closes out the core building-blocks section of Part APIs — from clean URLs through serialization, frameworks, real-time features, security, documentation, testing, versioning, deployment, and now abuse protection at scale. The chapters ahead go further into specialized territory: advanced gateways, alternative data protocols, background jobs, and the operational concerns of running Go APIs in increasingly complex, multi-tenant, and distributed environments.

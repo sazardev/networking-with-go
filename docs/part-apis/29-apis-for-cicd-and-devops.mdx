@@ -148,3 +148,20 @@ func rollbackHandler(w http.ResponseWriter, r *http.Request) {
 Recording every deploy's version alongside a health signal (did it pass its readiness checks, did error rates stay flat) is what makes `lastKnownGoodVersion` meaningful — a rollback endpoint that just replays "the previous version, whatever it was" can just as easily roll back into a version that was already broken.
 
 <Warning title="A rollback API needs the same auth and audit trail as a deploy API">It's tempting to leave rollback endpoints loosely protected because "it's just undoing something," but a rollback still changes what code is running in production. Require the same authentication, authorization, and audit logging (who triggered it, when, from what version to what version) that a forward deployment requires.</Warning>
+
+## Frequently Asked Questions
+
+**Why call GitHub's API through `go-github` instead of just hitting the REST endpoints with `net/http` directly?**
+You could, but you'd end up hand-rolling pagination, rate-limit handling, and JSON shapes that Google's client already gets right and keeps updated as GitHub's API evolves. `github.NewClient(oauth2.NewClient(ctx, ts))` gives you a typed, tested surface over the same HTTP calls, so `triggerDeployWorkflow` reads as one clear intent instead of a pile of request-building boilerplate.
+
+**Do I still need to verify the webhook signature if the request came over HTTPS?**
+Yes — TLS only proves the connection to GitHub's servers wasn't tampered with in transit, it says nothing about whether the payload actually originated from GitHub rather than anyone who discovered your webhook URL. That's exactly what `github.ValidatePayload` checks against the `X-Hub-Signature-256` header, and skipping it means anyone with your endpoint's address could forge a fake "deploy succeeded" event.
+
+**Isn't a random weighted coin flip like `rand.Intn(100) < cr.canaryWeight` a bad way to route production traffic?**
+It's a fine mechanism for *distributing* traffic, but weight alone tells you nothing about whether the canary is healthy — that's precisely the gap the `DeepDive` above calls out. A production-grade canary router pairs the weight with a live health signal from your observability instrumentation, so a bad canary gets pulled back to zero automatically instead of quietly serving errors to whatever percentage of users the schedule assigned it.
+
+**Why does `deploymentsHandler` bother normalizing state names like `"success"` versus `"succeeded"`?**
+Because every CI/CD platform invented its own vocabulary for the same handful of concepts, and if your internal API just passed those differences through, every consumer of that API would need to know the quirks of every underlying platform. Normalizing into one `DeploymentStatus` shape is what lets a dashboard, a Slack bot, and a CLI tool all consume the same aggregator without caring whether a given service happens to deploy through GitHub Actions or GitLab CI.
+
+**Why give rollbacks their own endpoint instead of just letting operators redeploy the previous version manually?**
+A dedicated `rollbackHandler` makes the operation auditable and repeatable — it records who triggered it and which version it moved from and to, the same way `rollbackHandler` logs with `logger.Warn`. Treating rollback as an explicit API operation, guarded by the same auth as a forward deploy, avoids the failure mode where a stressed operator manually redeploys "whatever seemed to work last time" with no record of what actually happened.

@@ -337,6 +337,23 @@ protocol instead of getting it for free from `net/http`.
 
 ---
 
+## Frequently Asked Questions
+
+**Why not just read from the socket until it hits EOF instead of building a header?**
+That only works if you close the connection right after each file, which throws away connection reuse and makes it impossible to send more than one file over the same socket. Sending an explicit size up front — the same principle behind HTTP's `Content-Length` — lets the receiver know exactly where the file ends, so the connection can stay open for the next transfer instead of relying on a close to signal "done."
+
+**My custom TCP file server slows to a crawl or crashes under a burst of connections — why?**
+The `for { conn, _ := ln.Accept(); go handleConn(conn) }` pattern shown in this chapter spawns one goroutine per connection with no ceiling, and each one holds a file descriptor and a stack. A burst of connections, accidental or malicious, can exhaust memory or file descriptors long before any single transfer misbehaves. The fix is to bound concurrency explicitly, for example with a buffered channel used as a semaphore (`sem <- struct{}{}` before handling, `<-sem` when done).
+
+**Why did wrapping my copy in a progress bar make the transfer noticeably slower?**
+Because it silently disables the zero-copy fast path. `io.Copy` normally detects that `*net.TCPConn` implements `ReaderFrom` and hands the work to the kernel's `sendfile(2)` syscall, moving bytes straight from the file's page cache to the socket buffer without ever touching user space. The moment you wrap the destination in `io.MultiWriter(dst, &progressWriter{...})` or a `crypto/sha256` hash, that destination is just a plain `io.Writer` again, so every byte has to pass through your process to be counted or hashed. It's a real tradeoff: raw speed for trusted transfers, or the copy cost when you need live progress or integrity checks.
+
+**Should I trust the file size and name a client sends in the header?**
+No — treat both as hostile input. `io.CopyN` bounds how many bytes the server reads to the declared size, but a client can still lie about that size or send a name containing `../` to attempt path traversal outside your intended upload directory. Production code needs an explicit maximum file size check and must sanitize the filename (as the HTTP handlers in this chapter do with `filepath.Base`) before ever touching the filesystem.
+
+**How is resuming an interrupted transfer in the custom protocol related to HTTP's `Range` header?**
+They're the same idea implemented at different layers. `http.ServeFile` gets resumable downloads for free because it already honors `Range: bytes=4000000-` requests and `Content-Length`. The custom TCP protocol in this chapter has no such built-in mechanism, so the "Try It Yourself" exercise walks through adding a manual `offset` field to the header and seeking both the client's file reader and the server's destination file to that position — essentially hand-rolling what `net/http` already gives you.
+
 ## Key Takeaways
 
 - File transfer is a framing problem: the receiver must always know exactly how many bytes belong to the file.

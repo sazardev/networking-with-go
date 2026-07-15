@@ -155,3 +155,17 @@ func detectContentType(r io.Reader) (string, io.Reader, error) {
 `http.DetectContentType` implements the same content-sniffing algorithm browsers use, examining the magic bytes at the start of the file rather than any metadata the client sent. Combining this with an allowlist of acceptable types (rejecting anything outside `image/jpeg`, `image/png`, and similar) closes off a whole class of upload-based attacks where a malicious file is disguised with an innocent-looking extension.
 
 <Axiom>An upload API is judged by what happens at gigabyte ten, not gigabyte one — design for the size you hope never to see, not the size in your test fixtures.</Axiom>
+
+## Frequently Asked Questions
+
+**I already pass a size to `ParseMultipartForm` — why also wrap the body in `http.MaxBytesReader`?**
+The argument to `ParseMultipartForm` only controls how much gets buffered in memory before spilling to temp files; it doesn't stop a client from sending an enormous request in the first place. `http.MaxBytesReader` enforces the actual hard cap by making any read past the limit fail outright, which is the line doing the real protective work in the upload handler.
+
+**Why does `http.ServeContent` need an `io.ReadSeeker` instead of a plain `io.Reader`?**
+Serving a `Range` request means jumping to a byte offset before reading, and a plain `io.Reader` only knows how to move forward. An `*os.File` satisfies `io.ReadSeeker` naturally, which is why local-disk serving gets range support for free; content coming from object storage typically isn't seekable as an HTTP response body, so you proxy the `Range` header through to the storage backend instead.
+
+**Isn't checking the `Content-Type` header or file extension enough to confirm an upload is really an image?**
+No — both are just claims the client makes and neither is trustworthy, since nothing stops a script named `photo.jpg` with an `image/jpeg` header from being uploaded. `http.DetectContentType` sniffs the actual magic bytes at the start of the file, the same technique browsers use, and should back any allowlist that matters for security.
+
+**When should I reach for `r.MultipartReader()` instead of the simpler `r.ParseMultipartForm`?**
+`ParseMultipartForm` buffers the whole form before your code sees any of it, which is fine for a single small file saved straight to disk. `MultipartReader` hands you parts one at a time as they arrive, which is what you want when you need to process data as it streams in, such as computing a SHA-256 checksum or validating CSV rows without ever holding the full upload in memory.

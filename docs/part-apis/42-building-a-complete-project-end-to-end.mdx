@@ -329,6 +329,25 @@ exactly the shape those deployment targets expect.
 
 ---
 
+## Frequently Asked Questions
+
+**Why does `main.go` construct `postgres.NewOrderRepository` and `webhook.NewPublisher` directly instead of going through some kind of container?**
+Because at five use cases and three adapters, a single readable function is the cheapest possible way to wire dependencies together, and adding a DI container here would be solving a problem this project doesn't have yet. The deep dive above is explicit about when that changes: reach for something like `google/wire` once wiring outgrows one screen, or once the same adapters need assembling multiple ways — a test binary, a worker binary, and the API binary all sharing the same `postgres.OrderRepository`, say.
+
+**In the ship-order trace, which of the six hops actually contains the business rule?**
+Exactly one: step 3, inside `order.Ship()` itself. Every other hop — the HTTP handler, the use case, the Postgres adapter, the webhook publisher — only reacts to whether that one call succeeded or returned `ErrOrderNotPaid`. That's the whole payoff this chapter is tracing: a request can pass through six layers of translation without the rule itself ever being duplicated or bypassable from any of them.
+
+**The `orders` table stores `unit_price` as a plain `BIGINT`, but the domain uses a `Money` value object — is that a mismatch bug?**
+No, it's intentional, and the chapter calls it out directly: the database schema is allowed to look like a database, storing cents as an integer, while only the Postgres adapter knows how to reassemble that integer and a currency column back into a `domain.Money` value. Keeping that translation confined to one adapter is what lets the schema evolve (an index, a new column) without ever touching `domain.Money` itself.
+
+**Why does the chapter warn against checking `os.Getenv("K_SERVICE")` inside `internal/adapter` or `internal/domain`?**
+Because that one line would quietly reintroduce the exact violation Chapter 6.39 spent its whole opening on: an inner layer importing knowledge about an outer one, just with a cloud platform's name standing in for a database driver this time. Platform detection and environment parsing belong entirely inside `cmd/api/main.go` and `internal/platform` — the moment a deployment target's name leaks into `internal/domain`, the dependency arrow has started pointing the wrong way again.
+
+**This chapter mentions auth, rate limiting, and real webhook retries are all missing — why ship something so incomplete?**
+Because the point of the four-chapter arc was never to hand over a production-ready service, it was to prove the seams work: a new use case, a new adapter, or a new middleware layer should each have an obvious place to plug in. The "What to Build Next" list below is really a test of that claim — Chapter 6.10's auth middleware wraps the router with no changes to the handlers, and Chapter 6.11's rate limiter slots in the same way, which is only possible because HTTP concerns stayed in the adapter and never leaked into the domain.
+
+---
+
 ## What to Build Next
 
 This project is a skeleton meant to be extended, not a finished toy. A few

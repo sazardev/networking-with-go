@@ -240,4 +240,21 @@ mux.Handle("/static/", cachedStatic(
 
 A year-long `max-age` only works safely if the filename changes whenever the content does — the common convention is to append a content hash to the filename at build time (`app.a3f9c1.css` instead of `app.css`), so a new deploy naturally produces a new URL instead of relying on clients to notice a changed file at the same old path.
 
+## Frequently Asked Questions
+
+**I used `text/template` for an HTML page and now `<b>` tags show up as literal text in the browser — what happened?**
+That's `text/template` doing exactly what it promises: pure string substitution with zero awareness of HTML, CSS, or JavaScript context. The moment output is headed to a browser, swap in `html/template` instead — its API is nearly identical, but it understands it's producing HTML and escapes untrusted values automatically, which is also what keeps `<script>` injected through a field like `Name` from ever executing.
+
+**Does `html/template`'s auto-escaping mean I can skip validating user input?**
+No, and this is exactly the trap the `<Warning>` earlier in the chapter calls out. Escaping only protects the moment that data is rendered into a page — it does nothing to stop bad data from being stored, logged, or reused elsewhere in a context the template never touches, so input validation still has to happen where the data comes in, not just where it's displayed.
+
+**Why does `mux.Handle("/static/", ...)` need `http.StripPrefix` — can't `http.FileServer` figure out the mapping on its own?**
+`http.FileServer(http.Dir("public"))` maps request paths directly onto files inside `public/`, with no idea that your route happens to be mounted under `/static/`. Without `StripPrefix`, a request for `/static/app.css` would make it look for a file literally named `static/app.css` inside `public/`, which doesn't exist — `StripPrefix` removes that leading segment before the file server ever sees the path.
+
+**Why bother with `embed.FS` if loose files in a `templates/` directory already work fine locally?**
+It works fine until deployment, which is exactly where it tends to break — a copy step gets missed, a working directory is wrong, or a container image doesn't include the directory you expected. `//go:embed` bakes those files into the compiled binary itself, so `go build` produces one artifact that's guaranteed to have its templates and static assets, with nothing extra to remember to ship alongside it.
+
+**Is the SPA fallback pattern (serving `index.html` for unknown paths) specific to `net/http`, or does it carry over to Gin and Fiber?**
+The underlying idea carries over directly — serve known static assets normally, and fall back to `index.html` for anything else so client-side routing survives a hard refresh — only the syntax for registering that catch-all route changes between frameworks. The one detail worth keeping regardless of framework is the `filepath.Clean` call before touching the filesystem, since an unclean path is a path-traversal risk no matter which router served the request.
+
 With HTML rendering and static assets covered, the next chapter adds a live channel back to the browser: WebSockets, for real-time, bidirectional communication.

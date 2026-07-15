@@ -678,3 +678,22 @@ reports the exact two goroutines racing on `counter`, with file and line
 numbers. Fix it by guarding the counter with a `sync.Mutex`
 (`mu.Lock()`/`counter++`/`mu.Unlock()`) or by switching to `sync/atomic`,
 then confirm `-race` goes quiet.
+
+---
+
+## Frequently Asked Questions
+
+**If goroutines are so cheap, why bother with a worker pool at all — why not just spawn one per connection everywhere?**
+Because "cheap" is not "free": a goroutine per connection has no ceiling, so a flood of clients (or one misbehaving load balancer) can spawn far more concurrent work than your CPU, memory, or downstream dependencies can actually handle. The bounded worker pool earlier in this chapter trades a small amount of extra code for a hard cap on concurrency, turning an unbounded pile of live goroutines into predictable backpressure on the accept loop instead.
+
+**My program's printed counter changes between runs even though I only start goroutines and wait for them — is `sync.WaitGroup` broken?**
+No, `WaitGroup` is working exactly as designed; the bug is almost always `counter++` itself, which is a read-modify-write that is not atomic. Two goroutines can both read the same value before either writes it back, silently dropping an increment — that is precisely what the race-condition exercise above is built to demonstrate, and `go run -race` will point at the exact racing lines.
+
+**Why does closing the `net.Listener` help shut down an `Accept()` loop, when cancelling a context doesn't interrupt it directly?**
+Because a cancelled `context.Context` only flips an internal flag — nothing forces a blocking call like `Accept()` or `Read()` to notice it. Closing the listener, by contrast, is a real OS-level action that makes the blocked `Accept()` return immediately with an error, which is why the shutdown example pairs `ctx.Done()` with an explicit `ln.Close()` in a separate goroutine rather than relying on the context alone.
+
+**What actually happens if I forget to close a channel that a worker is ranging over?**
+Nothing dramatic, which is exactly the danger: `for job := range jobs` simply blocks forever once the channel is empty but never closed, so that worker goroutine (and anything it's holding onto) is never reclaimed, even after your server has logically stopped doing work. There's no panic or crash to alert you — just a slow, silent leak, which is why the convention in Go is that whoever owns the sending side of a channel is responsible for closing it.
+
+**How does the `context.Context` used in the shutdown example connect to what the next chapter covers?**
+This chapter treats context just enough to make graceful shutdown possible — a value you can watch with `select` alongside `ctx.Done()`, threaded down into every handler. The next chapter is where cancellation, deadlines, and `context.WithTimeout`/`WithCancel` get a full treatment in their own right, including how to propagate them correctly through chains of function calls rather than just the one shutdown pattern shown here.

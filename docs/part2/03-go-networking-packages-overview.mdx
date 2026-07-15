@@ -332,3 +332,22 @@ func main() {
 - Go’s networking code is so readable, it’s used as a teaching tool in universities.
 - The `net` package is so robust, you can build a chat app, a proxy, or even your own protocol from scratch!
 - Go’s networking stack is cross-platform—write once, run anywhere.
+
+---
+
+## Frequently Asked Questions
+
+**Do I need to learn a framework like Gin before I can build real servers in Go?**
+No—this chapter's whole point is the opposite. `net/http` already gives you a production-ready HTTP/1.1 and HTTP/2 server and client, and third-party frameworks like `gin-gonic/gin` are thin layers on top of `http.Handler`, not replacements for it. Learning `net`, `net/http`, and friends first means frameworks read as "the same primitives with more sugar" rather than an entirely new mental model.
+
+**Why does a Go server handle thousands of connections with plain blocking calls like `conn.Read()`, when other languages need callbacks or an event loop to do the same?**
+Because the blocking is only blocking from the goroutine's point of view. When a goroutine calls `conn.Read()` or `http.Get()`, the Go runtime scheduler parks that goroutine and frees up the underlying OS thread to run other goroutines in the meantime. You get to write plain synchronous-looking code while the runtime gives you the throughput of an asynchronous event loop underneath.
+
+**My program that calls net.Dial hangs forever when the remote host is silently dropping packets—why doesn't Dial just time out on its own?**
+Because `net.Dial` has no timeout by default; it will wait as long as the OS lets it, which for a firewall silently dropping packets can be effectively forever. Use `net.DialTimeout` instead, or build a `net.Dialer{Timeout: ...}` and call its `DialContext` method so the connection attempt also respects a `context.Context` deadline.
+
+**Why did my bufio.Scanner just stop reading in the middle of a long line instead of erroring loudly?**
+It very likely hit the scanner's default 64KB line-size limit and returned `bufio.ErrTooLong`, quietly halting instead of continuing. If your protocol allows longer lines, call `scanner.Buffer` with a larger maximum, or switch to `bufio.NewReader(conn).ReadString('\n')`, which grows its buffer as needed instead of capping it.
+
+**Should I use json.Marshal or json.NewEncoder when writing a JSON response from an HTTP handler?**
+For the tiny `healthHandler` example in this chapter it barely matters, but `json.NewEncoder(w).Encode(v)` is the better habit: it streams directly to the `http.ResponseWriter` without ever building the whole payload as a `[]byte` in memory first. `json.Marshal` is simplest for small, one-off payloads, but once responses reach megabytes, streaming through an encoder is the difference between steady memory use and a memory spike per request.

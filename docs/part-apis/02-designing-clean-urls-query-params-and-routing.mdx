@@ -217,4 +217,21 @@ flowchart LR
 - **Stability**: once a path is public, avoid changing it; introduce a new version instead of breaking existing clients (we'll cover versioning strategies in depth in a later chapter).
 - **Limit nesting depth**: two or three levels is usually the practical ceiling before a URL becomes unwieldy — beyond that, promote a nested resource to its own top-level path with a filter, e.g. `/order-items?order_id=123` instead of `/users/42/orders/123/items/7/history`.
 
+## Frequently Asked Questions
+
+**I've seen APIs use `/getUser?id=42` instead of `/users/42` - why does this chapter treat that as a mistake rather than just a style preference?**
+Because the HTTP method already tells you the action, putting a verb in the path duplicates information the client already communicated and makes the URL lie about being a resource address rather than a function call. `GET /users/42` reads as "the resource at this address," while `/getUser?id=42` reads as "run this function" - and once you start doing that, `POST`, `PUT`, and `DELETE` all end up fighting the same `/getUser`-style path instead of getting their own clean, method-driven meaning.
+
+**Why does it matter whether something is a path segment or a query parameter, as long as the server can read both?**
+Because the two carry different guarantees to everything sitting between your client and your server, not just to your own code. Proxies and CDNs cache based on the URL, and a stable path like `/products/123` caches predictably, while filters and pagination stuffed into query parameters change per-request in ways caching layers expect and handle correctly - mixing the two up costs you both readability and caching behavior.
+
+**My nested resource path is now five levels deep, like `/users/42/orders/123/items/7/history` - is that fine as long as it still works?**
+It technically works, but this chapter calls out two or three levels as the practical ceiling before a URL becomes unwieldy to read, share, and debug. The fix isn't to keep nesting - it's to promote the deeply nested resource to its own top-level path with a filter, such as `/order-items?order_id=123`, which keeps the path shallow while still expressing the same relationship through the query string.
+
+**Why did this chapter reach for the standard library's `http.ServeMux` instead of jumping straight to a router like chi or gorilla/mux?**
+Because since Go 1.22, `ServeMux` natively understands HTTP methods and wildcard path segments, which covers the two things - `/products/{id}` and method-aware routing - that used to be the main reason to reach for a third-party router at all. A dedicated router still earns its place for larger APIs needing nested route groups or shared middleware chains, which is exactly why later chapters bring in Gin and Fiber once those needs show up.
+
+**Now that routing and clean URLs are sorted out, what determines what actually gets sent back on those routes?**
+That's precisely where the next chapter picks up: once a request has been routed to the right handler, that handler still needs to turn a Go struct into bytes a client can understand, and back again - which is the serialization problem covered next.
+
 By mastering clean URLs, query parameters, and routing, you'll design APIs that are a joy to use and maintain — and you now have a working `net/http` router to prove it. Next, we'll look at how to shape the data flowing through those routes with JSON and XML serialization.

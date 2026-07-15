@@ -50,6 +50,23 @@ The real learning happens in the review, not just the attack. Feed lab network t
 - Set a defined time box and objective for the session, mirroring the rules-of-engagement discipline from the red/blue team chapter, even when it's a solo exercise.
 - Review logs and detection output after the session, not just the attack's success or failure.
 
+## Frequently Asked Questions
+
+**Can I skip building an isolated lab and just practice these techniques against a live website I found instead?**
+No, and this is the exact misconception this chapter is built to head off. Practicing against a system you don't own or have explicit written authorization to test carries the same legal exposure as a real attack, regardless of how educational your intent is - the entire point of the isolated lab is that it removes the authorization question by giving you targets that exist purely to be broken.
+
+**My "isolated" lab VM somehow reached the internet during an exercise - how does that happen, and how bad is it?**
+This is the single most common real-world lab mistake the chapter calls out: a bridged network adapter left on a VM that was supposed to be host-only or internal-only, silently giving it a route back out. Treat it as a serious incident, not a shrug - stop the exercise, verify no live malware or offensive tooling actually reached anything outside the lab, and double-check every VM's network adapter settings before the next session rather than assuming last time's configuration held.
+
+**Do I need to snapshot every VM before every single exercise, even a quick one?**
+Yes, every time, with no exceptions for how small the exercise feels. The value of a snapshot is that it makes the cost of any mistake exactly zero - a corrupted target, a runaway exploit, a misconfigured service - since the whole environment resets to known-good in seconds. Skipping it "just this once" is precisely the kind of shortcut that turns a free mistake into an expensive one.
+
+**Is it cheating to use Atomic Red Team or Caldera instead of manually crafting my own attacks?**
+Not at all - adversary emulation tooling exists to make the exercise measurable and repeatable, not to make it easier in a way that defeats the purpose. Running a specific, well-documented ATT&CK technique and then checking whether your IDS or SIEM noticed it is exactly the purple-team feedback loop this chapter describes, and it produces more consistent, comparable results across sessions than freehand improvisation would.
+
+**How does this lab chapter tie back to the earlier IDS/IPS and honeypot chapters in this part?**
+The lab is where all of that tooling finally gets tested against something real instead of staying theoretical. Building an IDS heuristic or a honeypot is one exercise; watching it either catch or completely miss a live, documented attack technique run against a lab target is what actually tells you whether the detection logic works, which is why the review step - comparing what happened against what got detected - matters as much as the attack itself.
+
 ## Summary
 
 - A properly isolated lab turns every offensive and defensive concept in this part from theory into hands-on, repeatable practice with zero real-world risk.

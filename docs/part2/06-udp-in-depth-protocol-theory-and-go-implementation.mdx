@@ -300,6 +300,25 @@ back only the reliability guarantees the application actually needs.
 
 ---
 
+## Frequently Asked Questions
+
+**If `net.Dial("udp", ...)` never really fails, how do I know my server is actually there?**
+You mostly don't, at least not right away — that's the whole point of a connectionless protocol. The honest signal is a timeout on the first `Read`, exactly like the client example above uses `SetReadDeadline` to avoid hanging forever. On the same host you might also get lucky and see an ICMP "port unreachable" surface as an error on a later `Write` or `Read`, but across the open internet, silence is often the only answer you'll ever get.
+
+**My UDP server is dropping packets even though the network looks perfectly healthy. What's going on?**
+Chances are your read loop is falling behind and the kernel's receive buffer for that socket is quietly overflowing — UDP has no flow-control signal like TCP's advertised window, so the kernel just discards new datagrams once the buffer is full. If handling each datagram is slow, move the work off the read loop with a worker pool (see the goroutine-per-datagram section) rather than doing it inline between calls to `ReadFrom`.
+
+**Why does Go make me copy `buf[:n]` before handing it to a goroutine instead of just passing the slice?**
+Because `ReadFrom` reuses the same backing array on every call, and nothing stops the loop from calling it again the instant a goroutine is spawned — the new goroutine and the next read would then be racing over the same bytes. Copying the payload into its own slice first, as shown in the scaling-up example, is the cheap fix; `go run -race` will catch you if you forget.
+
+**I tried the broadcast example and got a permission error — is the code wrong?**
+No, the code is fine, the socket just isn't configured for it: the kernel refuses broadcast traffic unless `SO_BROADCAST` is explicitly set, and plain `net.Dial` never sets it. You have to drop down to a raw socket option, via `net.ListenConfig.Control` or the `golang.org/x/net/ipv4` helpers, before that first write will succeed.
+
+**If UDP is this unreliable, why does anything serious use it?**
+Because for some workloads a late packet is worse than a lost one — a stale video frame or a delayed voice sample isn't worth waiting for. That tradeoff is exactly what the "Try It Yourself" reliability layer above is meant to teach: protocols like QUIC and TFTP start from UDP's speed and bolt on only the guarantees they actually need, rather than accepting TCP's all-or-nothing bundle.
+
+---
+
 ## Fun Facts & Go Memes
 - UDP is the favorite for online games, streaming, and VoIP because
   of its speed.

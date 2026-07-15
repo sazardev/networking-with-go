@@ -181,4 +181,23 @@ Short-lived access tokens (minutes, not days) limit how long a stolen token stay
 
 <Axiom>A valid token answers "who is this?" — authorization, checked separately on every request, answers "are they allowed to do this?" Never let the first question stand in for the second.</Axiom>
 
+---
+
+## Frequently Asked Questions
+
+**If a JWT is self-contained and doesn't need a database lookup, why bother with refresh tokens and revocation at all?**
+That self-contained property is exactly the problem: once you've signed a token, there's no way to reach out and un-sign it before it expires. Keeping the access token short-lived shrinks the window a stolen token is dangerous, while the refresh token — which does live in a database — gives you the revocation switch a bare JWT can never have on its own.
+
+**Why does `parseToken` bother checking `t.Method` before returning the signing key — isn't the signature check enough?**
+No, and this is one of the more famous JWT footguns. A malicious client can hand-craft a token that claims `alg: none` or swaps to a different algorithm family, and a verifier that trusts the token's own header to pick the algorithm can be tricked into skipping validation entirely. Asserting `*jwt.SigningMethodHMAC` inside the key function, as shown in this chapter, forces the server — not the token — to decide which algorithm is acceptable.
+
+**Is `bcrypt.DefaultCost` good enough for production, or should I raise it?**
+`DefaultCost` (10) is a reasonable floor, not a ceiling — it's a deliberate balance point chosen years ago, and hardware has only gotten faster since. Bumping the cost factor higher makes brute-forcing a stolen hash more expensive at the price of slightly slower logins, so it's worth benchmarking on your actual production hardware rather than assuming the default is future-proof forever.
+
+**Why store the JWT signing key in an environment variable instead of just hardcoding it like the example does?**
+The example's `signingKey = []byte("replace-with-a-real-secret-from-config")` is a placeholder, not a suggestion — anything committed to source control is permanently compromised the moment the repository is, even if it's later rotated. Loading it from an environment variable or a secrets manager means the key can be rotated without a code change and never appears in a diff.
+
+**My API already checks that a token is valid — do I still need separate authorization checks?**
+Yes, and this is the exact trap the chapter's closing axiom warns about. A valid token only proves who the caller is; a logged-in user with a valid token can still try to read someone else's order or call an admin-only endpoint, so every handler needs its own "is this user allowed to do this specific thing" check rather than treating authentication as a stand-in for authorization.
+
 Next, we'll look at defending these same endpoints against abuse at the traffic level: rate limiting, CORS, and the role of an API gateway.

@@ -143,6 +143,23 @@ Even without touching 802.11 frames, a Go program managing wireless clients shou
 - **Variable latency and loss.** Radio interference means retry logic that works fine on Ethernet may be too aggressive or too lenient over Wi-Fi; test under realistic conditions.
 - **Captive portals.** Public Wi-Fi often intercepts the first HTTP request to show a login page. A robust client should detect a captive portal (typically an unexpected redirect or TLS certificate mismatch) rather than treating it as a network failure.
 
+## Frequently Asked Questions
+
+**Why doesn't Go's standard library just include a package for raw 802.11 frame injection?**
+Because there's no portable way to build one honestly. The frame-construction, channel-access, and retransmission logic lives in the OS's own driver stack—`nl80211`/`mac80211` on Linux, the Native Wifi API on Windows, CoreWLAN on macOS—and those three worlds don't share a common shape. A standard library package would either have to pick one platform and pretend the others don't exist, or wrap something that risks destabilizing the OS's own network stack, which is exactly why this chapter treats monitor-mode injection as a Linux-specific, root-and-cgo affair rather than a portable API.
+
+**If `net.Interfaces()` can't tell me the SSID or signal strength, why bother using it at all for wireless work?**
+Because it answers a different, still-necessary question: what wireless-shaped interfaces even exist on this machine before you go looking for radio detail. The naming heuristic in `listWirelessCandidates` (matching `wl`/`wi` prefixes) is deliberately not authoritative—it's a first filter, and the OS tool you shell out to afterward is what gives you the real, definitive SSID and channel.
+
+**Why prefer `nmcli -t` output over just parsing whatever `nmcli` prints by default?**
+Because the default, human-facing output is column-aligned for a terminal, and column alignment is exactly the kind of formatting that breaks a parser the moment a network name is unusually long or short. The `-t` flag switches `nmcli` into terse, colon-separated, script-friendly output—the same principle as preferring NETCONF/gNMI over screen-scraping in the automation chapter: reach for a tool's machine-oriented mode whenever one exists.
+
+**My wireless client's connection survives roaming between access points, so why does my request still occasionally stall or fail?**
+That's the roaming blackout this chapter calls out directly—there's often a brief gap in connectivity during the actual handoff between access points, even though the IP-level connection nominally survives it. If your retry and timeout logic assumes Ethernet-like continuity, that brief gap reads as a network failure; tuning retries for wireless-specific behavior, rather than reusing wired defaults, is what fixes it.
+
+**How is SNMP different from the OS-tool approach used for `nmcli`/`netsh wlan`?**
+SNMP is a real wire protocol that Go speaks natively over UDP—no shelling out, no parsing human-facing text—which is why it's the right tool for managing enterprise access points and controllers rather than a single laptop's Wi-Fi adapter. The tradeoff is that the actual counters and settings live behind vendor-specific OIDs from the AP's MIB, so a production tool needs an OID table rather than a single hardcoded string like the illustrative example here.
+
 ## Key Takeaways
 
 - Go's `net` package works identically over wired and wireless links once a connection is established; the difference lives entirely below that layer.

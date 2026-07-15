@@ -208,6 +208,23 @@ serves errors and one that doesn't.
 
 ---
 
+## Frequently Asked Questions
+
+**My binary runs fine on my dev machine but crashes on startup in a minimal Alpine container — why?**
+This is almost always the cgo asterisk on Go's "static binary" claim. As soon as any package in the build — commonly `net`'s hostname resolver — pulls in cgo, `go build` links dynamically against the host's glibc unless `CGO_ENABLED=0` is set explicitly. A binary built against glibc on Ubuntu simply has nothing to link against on Alpine, which ships `musl` instead. Setting `CGO_ENABLED=0` forces the pure-Go DNS resolver and produces a binary that genuinely runs anywhere, which is also why the Dockerfile in this chapter sets it explicitly rather than relying on the default.
+
+**I call `srv.Shutdown` and the process still gets killed by Kubernetes — what's happening?**
+Check your shutdown timeout against the orchestrator's grace period. Kubernetes sends `SIGTERM` and then waits a configurable grace period, commonly 30 seconds, before sending an unstoppable `SIGKILL`. If `shutdownCtx`'s timeout is set equal to or longer than that grace period, `SIGKILL` arrives before your in-flight requests finish draining, killing them anyway. Keep your shutdown timeout comfortably shorter than the orchestrator's grace period, not equal to it.
+
+**Is calling `srv.Shutdown` enough to guarantee a clean exit?**
+No — `srv.Shutdown` only knows about the HTTP server's own listener and connections. A database pool, a background worker draining a queue, or an open log file each need their own explicit cleanup after `srv.Shutdown` returns, or the process can exit mid-write on a worker even though the HTTP layer drained perfectly. Treat graceful shutdown as one path that has to fold in every resource your handlers own, not a single function call that handles everything for you.
+
+**Why do liveness and readiness need separate handlers instead of one shared `/health` endpoint?**
+Because they answer different questions with different consequences when they fail. Liveness asks "is this process stuck," and a failure restarts it; readiness asks "should traffic go here right now," and a failure just pulls the instance out of rotation. If one shared handler pings a database and that database has a brief outage, every replica fails liveness simultaneously and the orchestrator restarts all of them at once — a thundering herd of reconnects that fixes nothing, since the process itself was never actually stuck.
+
+**Now that this is the last technical chapter of Part 2, is production deployment really the end of the story for a Go network service?**
+Not quite — deployment is where a service starts running unattended, but everything before it in this part (the servers, proxies, and clients themselves) is what actually determines whether that unattended operation goes well. Health checks, graceful shutdown, and externalized configuration are the seams that let an orchestrator manage a process it can't see inside of; the next chapter looks at what happens once several of these deployed pieces have to work together as real systems.
+
 ## Key Takeaways
 
 - Go's static binaries and built-in cross-compilation remove most of the runtime-installation complexity other languages face at deploy time.

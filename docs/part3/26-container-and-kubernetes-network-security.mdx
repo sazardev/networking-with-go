@@ -59,6 +59,23 @@ A service mesh (Istio, Linkerd, and similar projects) injects a lightweight prox
 
 Container security extends past the network layer into the images themselves: scanning images for known-vulnerable dependencies before deployment, signing images cryptographically so a cluster can verify what it's running actually came from a trusted build pipeline (a practice explored further in the emerging-trends chapter closing this part), and runtime security tools (Falco is a widely used open-source example) that monitor for anomalous process behavior or unexpected network connections from a running container, applying the same behavioral detection philosophy from the IDS/IPS chapter directly to container workloads.
 
+## Frequently Asked Questions
+
+**If containers aren't really lightweight VMs, does that mean container isolation is basically fake?**
+No, but it is worth respecting for what it actually is. Namespaces and cgroups genuinely separate what a process can see and how much of the host it can consume, and that boundary holds up in the overwhelming majority of day-to-day operation. The honest caveat is that it is a software boundary enforced by a shared kernel rather than a hardware boundary enforced by a hypervisor, which is exactly why running as non-root and dropping unnecessary privileges inside the container matters so much more here than it would for a VM.
+
+**We have namespaces separating our teams in Kubernetes - doesn't that mean their pods can't reach each other?**
+This is the single most common misconception this chapter tackles, and it is worth repeating plainly: namespaces are an organizational and access-control boundary, not a network boundary. Unless a NetworkPolicy explicitly restricts traffic, a pod in the `billing` namespace can open a connection to a pod in `payments` just as freely as it can reach its own neighbor. If segmentation is the goal, a NetworkPolicy has to do that work.
+
+**Is it legal or ethical to run a vulnerability scan against my own company's container images or cluster?**
+Scanning images and clusters you own or are authorized to test - as part of your own CI/CD pipeline, a sanctioned internal security review, or a bug bounty program that explicitly covers your infrastructure - is exactly the kind of defensive practice this chapter encourages. The line to never cross is scanning or probing containers, registries, or clusters that belong to someone else without their written permission; everything in this part of the book assumes authorized, ethical use only.
+
+**I applied a NetworkPolicy and my pods still seem to talk to everything - what did I miss?**
+Check three things in order: whether your CNI plugin actually enforces NetworkPolicy (some do not by default, since the resource is just an API object until a compatible plugin implements it), whether the `podSelector` labels on the policy actually match the labels on your pods, and whether you have a default-deny policy in place at all - remember that a NetworkPolicy is purely additive, so one policy allowing frontend-to-api traffic does nothing to restrict a completely unrelated pod pair that no policy mentions.
+
+**How does a service mesh's mTLS relate to the TLS chapter earlier in this part?**
+It is the same cryptographic idea applied at a different layer of the stack. Where an application developer might terminate TLS inside their own code using the patterns from the TLS/PKI chapter, a service mesh sidecar handles the handshake, certificate rotation, and encryption transparently outside the application entirely - which is powerful for consistency across a cluster, but it also means the mesh's control plane becomes a trust-critical component worth securing just as carefully as any certificate authority.
+
 ## Summary
 
 - Container isolation relies on a shared host kernel, which is a weaker boundary than hypervisor-based VM isolation - least privilege inside containers matters accordingly.

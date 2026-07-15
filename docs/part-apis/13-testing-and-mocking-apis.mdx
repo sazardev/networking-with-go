@@ -222,6 +222,25 @@ $ go test ./... -v
 PASS
 ```
 
+---
+
+## Frequently Asked Questions
+
+**Do I need `httptest.NewServer` for every handler test, or is `httptest.NewRecorder` enough?**
+`httptest.NewRecorder` covers the vast majority of cases and runs faster because it never opens a real socket — reach for `httptest.NewServer` only when the thing you're testing genuinely lives at the transport level, like redirect following, timeouts, or a real client library making an actual HTTP round trip to your API.
+
+**Why does the chapter use a hand-written `fakeStore` instead of a mocking library like `testify/mock`?**
+For an interface as small as `TaskStore` — two methods — a plain struct implementing the interface is clearer to read and debug than a generated or reflection-based mock. Mocking libraries earn their keep once an interface grows many methods or you need to assert exact call counts and arguments, not by default on every dependency.
+
+**My table-driven test fails and the output just says `TestGetTask` failed — how do I know which case broke?**
+That happens when `t.Run` isn't used to give each case its own subtest name. Wrapping the case body in `t.Run(tc.name, func(t *testing.T) {...})`, as shown in this chapter, makes a failure print as `--- FAIL: TestGetTask/missing_task`, pointing straight at the offending row in the table instead of leaving you to guess.
+
+**Why inject an `*http.Client` into `NewPaymentClient` instead of just calling `http.Get` directly in the client code?**
+Hardcoding calls to the default client means tests have no way to intercept them short of hitting the real payment provider. Accepting a client (or pointing it at a configurable base URL) lets a test swap in `fake.Client()` from a local `httptest.Server`, so the test exercises your actual request-building and response-parsing code against a stand-in server instead of trusting a mock's assumptions about what the real API returns.
+
+**Is `go test -bench=. -benchmem`'s allocation count actually more useful than the timing number for a handler?**
+Often, yes — for an HTTP handler serving concurrent traffic, allocations per operation predict GC pressure under load better than a single-threaded timing number does. A handler that allocates less garbage per request scales further before garbage collection becomes the bottleneck, which is why this chapter calls out `-benchmem` specifically rather than just timing.
+
 Testing handlers directly with `httptest`, keeping dependencies behind small interfaces, and reserving `httptest.NewServer` for genuine transport-level concerns keeps a Go API's test suite fast — most of these tests run in milliseconds, with no real network or database involved.
 
 Next, we'll look at how an API's contract evolves safely over time: versioning, deprecation, and long-term maintenance.

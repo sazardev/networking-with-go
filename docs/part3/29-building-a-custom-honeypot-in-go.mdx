@@ -101,6 +101,23 @@ Because nothing legitimate ever talks to a honeypot, even a single hit is worth 
 
 The same skeleton generalizes to any service worth decoying: a fake HTTP admin panel that logs every request path and credential attempt, a fake database listener that logs connection attempts and any query text sent before the connection is closed, or several fake services running simultaneously on a single host to widen the net. In every case, the design principle stays the same: convincing enough surface to attract interaction, zero real functionality behind it, and structured logging of everything that happens.
 
+## Frequently Asked Questions
+
+**Is it legal to run a honeypot that captures an attacker's IP and the exact bytes they sent?**
+It is generally sound practice on infrastructure you own and control, but the chapter's warning is deliberate: logging attacker input can brush up against privacy or wiretap-style laws depending on jurisdiction and exactly what gets captured, so the safest posture is to log only what supports detection and analysis, isolate the honeypot fully from production and sensitive data, and get explicit sign-off before deploying on any network that isn't unambiguously yours to test.
+
+**Can I just point the SSH honeypot at a busy production network to catch more attackers faster?**
+No - that runs directly against the isolation requirement this chapter treats as non-negotiable. A honeypot has to sit in a segment with no route to production systems, precisely because it exists to attract hostile traffic; putting it anywhere near real infrastructure turns a detection tool into a liability the moment isolation has even one gap.
+
+**My honeypot listener's goroutines seem to pile up under a scripted scanning burst - what's going on?**
+Look at whether every connection actually gets a bounded deadline the way `handleSession` sets with `conn.SetDeadline`. Without that, a client that opens a connection and simply never sends anything can pin a goroutine open indefinitely, and since a honeypot is an inherently attractive target for exactly this kind of resource exhaustion, a missing or too-generous deadline is usually the first thing to check.
+
+**Why does even a single honeypot hit deserve an alert, when a real IDS would treat one hit as noise?**
+Because a honeypot has no legitimate traffic baseline to protect against false positives in the first place. An IDS has to separate rare true attacks from a much larger volume of ordinary user activity, but nothing legitimate has any reason to ever talk to a decoy service, so the entire tuning problem that makes production detection hard simply does not apply here.
+
+**How does this honeypot chapter connect to the security automation chapter right before it?**
+Very directly - the honeypot's structured JSON output is exactly the kind of pre-processed event stream the previous chapter's automation patterns are built to consume. A source IP seen hitting the honeypot is a strong, low-false-positive candidate for the kind of automated, reversible containment action (like a temporary firewall block) described there, since a honeypot hit already carries far more certainty than the typical automation trigger.
+
 ## Summary
 
 - A honeypot's core value is that any interaction with it is inherently suspicious, sidestepping the false-positive tuning problem that dominates most other detection tools.

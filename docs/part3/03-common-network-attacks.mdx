@@ -131,6 +131,22 @@ The specific numbers matter less than the pattern: every connection-accepting se
 
 ---
 
+## Frequently Asked Questions
+
+**If I never see SYN cookies or rate limiters in my own code, does that mean my service is vulnerable to DoS?**
+Not necessarily — SYN cookies are usually handled transparently by the OS TCP stack, not by your application, so you're already benefiting from that defense without writing a line of code. Application-layer protections like rate limiting and sensible timeouts, though, are on you to add explicitly; a `net.Listen` loop with no connection cap or per-client throttling is exactly the gap this chapter's rate-limiter example is meant to close.
+
+**Why does TLS keep showing up as the defense for MITM, spoofing, and session hijacking?**
+Because all three attacks ultimately depend on the attacker being able to either read plaintext or impersonate a party convincingly, and a properly validated TLS connection denies both: it encrypts the channel and requires the peer to present a certificate it couldn't forge without the private key. That's not a coincidence — it's why Chapters 4.12 and 4.13 dedicate two full chapters to TLS and the PKI that makes its trust model work.
+
+**Is ARP spoofing something I should worry about over the public internet?**
+No — ARP only operates on a local network segment, so ARP spoofing requires the attacker to already be on the same LAN or Wi-Fi network as the victim. That's exactly why it pairs so often with rogue access points in the MITM section above: the attacker's real first step is getting onto your local segment, and ARP spoofing is what they do once they're there.
+
+**I want to try building a small SYN-flood or rate-limit test — where's the boundary of "safe to experiment with"?**
+Anything from this chapter is fine to build and run against a lab machine, a local VM, or a service you stood up yourself specifically for testing — the rate-limiter example above is meant to be wired into your own `Accept` loop and hammered with your own test traffic. The line is authorization: the moment the target is a system you don't own and haven't been explicitly cleared to test, the same code stops being a learning exercise and becomes the attack this chapter is teaching you to defend against.
+
+---
+
 ## Recognizing the Pattern
 
 Notice that nearly every defense above reduces to a small set of ideas repeated throughout this book: authenticate and encrypt (TLS), validate what you trust implicitly (source addresses, DNS responses), and bound what any single actor can consume (timeouts, rate limits, connection caps). Chapter 4.4 puts you on the other side of this equation — using Go to discover what's exposed on a network before an attacker does.

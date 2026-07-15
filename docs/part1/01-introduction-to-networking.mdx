@@ -113,6 +113,23 @@ Same core ideas — nodes, links, protocols — applied at wildly different scal
 
 Every hop in that diagram is a place where a protocol decision gets made: your device decides how to frame data for the router, the router decides which path to send it down, and the server decides how to interpret what finally arrives. Nothing "just happens" — every arrow is doing real work, and by the end of this book you will understand every single one of them well enough to build your own.
 
+## Frequently Asked Questions
+
+**If AI can already write a TCP server, is this chapter's argument just an appeal to nostalgia?**
+Not at all — it's a much narrower claim than "learn it because tradition demands it." The claim is that someone has to catch a generated server leaking connections under load or silently dropping packets at scale, and that job only gets more valuable as more of the first-draft code around it gets written by something that has never watched a system fail at 3 a.m.
+
+**Why does this book bother pairing networking with Go specifically, instead of teaching the concepts language-agnostically?**
+Because Go wasn't retrofitted for this job, it was built for it from the start, by people at Google who had already spent years fighting the exact problem of coordinating many machines over unreliable networks. Docker, Kubernetes, and Cloudflare's edge network didn't choose Go by accident — they all share that same core problem, and this book is teaching you the language practitioners reach for first, not a random one that happens to have a networking chapter bolted on.
+
+**Is packet switching just a technical detail, or does it actually matter that ARPANET's engineers chose it over circuit switching?**
+It matters enormously, and you'll feel its consequences for the rest of this book — every tradeoff about jitter, resilience, and shared bandwidth traces straight back to that one 1960s design decision. Circuit switching would have given you perfectly steady timing at the cost of reserving a wire nobody else could use during silences; packet switching gave up that steadiness in exchange for thousands of conversations sharing the same link, which is exactly the bargain the modern internet still runs on.
+
+**Is "the internet" the same thing as one single, unified network?**
+No, and this is one of the most common misconceptions this chapter corrects directly: the internet is a network *of* networks, each separately owned and operated, that simply agree to exchange packets using shared protocols. There is no single company or machine "running" it, which is precisely why the postal-system analogy earlier in this chapter works so well — lots of independent carriers, one shared set of addressing rules.
+
+**Why doesn't this chapter, or the rest of Part 1, show any actual Go code?**
+Because the goal right now is getting the *shape* of networking solidly into your head first — nodes, links, protocols, and the tradeoffs between them — with nothing else competing for your attention. Code arrives immediately afterward in the Go Fundamentals part, and by the time you write your first networked program there, every concept it touches will already feel familiar instead of brand new.
+
 ### Where This Goes From Here
 
 Hold on to that diagram, because every chapter left in Part 1 is really just zooming into one of those arrows and asking "but how, exactly?" How does a device decide which router to hand a packet to? What actually happens inside that router? How does a server, juggling thousands of simultaneous conversations, know which reply belongs to which stranger? None of it "just happens" — every one of those arrows is doing real, specific, learnable work, and by the time you reach the end of this book you will understand every single one of them well enough to build your own.

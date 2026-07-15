@@ -5,6 +5,14 @@ title: "Structs and Interfaces"
 
 # Structs and Interfaces
 
+Ask a programmer coming from Java, C++, or Python what they miss most
+when they first pick up Go, and the honest ones will usually say the same
+thing: classes. No `class` keyword, no `extends`, no inheritance chain to
+climb when you're trying to figure out where a method actually lives.
+It feels like a gap at first. It isn't one — it's a deliberate bet that
+two smaller, independent tools, used together, beat one big fused one.
+This chapter is about those two tools.
+
 > A struct is a labeled drawer set — each drawer holds one named piece of
 > data. An interface, by contrast, describes no drawers at all: it is a
 > contract that says "anything handed to me must know how to do these
@@ -41,7 +49,7 @@ the safer default, especially for structs with more than two fields.
 
 Struct values are compared with `==` when every field is itself
 comparable, and are copied by value on assignment or when passed to a
-function — exactly like the basic types from Chapter 2:
+function — exactly like the basic types from the previous chapter:
 
 ```go
 a := Point{1, 2}
@@ -93,10 +101,12 @@ can always reach the original explicitly via `d.Animal.Describe()`.
 
 ## Interfaces: Implicit Satisfaction
 
-An interface lists a set of method signatures. Any type that has methods
-matching that set automatically satisfies the interface — there is no
-`implements` keyword, and no explicit declaration of intent anywhere near
-the type's definition:
+Here's the part of Go's design that tends to genuinely surprise people
+the first time they understand it, and it's arguably the single most
+consequential idea in this chapter. An interface lists a set of method
+signatures. Any type that has methods matching that set automatically
+satisfies the interface — there is no `implements` keyword, and no
+explicit declaration of intent anywhere near the type's definition:
 
 ```go
 type Shaper interface {
@@ -130,7 +140,9 @@ This is exactly the pattern the standard library's `io.Reader` and
 `io.Writer` use throughout the networking code later in this book: a
 `net.Conn`, an `os.File`, and a `bytes.Buffer` all satisfy `io.Writer`
 simply by having a matching `Write` method, with no shared ancestry
-between them at all.
+between them at all. Once this idea clicks, a lot of Go's standard
+library stops looking like a pile of unrelated packages and starts
+looking like the same handful of tiny contracts, reused everywhere.
 
 <Warning title="Comparing interface values can panic at runtime">Two interface values are equal only if their dynamic types are equal and their dynamic values are equal — but if the dynamic type itself is not comparable (a slice or map, say), comparing two such interface values with `==` compiles fine and then panics at runtime: "comparing uncomparable type." This is one of the few places Go's static type checker cannot save you, precisely because the concrete type is only known at runtime.</Warning>
 
@@ -292,17 +304,36 @@ func TotalArea[T Shaper](shapes []T) float64 {
 
 <Axiom>Interfaces answer "what can this value do?" Generics answer "which types is this code allowed to work with?" Confusing the two questions is the fastest way to reach for the wrong tool.</Axiom>
 
-## Key Takeaways
+## Frequently Asked Questions
 
-- Structs group named fields, are copied by value, and are comparable with
-  `==` only when every field is itself comparable.
-- Embedding promotes an inner type's fields and methods to the outer
-  struct — Go's composition-based alternative to class inheritance.
-- Interfaces are satisfied implicitly: any type with matching methods
-  satisfies the interface, with no `implements` declaration anywhere.
-- `any` (the empty interface) accepts anything but erases compile-time
-  type safety until a type assertion or type switch recovers a concrete
-  type.
-- Generics constrain a function or type to a known set of types while
-  keeping full compile-time checking — a middle ground between a single
-  concrete type and `any`.
+**Do I need to write something like `class Dog implements Animal` anywhere for `Dog` to embed `Animal` properly?**
+No, and that's the point — embedding is just `Animal` sitting inside `Dog` as an anonymous field, and Go's lookup rules automatically promote `Animal`'s fields and methods up to `Dog`. There's no inheritance keyword and no declaration of intent anywhere near the type definition; `d.Name` and `d.Describe()` simply work because Go looks inside the embedded value when `Dog` itself has no field or method of that name.
+
+**My type has an `Area() float64` method but the compiler says it doesn't satisfy my `Shaper` interface — what am I missing?**
+The most common culprit is the method-set distinction this chapter flags: a pointer type's method set includes both its value-receiver and pointer-receiver methods, but a plain value type only includes the value-receiver ones. If `Area` is defined with a pointer receiver, only `*Rectangle` satisfies `Shaper`, not bare `Rectangle` — double check which receiver kind you used and which one you're passing to the function expecting the interface.
+
+**Why does Go let an interface be defined in a completely different package from the types that satisfy it?**
+Because satisfaction is implicit and structural, not declared. A type never mentions the interface by name, so the interface can be written after the type exists, in a package that has never heard of it. This is exactly why `io.Reader` and `io.Writer` work across `net.Conn`, `os.File`, and `bytes.Buffer` with zero shared ancestry between them — each one just happens to have a matching method.
+
+**Should I reach for generics or a plain interface when writing something like `TotalArea`?**
+Ask which question you're actually answering. An interface answers "what can this value do?" — use it when you need a function to accept anything with a certain behavior, like `Shaper`. Generics answer "which types is this code allowed to work with?" and are the right tool when you want the compiler to specialize the same logic across a constrained set of concrete types, the way `Sum[T int | float64]` does. Most of this book's networking code sticks to plain interfaces; generics show up far less often.
+
+**Is `any` just a shortcut for "I don't want to write a proper type"?**
+Treat it as an escape hatch, not a shortcut. `any` erases all compile-time checking on that value until you assert it back to something concrete, so a typo that passes the wrong type will compile fine and only fail at runtime, at the type assertion. It earns its keep at genuine boundaries — decoding JSON of unknown shape, a truly generic container — not as a way to dodge writing an interface or a type parameter.
+
+### Where This Goes From Here
+
+Take a moment to notice what you actually just learned to do without a
+`class` keyword anywhere in sight: group data (structs), reuse it without
+a rigid hierarchy (embedding), describe behavior without naming a
+concrete type (interfaces), and write logic that works uniformly across a
+family of types (generics). That's the whole toolkit Go offers instead of
+object orientation, and by this point you have all four pieces.
+
+Every one of these pieces, though, has quietly assumed something in the
+background: that a piece of code doing the "wrong" thing gets caught
+loudly, immediately, by the compiler. The next chapter breaks that
+assumption open on purpose. Go has no exceptions, which means failure has
+to be handled some other way — and that "some other way" turns out to be
+one of the most opinionated, and most argued-about, decisions in the
+entire language.

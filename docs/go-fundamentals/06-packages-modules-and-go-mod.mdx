@@ -5,6 +5,15 @@ title: "Packages, Modules, and go.mod"
 
 # Packages, Modules, and go.mod
 
+Every program in this book so far has fit comfortably in one file. That
+won't last, and it shouldn't — a real project needs to split into pieces
+that different people, or even just a future, more tired version of you,
+can work on without stepping on each other's toes. Go's answer to "how do
+we organize a growing codebase" turns out to be refreshingly literal: a
+folder on disk *is* a unit of code, and a file with an address on it *is*
+your dependency graph. No ceremony beyond that. This chapter is about how
+those two ideas — packages and modules — actually work.
+
 > A package is a room in a house — everything inside can see everything
 > else in that room without asking permission. A module is the whole house
 > — a boundary with an address, so other houses know exactly where to send
@@ -52,19 +61,22 @@ Both files live in a directory named `shapes/` and both declare
 unit, `.../shapes`, regardless of how many files it's split across.
 
 `package main` is special: it marks a package that produces an executable,
-with `func main()` as the entry point, exactly as you saw in Chapter 1.
-Every other package name marks a **library package** — importable code
-with no entry point of its own.
+with `func main()` as the entry point, exactly as you saw in the very
+first chapter of this part. Every other package name marks a **library
+package** — importable code with no entry point of its own.
 
 <DeepDive title="One package name per directory, always">Go enforces, at compile time, that every `.go` file in a directory declares the same package name (with one narrow exception: files ending in `_test.go` may declare `packagename_test` for black-box testing, covered in the next chapter). Mixing package names in one directory is a compile error, not a style suggestion.</DeepDive>
 
 ## Exported vs. Unexported: Capitalization Is the Access Modifier
 
-Go has no `public`, `private`, or `protected` keywords. Visibility outside
-a package is decided entirely by the first letter of an identifier's name:
-capitalized names are **exported** (visible to importing packages),
-lowercase names are **unexported** (visible only within the declaring
-package):
+Here's one of Go's smallest, most elegant decisions, and it's easy to
+miss how clever it is until you've fought with `public`/`private`
+keywords in another language and had them drift out of sync with what a
+name actually does. Go has no `public`, `private`, or `protected`
+keywords at all. Visibility outside a package is decided entirely by the
+first letter of an identifier's name: capitalized names are **exported**
+(visible to importing packages), lowercase names are **unexported**
+(visible only within the declaring package):
 
 ```go
 package shapes
@@ -100,8 +112,9 @@ package name already provides that context at every call site.
 ## Modules: go.mod and go.sum
 
 A **module** is one or more packages versioned and distributed together,
-rooted at a directory containing a `go.mod` file. You met `go mod init` in
-Chapter 1; here is what the file it produces actually declares:
+rooted at a directory containing a `go.mod` file. You met `go mod init`
+back in the very first chapter of this part; here is what the file it
+produces actually declares:
 
 ```
 module github.com/you/mytool
@@ -166,11 +179,12 @@ on, rather than an ever-growing list of things that were needed once.
 
 ## internal Packages: Compiler-Enforced Privacy
 
-Chapter's earlier point about capitalization controls visibility *within*
-an already-importable package. A directory literally named `internal`
-goes further: the compiler refuses to let any package outside the module
-subtree rooted at `internal`'s parent import anything from inside it, no
-matter how the identifiers are capitalized:
+Everything so far in this chapter controls visibility *within* an
+already-importable package, decided purely by capitalization. A directory
+literally named `internal` goes a level further: the compiler refuses to
+let any package outside the module subtree rooted at `internal`'s parent
+import anything from inside it, no matter how the identifiers are
+capitalized:
 
 ```
 mymodule/
@@ -275,17 +289,35 @@ Build the two-package layout above from scratch:
 
 <Axiom>A package boundary is a trust boundary as much as an organizational one — code inside a package trusts its own unexported details completely; code outside must go through whatever the package chooses to export.</Axiom>
 
-## Key Takeaways
+## Frequently Asked Questions
 
-- A directory is a package; every file in it must declare the same
-  package name, and files within a package share scope with no imports.
-- Capitalization alone decides visibility outside a package — no
-  `public`/`private` keywords, and each struct field is exported or not
-  individually.
-- `go.mod` declares a module's import path, minimum Go version, and
-  dependencies; `go.sum` records checksums for reproducible builds —
-  commit both, always.
-- `go get` fetches directly from a dependency's source repository; Go has
-  no central package registry, only a caching/verification proxy layer.
-- Semantic versioning governs dependency versions, and a major version 2+
-  must be reflected in the import path itself (`/v2`, `/v3`, ...).
+**I capitalized my struct type but a field on it still isn't visible from another package — why?**
+Exporting a type and exporting its fields are two separate decisions in Go, and this chapter calls out exactly that trap: capitalizing `Rectangle` makes the type itself visible, but each field's own capitalization decides whether *it* is visible. A lowercase field like `timeout` on an otherwise-exported struct stays package-private no matter how public the struct is — give the field its own capital letter, or add a public constructor or setter, if it needs to be reachable from outside.
+
+**Do I need a `public`/`private` keyword mindset carried over from another language to understand Go visibility?**
+Not really — Go replaces that whole system with one rule: capitalized identifiers are exported, lowercase ones aren't. There's no separate keyword to hunt for and no way for the visibility to drift out of sync with the name, since the name and the visibility are literally the same piece of information.
+
+**Why did my build still succeed after I deleted the last import of a dependency, even though I never ran anything to clean up `go.mod`?**
+Because removing an `import` from your code doesn't automatically remove the corresponding `require` line from `go.mod` — the stale entry doesn't break the build, so it's easy to leave behind. Over many changes this quietly accumulates dependencies nothing in the codebase actually needs anymore; running `go mod tidy` regularly, especially right before committing, is the one-command fix.
+
+**What's the actual difference between making a package unexported-by-lowercase versus putting it under `internal/`?**
+Lowercase visibility only controls access *within* an already-importable package — anyone who can import the package at all can still see every capitalized name in it. A directory literally named `internal` goes further: the compiler refuses to let any package outside the module subtree rooted at `internal`'s parent import from it at all, regardless of how its identifiers are capitalized. It's the one access boundary in Go that sits above the level of a single package.
+
+**Why does Go handle dependency versions through `go.mod`/`go.sum` and a module proxy instead of a central registry like npm's?**
+Because Go fetches modules directly from their source repository, addressed by the same import path used in code, rather than through a separate publish step to a registry with its own naming authority. `go.sum` then guarantees the build got exactly the bytes it expected via cryptographic checksums, and `proxy.golang.org`/`sum.golang.org` exist purely to cache and verify — the module's identity always traces back to its own repository path, never to a registry account.
+
+### Where This Goes From Here
+
+You can now do something that felt out of reach at the start of this
+part: split a real project across files and folders, control exactly
+which parts of it the outside world can see, and pull in someone else's
+code with a one-line `go get` and a checksum that guarantees you got
+exactly the bytes you asked for. That's the organizational half of
+writing Go solved.
+
+What's missing is confidence that any of it actually works the way you
+think it does. The next chapter is about `go test` — Go's built-in
+answer to "how do I know this code still does what I claim it does,"
+which needs no external framework and, true to form for this language,
+comes bundled directly into the same toolchain you've been using since
+Chapter 1.

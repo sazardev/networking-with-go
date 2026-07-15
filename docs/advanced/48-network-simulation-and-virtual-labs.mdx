@@ -145,3 +145,20 @@ func main() {
 The right simulation tool depends entirely on the question you are asking. Testing your own protocol's resilience to loss and jitter: a pure-Go channel-based simulator, as shown above, is faster to write and faster to run than spinning up containers. Testing multi-host topology, real routing protocols, or how your service behaves alongside actual network operating systems: reach for Containerlab or GNS3, with Go (or a shell script) as the orchestration layer starting and tearing down the lab. Testing at genuinely large scale, hundreds of simulated nodes, with statistical fidelity to real-world network behavior: that is squarely ns-3's territory, and no amount of Go tooling substitutes for a purpose-built discrete-event simulator there.
 
 <Axiom>A lab you can tear down and rebuild in seconds is a lab you will actually use before every change, not just after something breaks.</Axiom>
+
+## Frequently Asked Questions
+
+**My retry logic works fine on `localhost` -- why bother simulating latency and loss at all?**
+Because `localhost` hides exactly the conditions that break retry logic in production: variable latency, dropped packets, and failures that happen mid-conversation instead of conveniently at the start. The `link` type in this chapter's channel-based simulator exists precisely to answer "does my retry logic handle 10% packet loss correctly" in a repeatable way your loopback interface simply cannot produce on its own.
+
+**Should I reach for the pure-Go channel simulator or spin up a Containerlab topology?**
+It depends entirely on what question you are asking. If you are testing your own protocol's resilience to jitter and loss, the goroutine-and-channel `link` simulator is faster to write and faster to run than any container setup. If the question involves multiple hosts and real routing between them, you need the network-level fidelity that Containerlab, GNS3, or Mininet actually provide -- no amount of in-process channel simulation substitutes for a real topology once routing itself is what you are testing.
+
+**Why does the container-lab example shell out to the `docker` CLI with `os/exec` instead of using Docker's official Go SDK?**
+The DeepDive addresses this directly: `github.com/docker/docker/client` is a legitimate, officially maintained choice that real tools like Containerlab do use, but its API shifts across Docker Engine versions. The CLI's behavior is stable and easy to verify by hand, which for a teaching example matters more than saving a few lines of code that might drift out of sync with a specific SDK release.
+
+**Is this chapter suggesting Go can replace tools like ns-3 or GNS3?**
+No -- quite the opposite. None of the major simulation tools (GNS3, Mininet, Containerlab, ns-3) are Go projects, and Go's role here is to drive them, not replace them: shelling out to Docker or a purpose-built orchestrator for topology-level tests, while reserving hand-written Go simulation for narrower, protocol-level questions the heavier tools would be overkill for.
+
+**What is `lab.exec` actually doing when it runs `ping` inside `host-a`?**
+It is doing exactly what typing `docker exec host-a ping -c 3 host-b` at a terminal would do -- running a command inside an already-running container's namespace, with no SSH daemon or extra network hop involved. That is what lets this small orchestrator drive arbitrarily complex setup inside each node, from configuring routes to installing `tc` traffic-control rules, without the book needing to reimplement any of that container plumbing itself.
