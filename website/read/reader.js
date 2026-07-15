@@ -43,10 +43,11 @@
   var openBtn = document.getElementById('search-open');
   var index = null;
   var activeIndex = -1;
+  var base = window.READER_BASE || '';
 
   function loadIndex() {
     if (index) return Promise.resolve(index);
-    return fetch('search-index.json')
+    return fetch(base + 'search-index.json')
       .then(function (r) { return r.json(); })
       .then(function (data) { index = data; return index; })
       .catch(function (err) {
@@ -104,7 +105,7 @@
     results.innerHTML = scored.map(function (item, i) {
       var e = item.entry;
       var label = e.level === 1 ? e.chapter : e.chapter + ' › ' + e.heading;
-      return '<a class="palette-result' + (i === 0 ? ' active' : '') + '" data-href="' + e.page + '#' + e.id + '">' +
+      return '<a class="palette-result' + (i === 0 ? ' active' : '') + '" data-href="' + base + e.page + '#' + e.id + '">' +
         '<div class="pr-title">' + escapeHTML(label) + '</div>' +
         '<div class="pr-meta">' + escapeHTML(e.part) + '</div>' +
         '<div class="pr-excerpt">' + escapeHTML(e.excerpt) + '</div>' +

@@ -31,4 +31,6 @@ Thumbs.db
 # these on every deploy, so they're not checked in. reader.css/reader.js are
 # hand-authored and stay tracked.
 /website/read/*.html
+/website/read/*/*.html
 /website/read/search-index.json
+/website/sitemap.xml

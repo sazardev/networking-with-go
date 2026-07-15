@@ -167,11 +167,63 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
   padding-top: 40px;
   margin-top: 40px;
 }
-.reader-content section:first-of-type h1 {
+.reader-content section h1 {
   border-top: none;
   padding-top: 0;
   margin-top: 0;
 }
+
+.breadcrumb {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+.breadcrumb a { color: var(--muted); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.crumb-sep { margin: 0 4px; }
+.crumb-current { color: var(--fg); }
+
+.chapter-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--sans);
+}
+.chapter-nav-prev, .chapter-nav-next {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-decoration: none;
+  color: var(--fg);
+  max-width: 45%;
+}
+.chapter-nav-next { text-align: right; margin-left: auto; }
+.chapter-nav-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.chapter-nav-title { font-size: 14px; font-weight: 600; }
+.chapter-nav-prev:hover .chapter-nav-title,
+.chapter-nav-next:hover .chapter-nav-title { text-decoration: underline; }
+
+.chapter-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  font-family: var(--sans);
+}
+.chapter-list li { border-bottom: 1px solid var(--line-soft); }
+.chapter-list a { display: block; padding: 14px 0; text-decoration: none; color: var(--fg); }
+.chapter-list a:hover .chapter-list-title { text-decoration: underline; }
+.chapter-list-title { display: block; font-size: 15px; font-weight: 600; }
+.chapter-list-excerpt { display: block; font-size: 13px; color: var(--muted); margin-top: 4px; }
 
 .part-grid {
   display: grid;
@@ -245,4 +297,6 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
   .reader-layout { grid-template-columns: 1fr; }
   .reader-sidebar { display: none; }
   .part-grid { grid-template-columns: 1fr; }
+  .chapter-nav { flex-direction: column; gap: 12px; }
+  .chapter-nav-prev, .chapter-nav-next { max-width: 100%; text-align: left; margin-left: 0; }
 }

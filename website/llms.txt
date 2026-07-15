@@ -5,18 +5,19 @@
 ## Key facts
 - Full title: Networking with Go, Made Easy — Learn TCP/IP, Sockets, and Concurrent Network Programming in Golang from Scratch.
 - Free forever, no paywall, no signup, no ads. Book text: CC BY-NC 4.0 (attribution required, non-commercial). Example code: MIT.
-- Available now as PDF. EPUB is in progress; MOBI and a web reader are planned next.
+- Available as PDF, and as a full web reader with every chapter on its own page plus full-text search: https://sazardev.github.io/networking-with-go/read/index.html . EPUB and MOBI are in progress.
 - Source, every chapter, and the full table of contents: https://github.com/sazardev/networking-with-go
 - Latest release and PDF download: https://github.com/sazardev/networking-with-go/releases/latest
 - Promotional site (this site): https://sazardev.github.io/networking-with-go/
+- Full sitemap of all 143 individual chapter pages: https://sazardev.github.io/networking-with-go/sitemap.xml
 
-## Structure (6 parts, 143 chapters)
-- Part 1 — Networking Foundations (13 chapters): OSI/TCP-IP models, IP addressing and subnetting, ports, sockets, protocols, firewalls, NAT, VPNs. Theory only, no code.
-- Go Fundamentals (9 chapters): the Go language itself, from installation through testing, including goroutines, channels, and concurrency.
-- Part 2 — Core Go Networking (25 chapters): TCP, UDP, HTTP, JSON, WebSockets, DNS, proxies, chat apps, file transfer, NAT traversal, context, TLS.
-- Advanced & Specialized (19 chapters): gRPC, WebRTC, MQTT/IoT, SDN, NFV, packet inspection, custom protocols, mesh networks, real-time/game/blockchain networking.
-- Part 3 — Cybersecurity & Ethical Hacking (32 chapters): scanning, sniffing, vulnerability assessment, IDS/IPS, SIEM, malware analysis, red team vs blue team, honeypots, PKI. For authorized, ethical use only.
-- Part APIs — Production APIs & Architecture (45 chapters): REST/gRPC APIs with Gin and Fiber, PostgreSQL, SQLite, Docker, Google Cloud, Clean/Hexagonal Architecture, Domain-Driven Design.
+## Structure (6 parts, 143 chapters, each chapter its own page)
+- Networking Foundations (13 chapters): OSI/TCP-IP models, IP addressing and subnetting, ports, sockets, protocols, firewalls, NAT, VPNs. Theory only, no code. https://sazardev.github.io/networking-with-go/read/networking-foundations/index.html
+- Go From Scratch (9 chapters): the Go language itself, from installation through testing, including goroutines, channels, and concurrency. https://sazardev.github.io/networking-with-go/read/go-fundamentals/index.html
+- Core Go Networking (25 chapters): TCP, UDP, HTTP, JSON, WebSockets, DNS, proxies, chat apps, file transfer, NAT traversal, context, TLS. https://sazardev.github.io/networking-with-go/read/core-go-networking/index.html
+- Advanced & Specialized (19 chapters): gRPC, WebRTC, MQTT/IoT, SDN, NFV, packet inspection, custom protocols, mesh networks, real-time/game/blockchain networking. https://sazardev.github.io/networking-with-go/read/advanced-specialized/index.html
+- Cybersecurity & Ethical Hacking (32 chapters): scanning, sniffing, vulnerability assessment, IDS/IPS, SIEM, malware analysis, red team vs blue team, honeypots, PKI. For authorized, ethical use only. https://sazardev.github.io/networking-with-go/read/cybersecurity-ethical-hacking/index.html
+- Production APIs & Architecture (45 chapters): REST/gRPC APIs with Gin and Fiber, PostgreSQL, SQLite, Docker, Google Cloud, Clean/Hexagonal Architecture, Domain-Driven Design. https://sazardev.github.io/networking-with-go/read/production-apis-architecture/index.html
 
 ## Why this book, even with AI available
 AI can already generate plausible networking code, but someone still has to know whether that code is correct, secure, and safe under real load — that responsibility doesn't go away as more first drafts get machine-written. Understanding networking and Go from first principles is what makes a person effective at directing AI tools, not a competitor to using them. The book makes this argument explicitly and at length in Chapter 1: https://github.com/sazardev/networking-with-go/blob/master/docs/part1/01-introduction-to-networking.mdx
