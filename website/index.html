@@ -68,6 +68,22 @@
       --card: #111111;
     }
   }
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --fg: #0a0a0a;
+    --muted: #5c5c5c;
+    --line: #0a0a0a;
+    --line-soft: #d9d9d9;
+    --card: #fafafa;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0a;
+    --fg: #f5f5f5;
+    --muted: #a6a6a6;
+    --line: #f5f5f5;
+    --line-soft: #333333;
+    --card: #111111;
+  }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
@@ -77,6 +93,7 @@
     font-family: var(--sans);
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
   a { color: inherit; }
   .wrap {
@@ -110,7 +127,20 @@
     align-items: center;
     justify-content: space-between;
     height: 60px;
+    gap: 16px;
   }
+  .header-right { display: flex; align-items: center; gap: 22px; }
+  #theme-toggle {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--line);
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  #theme-toggle:hover { opacity: 0.75; }
   .brand {
     font-family: var(--mono);
     font-weight: 700;
@@ -302,11 +332,14 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#top">net<span>/</span>go<span>.</span>book</a>
-    <nav class="top-nav">
-      <a href="#formats">Formats</a>
-      <a href="#contents">Contents</a>
-      <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
-    </nav>
+    <div class="header-right">
+      <nav class="top-nav">
+        <a href="#formats">Formats</a>
+        <a href="#contents">Contents</a>
+        <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
+      </nav>
+      <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+    </div>
   </div>
 </header>
 
@@ -446,6 +479,36 @@
 
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var root = document.documentElement;
+    var toggle = document.getElementById('theme-toggle');
+
+    function effectiveTheme() {
+      var attr = root.getAttribute('data-theme');
+      if (attr) return attr;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function render() {
+      var eff = effectiveTheme();
+      toggle.textContent = eff === 'dark' ? 'Light mode' : 'Dark mode';
+      toggle.setAttribute('aria-pressed', String(eff === 'dark'));
+    }
+
+    var saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') {
+      root.setAttribute('data-theme', saved);
+    }
+    render();
+
+    toggle.addEventListener('click', function () {
+      var next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      render();
+    });
+  })();
 
   (function () {
     var REPO = 'sazardev/networking-with-go';
