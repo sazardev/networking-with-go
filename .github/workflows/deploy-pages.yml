@@ -1,0 +1,45 @@
+name: Deploy Pages
+
+# Publishes website/ as the project's GitHub Pages site. The page itself is
+# self-updating: it reads the book's cover straight from raw.githubusercontent.com
+# and fetches version/PDF-download info live from the GitHub Releases API on
+# every page load, so a new release or a new cover.jpg shows up automatically
+# without needing a redeploy. A redeploy is only needed when website/ itself
+# changes.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

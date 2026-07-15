@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Networking with Go, Made Easy — Free Book: Learn TCP/IP, Sockets & Concurrent Network Programming in Golang</title>
+<meta name="description" content="A free, open-source book that teaches computer networking and network programming in Go from scratch: TCP/IP, UDP, HTTP, WebSockets, DNS, goroutines, channels, context, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, Docker, and Clean Architecture. 143 chapters. Download the PDF free.">
+<meta name="keywords" content="networking with go, learn go networking, golang networking book, go tcp ip tutorial, golang sockets, go concurrency book, goroutines and channels tutorial, go tcp server, go udp server, golang http server tutorial, go websockets tutorial, golang dns tutorial, go grpc tutorial, go webrtc, go mqtt iot, go network programming pdf, free golang book, open source programming book, golang ethical hacking, go cybersecurity tutorial, go penetration testing, golang rest api tutorial, gin framework tutorial, fiber framework go, go clean architecture, go hexagonal architecture, go domain driven design, go postgresql tutorial, go sqlite tutorial, go docker deployment, google cloud golang, learn golang from scratch, go for beginners, network programming golang, tcp vs udp go, go tls encryption, go pki certificates, go ids ips, go honeypot, go bug bounty, ctf golang, network security golang, awesome go, awesome networking">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="author" content="Omar Flores Salazar">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://sazardev.github.io/networking-with-go/">
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000'/%3E%3Ccircle cx='16' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='48' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='32' cy='16' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='19' y1='43' x2='29' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='45' y1='43' x2='35' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='21' y1='46' x2='43' y2='46' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+
+<meta property="og:type" content="book">
+<meta property="og:site_name" content="Networking with Go, Made Easy">
+<meta property="og:title" content="Networking with Go, Made Easy — Free, Open-Source Book">
+<meta property="og:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — 143 chapters, free PDF, EPUB coming soon.">
+<meta property="og:url" content="https://sazardev.github.io/networking-with-go/">
+<meta property="og:image" content="https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg">
+<meta property="og:image:alt" content="Networking with Go, Made Easy — book cover">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Networking with Go, Made Easy — Free, Open-Source Book">
+<meta name="twitter:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — 143 chapters, free PDF, EPUB coming soon.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Book",
+  "name": "Networking with Go, Made Easy",
+  "alternateName": "Networking with Go — The Easy Way Guide",
+  "author": { "@type": "Person", "name": "Omar Flores Salazar" },
+  "description": "A free, open-source book that teaches computer networking and network programming in Go from scratch: TCP/IP, UDP, HTTP, WebSockets, DNS, goroutines, channels, context, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, Docker, and Clean Architecture.",
+  "image": "https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg",
+  "url": "https://sazardev.github.io/networking-with-go/",
+  "genre": ["Computer networking", "Software engineering", "Programming", "Cybersecurity"],
+  "inLanguage": "en",
+  "bookFormat": "https://schema.org/EBook",
+  "isAccessibleForFree": true,
+  "license": "https://opensource.org/licenses/MIT",
+  "keywords": "Go, Golang, networking, TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, gRPC, cybersecurity, REST APIs",
+  "publisher": { "@type": "Organization", "name": "Open Source" }
+}
+</script>
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #0a0a0a;
+    --muted: #5c5c5c;
+    --line: #0a0a0a;
+    --line-soft: #d9d9d9;
+    --card: #fafafa;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a;
+      --fg: #f5f5f5;
+      --muted: #a6a6a6;
+      --line: #f5f5f5;
+      --line-soft: #333333;
+      --card: #111111;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  header.top {
+    border-bottom: 1px solid var(--line-soft);
+  }
+  header.top .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+  }
+  .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+  }
+  .brand span { color: var(--muted); }
+  nav.top-nav { display: flex; gap: 22px; }
+  nav.top-nav a {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-decoration: none;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid transparent;
+  }
+  nav.top-nav a:hover { border-bottom-color: var(--fg); }
+
+  .hero { padding: 72px 0 56px; }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 56px;
+    align-items: start;
+  }
+  .cover-frame {
+    border: 1px solid var(--line);
+    padding: 0;
+  }
+  .cover-frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  h1 {
+    font-size: 40px;
+    line-height: 1.1;
+    margin: 16px 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 18px;
+    color: var(--muted);
+    margin: 0 0 18px;
+    max-width: 560px;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 22px;
+  }
+  .byline a { text-decoration: underline; }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 26px;
+  }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    border: 1px solid var(--line);
+  }
+  .btn-primary { background: var(--fg); color: var(--bg); }
+  .btn-secondary { background: transparent; color: var(--fg); }
+  .btn:hover { opacity: 0.75; }
+  .fineprint { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+  hr.rule { border: none; border-top: 1px solid var(--line-soft); margin: 0; }
+
+  section { padding: 56px 0; }
+  h2 {
+    font-size: 24px;
+    margin: 0 0 8px;
+  }
+  .section-intro { color: var(--muted); max-width: 640px; margin: 0 0 32px; }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    border: 1px solid var(--line-soft);
+    background: var(--line-soft);
+  }
+  .card {
+    background: var(--card);
+    padding: 22px;
+  }
+  .card .idx {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 10px;
+  }
+  .card h3 { font-size: 16px; margin: 0 0 8px; }
+  .card p { font-size: 13.5px; color: var(--muted); margin: 0; }
+
+  .formats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    border: 1px solid var(--line-soft);
+    background: var(--line-soft);
+  }
+  .format-card {
+    background: var(--card);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .format-card h3 {
+    margin: 0;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .status-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border: 1px solid var(--line);
+    padding: 2px 6px;
+  }
+  .status-tag.soon { color: var(--muted); border-color: var(--line-soft); }
+  .format-card p { font-size: 13px; color: var(--muted); margin: 0; flex: 1; }
+  .format-card .btn { justify-content: center; width: 100%; }
+  .format-card .btn[disabled] {
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+  ul.plain li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 14.5px;
+  }
+  ul.plain li:first-child { padding-top: 0; }
+  ul.plain li::before { content: "— "; color: var(--muted); }
+
+  .quote {
+    text-align: center;
+    font-size: 20px;
+    font-style: italic;
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 64px 24px;
+  }
+
+  footer {
+    border-top: 1px solid var(--line-soft);
+    padding: 28px 0 40px;
+  }
+  footer .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  footer a { text-decoration: underline; }
+
+  @media (max-width: 720px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .cover-frame { max-width: 220px; }
+    h1 { font-size: 30px; }
+    .grid-3, .formats { grid-template-columns: 1fr; }
+    nav.top-nav { gap: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top">net<span>/</span>go<span>.</span>book</a>
+    <nav class="top-nav">
+      <a href="#formats">Formats</a>
+      <a href="#contents">Contents</a>
+      <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="cover-frame">
+      <img src="https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg"
+           alt="Networking with Go, Made Easy — book cover, learn TCP/IP, sockets, and concurrent network programming in Golang from scratch"
+           width="640" height="860" loading="eager">
+    </div>
+    <div>
+      <span class="pill">Free &amp; Open Source &middot; MIT License</span>
+      <h1>Networking with Go, Made Easy</h1>
+      <p class="subtitle">Learn TCP/IP, Sockets, and Concurrent Network Programming in Golang from Scratch — from networking fundamentals and the Go language itself to production APIs and ethical hacking.</p>
+      <p class="byline">by <a href="https://github.com/sazardev">Omar Flores Salazar</a> &nbsp;/&nbsp; <span data-version>143 chapters</span> &nbsp;/&nbsp; updated <span data-updated>continuously</span></p>
+      <div class="btn-row">
+        <a id="download-pdf" class="btn btn-primary" href="https://github.com/sazardev/networking-with-go/releases/latest">Download Free PDF</a>
+        <a class="btn btn-secondary" href="https://github.com/sazardev/networking-with-go">View on GitHub</a>
+      </div>
+      <p class="fineprint">No signup. No paywall. <span data-stars>★ open source on GitHub</span>.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section id="about">
+  <div class="wrap">
+    <span class="eyebrow">About the book</span>
+    <h2>Networking, taught the way it should be — then built in Go</h2>
+    <p class="section-intro">
+      This is a free, hands-on book that teaches computer networking and network programming in Go, end to end:
+      how networks actually work, how to write real networking code in Go, and how to use that code to build
+      production-grade APIs and do offensive/defensive security work. It's written for three readers at once —
+      people new to networking, people new to Go, and working developers who already know both and want a
+      deep, practical reference. Theory comes first, in a warm, story-driven voice with real history and
+      analogies; every hands-on example is a complete, runnable Go program, not a fragment.
+    </p>
+  </div>
+</section>
+
+<section id="learn">
+  <div class="wrap">
+    <span class="eyebrow">What's inside</span>
+    <h2>Six parts, 143 chapters</h2>
+    <p class="section-intro">From "what is a network?" to shipping a Go API on Google Cloud and building your own honeypot.</p>
+    <div class="grid-3">
+      <div class="card">
+        <span class="idx">01 &middot; 13 chapters</span>
+        <h3>Networking Foundations</h3>
+        <p>OSI &amp; TCP/IP models, IP addressing and subnetting, ports, sockets, protocols, firewalls, NAT, and VPNs — theory only, no code, told through real history.</p>
+      </div>
+      <div class="card">
+        <span class="idx">02 &middot; 9 chapters</span>
+        <h3>Go From Scratch</h3>
+        <p>A full Go language crash course before the networking code starts, capped by a flagship chapter on goroutines, channels, and concurrency.</p>
+      </div>
+      <div class="card">
+        <span class="idx">03 &middot; 25 chapters</span>
+        <h3>Core Go Networking</h3>
+        <p>TCP, UDP, HTTP, JSON, WebSockets, DNS, proxies, chat apps, file transfer, NAT traversal, context, and TLS — theory paired with runnable Go every time.</p>
+      </div>
+      <div class="card">
+        <span class="idx">04 &middot; 19 chapters</span>
+        <h3>Advanced &amp; Specialized</h3>
+        <p>gRPC, WebRTC, MQTT/IoT, SDN, NFV, packet inspection, custom protocols, mesh networks, and real-time networking for games and blockchain.</p>
+      </div>
+      <div class="card">
+        <span class="idx">05 &middot; 32 chapters</span>
+        <h3>Cybersecurity &amp; Ethical Hacking</h3>
+        <p>Scanning, sniffing, vulnerability assessment, IDS/IPS, SIEM, malware analysis, red team vs blue team, honeypots, and PKI — for authorized, ethical use.</p>
+      </div>
+      <div class="card">
+        <span class="idx">06 &middot; 45 chapters</span>
+        <h3>Production APIs &amp; Architecture</h3>
+        <p>REST and gRPC APIs with Gin and Fiber, PostgreSQL and SQLite, Docker and Google Cloud, Clean/Hexagonal Architecture, and Domain-Driven Design.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="formats">
+  <div class="wrap">
+    <span class="eyebrow">Get the book</span>
+    <h2>Available formats</h2>
+    <p class="section-intro">The book is free and always will be. New formats ship as they're ready — this page always points at the latest.</p>
+    <div class="formats">
+      <div class="format-card">
+        <h3>PDF <span class="status-tag" data-version-tag>Available</span></h3>
+        <p>Print-ready, built straight from the book's source with go-pretty-pdf. Always the current release.</p>
+        <a id="download-pdf-card" class="btn btn-primary" href="https://github.com/sazardev/networking-with-go/releases/latest">Download PDF</a>
+      </div>
+      <div class="format-card">
+        <h3>EPUB <span class="status-tag soon">Coming soon</span></h3>
+        <p>For e-readers and mobile apps. In progress — watch the repository to get notified the moment it ships.</p>
+        <a class="btn btn-secondary" href="https://github.com/sazardev/networking-with-go/subscription" aria-disabled="true">Watch for updates</a>
+      </div>
+      <div class="format-card">
+        <h3>Other formats <span class="status-tag soon">Coming soon</span></h3>
+        <p>MOBI and a web reader are planned next. Star the repo to help decide what ships first.</p>
+        <a class="btn btn-secondary" href="https://github.com/sazardev/networking-with-go/stargazers" aria-disabled="true">Star the repo</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="contents">
+  <div class="wrap">
+    <span class="eyebrow">Who it's for</span>
+    <h2>Read it however you already work</h2>
+    <ul class="plain">
+      <li>Beginners who want networking concepts, and Go itself, explained clearly from the ground up.</li>
+      <li>Developers who already know Go but want a deep, practical reference for networked systems.</li>
+      <li>Anyone prepping for interviews, CTFs, or real-world backend and networking jobs.</li>
+      <li>Backend engineers who want a real, production-shaped example — architecture, database, Docker, cloud deploy — instead of a toy.</li>
+      <li>Security professionals and tinkerers who want offensive/defensive skills backed by working code.</li>
+    </ul>
+    <p class="section-intro" style="margin-top:24px;">
+      Every chapter and the full table of contents live in the
+      <a href="https://github.com/sazardev/networking-with-go#table-of-contents" style="text-decoration:underline;">repository README</a>.
+    </p>
+  </div>
+</section>
+
+<blockquote class="quote">"The best way to learn networking is to build, break, and secure it."</blockquote>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>&copy; <span id="year"></span> Omar Flores Salazar &middot; MIT License</span>
+    <span><a href="https://github.com/sazardev/networking-with-go">github.com/sazardev/networking-with-go</a></span>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var REPO = 'sazardev/networking-with-go';
+
+    fetch('https://api.github.com/repos/' + REPO + '/releases/latest')
+      .then(function (res) { if (!res.ok) throw new Error('release fetch failed'); return res.json(); })
+      .then(function (data) {
+        var pdfAsset = (data.assets || []).find(function (a) { return a.name.endsWith('.pdf'); });
+        var version = data.tag_name || 'latest';
+        var updated = data.published_at
+          ? new Date(data.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+          : null;
+
+        document.querySelectorAll('[data-version]').forEach(function (el) {
+          el.textContent = '143 chapters · ' + version;
+        });
+        if (updated) {
+          document.querySelectorAll('[data-updated]').forEach(function (el) { el.textContent = updated; });
+        }
+        document.querySelectorAll('[data-version-tag]').forEach(function (el) { el.textContent = version; });
+
+        if (pdfAsset) {
+          ['download-pdf', 'download-pdf-card'].forEach(function (id) {
+            var btn = document.getElementById(id);
+            if (btn) {
+              btn.href = pdfAsset.browser_download_url;
+              btn.setAttribute('download', pdfAsset.name);
+            }
+          });
+        }
+      })
+      .catch(function (err) {
+        console.warn('Could not load latest release info, falling back to the Releases page.', err);
+      });
+
+    fetch('https://api.github.com/repos/' + REPO)
+      .then(function (res) { if (!res.ok) throw new Error('repo fetch failed'); return res.json(); })
+      .then(function (data) {
+        if (typeof data.stargazers_count === 'number') {
+          document.querySelectorAll('[data-stars]').forEach(function (el) {
+            el.textContent = '★ ' + data.stargazers_count.toLocaleString('en-US') + ' stars on GitHub';
+          });
+        }
+      })
+      .catch(function (err) {
+        console.warn('Could not load star count.', err);
+      });
+  })();
+</script>
+
+</body>
+</html>

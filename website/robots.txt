@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sazardev.github.io/networking-with-go/sitemap.xml
