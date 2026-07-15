@@ -162,3 +162,163 @@
 
   renderResults('');
 })();
+
+(function () {
+  var root = document.documentElement;
+  var mqMobile = window.matchMedia('(max-width: 900px)');
+  var sidebarToggle = document.getElementById('sidebar-toggle');
+  var scrim = document.querySelector('.sidebar-scrim');
+
+  function applyState() {
+    if (mqMobile.matches) {
+      root.classList.remove('sidebar-collapsed');
+    } else {
+      root.classList.remove('sidebar-open');
+      root.classList.toggle('sidebar-collapsed', localStorage.getItem('sidebarCollapsed') === '1');
+    }
+  }
+
+  applyState();
+  mqMobile.addEventListener('change', applyState);
+
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener('click', function () {
+      if (mqMobile.matches) {
+        root.classList.toggle('sidebar-open');
+      } else {
+        var collapsed = !root.classList.contains('sidebar-collapsed');
+        root.classList.toggle('sidebar-collapsed', collapsed);
+        localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+      }
+    });
+  }
+
+  if (scrim) {
+    scrim.addEventListener('click', function () { root.classList.remove('sidebar-open'); });
+  }
+})();
+
+(function () {
+  var toggle = document.getElementById('focus-toggle');
+  if (!toggle) return;
+  var root = document.documentElement;
+
+  function render() {
+    var on = root.classList.contains('focus-mode');
+    toggle.classList.toggle('active', on);
+    toggle.textContent = on ? 'Exit Focus' : 'Focus';
+  }
+
+  if (localStorage.getItem('focusMode') === '1') root.classList.add('focus-mode');
+  render();
+
+  toggle.addEventListener('click', function () {
+    var on = !root.classList.contains('focus-mode');
+    root.classList.toggle('focus-mode', on);
+    localStorage.setItem('focusMode', on ? '1' : '0');
+    render();
+  });
+})();
+
+(function () {
+  var dec = document.getElementById('font-dec');
+  var inc = document.getElementById('font-inc');
+  if (!dec || !inc) return;
+  var root = document.documentElement;
+  var MIN = 0.8, MAX = 1.6, STEP = 0.1;
+
+  function apply(scale) {
+    scale = Math.min(MAX, Math.max(MIN, scale));
+    root.style.setProperty('--reader-font-scale', scale.toFixed(2));
+    localStorage.setItem('readerFontScale', scale.toFixed(2));
+  }
+
+  var saved = parseFloat(localStorage.getItem('readerFontScale'));
+  apply(isNaN(saved) ? 1 : saved);
+
+  dec.addEventListener('click', function () {
+    apply((parseFloat(localStorage.getItem('readerFontScale')) || 1) - STEP);
+  });
+  inc.addEventListener('click', function () {
+    apply((parseFloat(localStorage.getItem('readerFontScale')) || 1) + STEP);
+  });
+})();
+
+(function () {
+  var STORAGE_KEY = 'readChapters';
+  var LAST_READ_KEY = 'lastRead';
+
+  function escapeText(s) {
+    var div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function getReadMap() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function applyReadMarks() {
+    var map = getReadMap();
+    document.querySelectorAll('[data-chapter-id]').forEach(function (a) {
+      a.classList.toggle('read', !!map[a.getAttribute('data-chapter-id')]);
+    });
+  }
+
+  function markRead(chapterId) {
+    if (!chapterId) return;
+    var map = getReadMap();
+    if (map[chapterId]) return;
+    map[chapterId] = Date.now();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+    applyReadMarks();
+  }
+
+  applyReadMarks();
+
+  var pageType = document.body.getAttribute('data-page-type');
+  var chapterId = document.body.getAttribute('data-chapter-id');
+
+  if (pageType === 'chapter' && chapterId) {
+    localStorage.setItem(LAST_READ_KEY, JSON.stringify({
+      chapterId: chapterId,
+      href: window.location.href,
+      title: document.title.replace(' — Networking with Go, Made Easy', ''),
+      ts: Date.now()
+    }));
+
+    var sentinel = document.querySelector('.read-sentinel');
+    if (sentinel && 'IntersectionObserver' in window) {
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            markRead(chapterId);
+            observer.disconnect();
+          }
+        });
+      }, { rootMargin: '0px 0px -10% 0px' });
+      observer.observe(sentinel);
+    }
+  }
+
+  if (pageType === 'index') {
+    var last = null;
+    try { last = JSON.parse(localStorage.getItem(LAST_READ_KEY) || 'null'); } catch (e) {}
+    if (last && last.href) {
+      var h1 = document.querySelector('.reader-content h1');
+      if (h1) {
+        var banner = document.createElement('div');
+        banner.className = 'continue-reading';
+        banner.innerHTML =
+          '<div><span class="cr-label">Continue reading</span>' +
+          '<span class="cr-title">' + escapeText(last.title || 'your last chapter') + '</span></div>' +
+          '<a class="btn-continue" href="' + last.href + '">Resume &rarr;</a>';
+        h1.insertAdjacentElement('afterend', banner);
+      }
+    }
+  }
+})();

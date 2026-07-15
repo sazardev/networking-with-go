@@ -373,7 +373,7 @@ func buildSidebar(results []partResult, ctx linkCtx) string {
 		fmt.Fprintf(&b, `<div class="toc-part" data-part="%s"><div class="toc-part-title"><a href="%s%s/index.html">%s</a></div><ul>`,
 			r.meta.Slug, ctx.toRead, r.meta.Slug, html.EscapeString(r.meta.Title))
 		for _, ch := range r.chapters {
-			fmt.Fprintf(&b, `<li><a href="%s%s/%s.html">%s</a></li>`, ctx.toRead, r.meta.Slug, ch.Slug, html.EscapeString(ch.Title))
+			fmt.Fprintf(&b, `<li><a data-chapter-id="%s" href="%s%s/%s.html">%s</a></li>`, ch.SectionID, ctx.toRead, r.meta.Slug, ch.Slug, html.EscapeString(ch.Title))
 		}
 		b.WriteString(`</ul></div>`)
 	}
@@ -504,13 +504,22 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 
 func pageHeader(ctx linkCtx) string {
 	return fmt.Sprintf(`<header class="reader-top">
-  <a class="brand" href="%sindex.html">net<span>/</span>go<span>.</span>book</a>
+  <div class="reader-top-left">
+    <button id="sidebar-toggle" type="button" aria-label="Toggle contents">&#9776;</button>
+    <a class="brand" href="%sindex.html">net<span>/</span>go<span>.</span>book</a>
+  </div>
   <div class="reader-top-actions">
     <a href="%sindex.html">All Parts</a>
+    <div class="font-size-control">
+      <button id="font-dec" type="button" aria-label="Decrease text size">A&minus;</button>
+      <button id="font-inc" type="button" aria-label="Increase text size">A+</button>
+    </div>
+    <button id="focus-toggle" type="button">Focus</button>
     <button id="search-open" type="button">Search <kbd>Ctrl K</kbd></button>
     <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
   </div>
 </header>
+<div class="sidebar-scrim"></div>
 `, ctx.toSite, ctx.toRead)
 }
 
@@ -568,13 +577,14 @@ func renderChapterPage(ch chapterEntry, p part, prev, next *flatRef, globalPos i
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth1, theme))
-	fmt.Fprintf(&b, "<body data-current-part=\"%s\">\n", p.Slug)
+	fmt.Fprintf(&b, "<body data-current-part=\"%s\" data-page-type=\"chapter\" data-chapter-id=\"%s\">\n", p.Slug, ch.SectionID)
 	b.WriteString(pageHeader(ctxDepth1))
 	b.WriteString(`<div class="reader-layout">` + "\n")
 	b.WriteString(sidebar)
 	b.WriteString(`<main class="reader-content">` + "\n")
 	b.WriteString(breadcrumbHTML(ctxDepth1, p, &ch))
 	b.WriteString(ch.BodyHTML)
+	b.WriteString(`<div class="read-sentinel" aria-hidden="true"></div>` + "\n")
 	b.WriteString("\n" + chapterNavHTML(ctxDepth1, prev, next) + "\n")
 	b.WriteString("</main>\n</div>\n")
 	b.WriteString(paletteMarkup(ctxDepth1))
@@ -593,7 +603,7 @@ func renderPartIndexPage(r partResult, sidebar, theme string) string {
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth1, theme))
-	fmt.Fprintf(&b, "<body data-current-part=\"%s\">\n", r.meta.Slug)
+	fmt.Fprintf(&b, "<body data-current-part=\"%s\" data-page-type=\"part-index\">\n", r.meta.Slug)
 	b.WriteString(pageHeader(ctxDepth1))
 	b.WriteString(`<div class="reader-layout">` + "\n")
 	b.WriteString(sidebar)
@@ -602,8 +612,8 @@ func renderPartIndexPage(r partResult, sidebar, theme string) string {
 	fmt.Fprintf(&b, "<h1>%s</h1>\n<p>%s</p>\n", html.EscapeString(r.meta.Title), html.EscapeString(r.meta.Desc))
 	b.WriteString(`<ol class="chapter-list">` + "\n")
 	for _, ch := range r.chapters {
-		fmt.Fprintf(&b, `<li><a href="%s.html"><span class="chapter-list-title">%s</span><span class="chapter-list-excerpt">%s</span></a></li>`+"\n",
-			ch.Slug, html.EscapeString(ch.Title), html.EscapeString(truncateRunes(ch.Excerpt, 160)))
+		fmt.Fprintf(&b, `<li><a data-chapter-id="%s" href="%s.html"><span class="chapter-list-title">%s</span><span class="chapter-list-excerpt">%s</span></a></li>`+"\n",
+			ch.SectionID, ch.Slug, html.EscapeString(ch.Title), html.EscapeString(truncateRunes(ch.Excerpt, 160)))
 	}
 	b.WriteString("</ol>\n</main>\n</div>\n")
 	b.WriteString(paletteMarkup(ctxDepth1))
@@ -620,7 +630,7 @@ func renderIndexPage(results []partResult, sidebar, theme string) string {
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth0, theme))
-	b.WriteString("<body>\n")
+	b.WriteString("<body data-page-type=\"index\">\n")
 	b.WriteString(pageHeader(ctxDepth0))
 	b.WriteString(`<div class="reader-layout">` + "\n")
 	b.WriteString(sidebar)

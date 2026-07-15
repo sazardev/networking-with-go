@@ -7,6 +7,7 @@
   --card: #fafafa;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --reader-font-scale: 1;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -73,26 +74,30 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   height: 56px;
   padding: 0 20px;
   background: var(--bg);
   border-bottom: 1px solid var(--line-soft);
   font-family: var(--sans);
 }
+.reader-top-left { display: flex; align-items: center; gap: 14px; }
 .brand {
   font-family: var(--mono);
   font-weight: 700;
   font-size: 14px;
   text-decoration: none;
+  white-space: nowrap;
 }
 .brand span { color: var(--muted); }
-.reader-top-actions { display: flex; align-items: center; gap: 14px; }
+.reader-top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .reader-top-actions a {
   font-family: var(--mono);
   font-size: 12px;
   text-decoration: none;
 }
-#search-open, #theme-toggle {
+#search-open, #theme-toggle, #focus-toggle, #sidebar-toggle,
+.font-size-control button {
   font-family: var(--mono);
   font-size: 12px;
   background: transparent;
@@ -101,6 +106,7 @@ a { color: inherit; }
   padding: 5px 10px;
   cursor: pointer;
 }
+#sidebar-toggle { padding: 5px 8px; }
 #search-open kbd {
   font-family: var(--mono);
   border: 1px solid var(--line-soft);
@@ -109,12 +115,25 @@ a { color: inherit; }
   margin-left: 4px;
   font-size: 10px;
 }
+.font-size-control { display: inline-flex; }
+.font-size-control button {
+  padding: 5px 9px;
+  border-left-width: 0;
+}
+.font-size-control button:first-child { border-left-width: 1px; }
+#theme-toggle, #focus-toggle, #search-open, #sidebar-toggle,
+.font-size-control button { transition: none; }
+#theme-toggle:hover, #focus-toggle:hover, #search-open:hover, #sidebar-toggle:hover,
+.font-size-control button:hover { opacity: 0.7; }
+#focus-toggle.active { background: var(--fg); color: var(--bg); }
 
 .reader-layout {
   display: grid;
   grid-template-columns: 280px 1fr;
   min-height: calc(100vh - 56px);
 }
+html.sidebar-collapsed .reader-layout { grid-template-columns: 1fr; }
+html.sidebar-collapsed .reader-sidebar { display: none; }
 
 .reader-sidebar {
   border-right: 1px solid var(--line-soft);
@@ -126,6 +145,21 @@ a { color: inherit; }
   align-self: start;
   font-family: var(--sans);
 }
+
+/* Focus mode: hide the sidebar and narrow + center the reading column for
+   distraction-free reading, regardless of the sidebar-collapsed setting. */
+html.focus-mode .reader-layout { grid-template-columns: 1fr; }
+html.focus-mode .reader-sidebar { display: none; }
+html.focus-mode .reader-content { max-width: 720px; margin: 0 auto; }
+
+.sidebar-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+html.sidebar-open .sidebar-scrim { display: block; }
 .toc-part { margin-bottom: 18px; }
 .toc-part-title {
   font-family: var(--mono);
@@ -151,11 +185,65 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 .toc-part[data-part].current-part { opacity: 1; }
 .toc-part[data-part].current-part .toc-part-title { color: var(--fg); }
 
+/* Read-progress checkmarks, applied by reader.js from localStorage. Shared
+   by the sidebar chapter links and the part-index chapter-list links. */
+.toc-part a.read, .chapter-list a.read { opacity: 0.6; }
+.toc-part a.read { text-decoration: line-through; }
+.toc-part a.read::after,
+.chapter-list a.read .chapter-list-title::after {
+  content: " \2713";
+  text-decoration: none;
+  opacity: 1;
+}
+
+.continue-reading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  padding: 14px 18px;
+  margin-bottom: 28px;
+  font-family: var(--sans);
+}
+.continue-reading .cr-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 4px;
+}
+.continue-reading .cr-title { font-size: 14.5px; font-weight: 600; }
+.continue-reading a.btn-continue {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-decoration: none;
+  color: var(--bg);
+  background: var(--fg);
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
 .reader-content {
-  padding: 40px clamp(20px, 4vw, 64px);
-  max-width: 860px;
+  padding: 40px clamp(20px, 4vw, 72px);
+  max-width: 1080px;
+  font-size: calc(10.5pt * var(--reader-font-scale));
 }
 .reader-content :first-child { margin-top: 0; }
+
+/* Re-declare the theme's own heading sizes scaled by --reader-font-scale --
+   the theme hardcodes fixed pt values, which wouldn't otherwise respond to
+   the font-size control below. */
+.reader-content h1 { font-size: calc(18pt * var(--reader-font-scale)); }
+.reader-content h2 { font-size: calc(14pt * var(--reader-font-scale)); }
+.reader-content h3 { font-size: calc(12pt * var(--reader-font-scale)); }
+.reader-content h4 { font-size: calc(11pt * var(--reader-font-scale)); }
+.reader-content h5 { font-size: calc(10.5pt * var(--reader-font-scale)); }
+.reader-content pre,
+.reader-content code { font-size: calc(10.5pt * var(--reader-font-scale)); }
 
 /* go-pretty-pdf's own stylesheet sets @page/print rules that are harmless
    on screen; only the print-oriented forced-page-break behavior on H1 is
@@ -295,8 +383,32 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 
 @media (max-width: 900px) {
   .reader-layout { grid-template-columns: 1fr; }
-  .reader-sidebar { display: none; }
   .part-grid { grid-template-columns: 1fr; }
   .chapter-nav { flex-direction: column; gap: 12px; }
   .chapter-nav-prev, .chapter-nav-next { max-width: 100%; text-align: left; margin-left: 0; }
+
+  /* On mobile the sidebar is a slide-in drawer instead of a persistent
+     column: hidden by default, shown as a fixed overlay when toggled via
+     #sidebar-toggle (html.sidebar-open), never via sidebar-collapsed. */
+  .reader-sidebar {
+    display: none;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    bottom: 0;
+    width: min(320px, 85vw);
+    max-height: none;
+    z-index: 30;
+    background: var(--bg);
+  }
+  html.sidebar-open .reader-sidebar { display: block; }
+
+  .reader-top-actions a[href$="index.html"],
+  .reader-top-actions #search-open kbd { display: none; }
+}
+
+@media (max-width: 560px) {
+  .font-size-control { order: 5; }
+  #focus-toggle { display: none; }
+  .continue-reading { flex-direction: column; align-items: flex-start; }
 }
