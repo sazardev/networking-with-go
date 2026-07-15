@@ -1,0 +1,73 @@
+name: Build and Release PDF
+
+# Triggered by pushing a version tag (e.g. `git tag v1.0.0 && git push --tags`),
+# which both builds the book and publishes it as a versioned GitHub Release
+# with the PDF attached. Can also be run manually (workflow_dispatch) to test
+# the build without cutting a release.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      # go-pretty-pdf's most recent *tagged* release (v0.6.0) predates a real
+      # bug fix: it navigated Chrome to a "data:...;base64,..." URI to render
+      # the page, which silently fails ("net::ERR_ABORTED") once a book's
+      # composed HTML crosses roughly 2MB -- exactly what this book does.
+      # The fix (https://github.com/sazardev/go-pretty-pdf/pull/7) is merged
+      # to master but not yet in a tagged release, so pin to the merge commit
+      # directly instead of `@latest` (which would silently resolve to the
+      # broken v0.6.0). Once a release ships that includes this commit,
+      # switch this back to `@latest`.
+      - name: Install pretty-pdf
+        run: go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@63fbcda3684c8b6274f7f662cf93d04b2a39863c
+
+      - name: Validate chapters
+        run: pretty-pdf check
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build PDF
+        run: pretty-pdf build
+
+      - name: Rename PDF with version
+        run: mv networking-with-go.pdf "networking-with-go-${{ steps.version.outputs.version }}.pdf"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: networking-with-go-${{ steps.version.outputs.version }}
+          path: networking-with-go-*.pdf
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            networking-with-go-*.pdf \
+            --title "Networking with Go - The Easy Way Guide ${{ github.ref_name }}" \
+            --generate-notes
