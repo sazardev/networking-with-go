@@ -56,15 +56,18 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  /* Deliberately no font-family here: the book content's font comes from
-     go-pretty-pdf's own theme <style> block (loaded before this file),
-     matching the PDF. Only the UI chrome below opts into var(--sans). */
+  overflow-x: hidden;
 }
+img, table, video { max-width: 100%; height: auto; }
+table { display: block; overflow-x: auto; white-space: nowrap; }
+pre { overflow-x: auto; max-width: 100%; }
+code { word-wrap: break-word; overflow-wrap: break-word; }
+.reader-content { word-wrap: break-word; overflow-wrap: break-word; }
 a { color: inherit; }
 
 .reader-top {
@@ -78,7 +81,6 @@ a { color: inherit; }
   height: 56px;
   padding: 0 20px;
   background: var(--bg);
-  border-bottom: 1px solid var(--line-soft);
   font-family: var(--sans);
 }
 .reader-top-left { display: flex; align-items: center; gap: 14px; }
@@ -102,14 +104,14 @@ a { color: inherit; }
   font-size: 12px;
   background: transparent;
   color: var(--fg);
-  border: 1px solid var(--line);
+  border: none;
   padding: 5px 10px;
   cursor: pointer;
 }
 #sidebar-toggle { padding: 5px 8px; }
 #search-open kbd {
   font-family: var(--mono);
-  border: 1px solid var(--line-soft);
+  border: none;
   border-radius: 2px;
   padding: 0 4px;
   margin-left: 4px;
@@ -118,9 +120,7 @@ a { color: inherit; }
 .font-size-control { display: inline-flex; }
 .font-size-control button {
   padding: 5px 9px;
-  border-left-width: 0;
 }
-.font-size-control button:first-child { border-left-width: 1px; }
 #theme-toggle, #focus-toggle, #search-open, #sidebar-toggle,
 .font-size-control button { transition: none; }
 #theme-toggle:hover, #focus-toggle:hover, #search-open:hover, #sidebar-toggle:hover,
@@ -136,7 +136,6 @@ html.sidebar-collapsed .reader-layout { grid-template-columns: 1fr; }
 html.sidebar-collapsed .reader-sidebar { display: none; }
 
 .reader-sidebar {
-  border-right: 1px solid var(--line-soft);
   padding: 20px 16px;
   overflow-y: auto;
   max-height: calc(100vh - 56px);
@@ -387,28 +386,110 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
   .chapter-nav { flex-direction: column; gap: 12px; }
   .chapter-nav-prev, .chapter-nav-next { max-width: 100%; text-align: left; margin-left: 0; }
 
-  /* On mobile the sidebar is a slide-in drawer instead of a persistent
-     column: hidden by default, shown as a fixed overlay when toggled via
-     #sidebar-toggle (html.sidebar-open), never via sidebar-collapsed. */
+  .reader-top { padding: 0 12px; height: 52px; }
+  .reader-top-left { gap: 10px; }
+  .brand { font-size: 13px; }
+  .reader-top-actions { gap: 6px; }
+  .reader-top-actions a { font-size: 11px; }
+  #search-open, #theme-toggle, #focus-toggle, #sidebar-toggle,
+  .font-size-control button { font-size: 11px; padding: 4px 8px; }
+  #sidebar-toggle { padding: 4px 6px; }
+  #search-open kbd { display: none; }
+
   .reader-sidebar {
     display: none;
     position: fixed;
-    top: 56px;
+    top: 52px;
     left: 0;
     bottom: 0;
-    width: min(320px, 85vw);
+    width: min(300px, 85vw);
     max-height: none;
     z-index: 30;
     background: var(--bg);
+    padding: 16px 12px;
   }
   html.sidebar-open .reader-sidebar { display: block; }
 
-  .reader-top-actions a[href$="index.html"],
-  .reader-top-actions #search-open kbd { display: none; }
+  .reader-content { padding: 24px 16px; font-size: calc(10pt * var(--reader-font-scale)); overflow-x: hidden; }
+  .reader-content pre { overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: calc(9pt * var(--reader-font-scale)); }
+  .reader-content h1 { font-size: calc(16pt * var(--reader-font-scale)); }
+  .reader-content h2 { font-size: calc(13pt * var(--reader-font-scale)); }
+  .reader-content h3 { font-size: calc(11pt * var(--reader-font-scale)); }
+  .breadcrumb { font-size: 11px; margin-bottom: 18px; }
+  .continue-reading { padding: 12px 14px; margin-bottom: 20px; }
+  .continue-reading .cr-title { font-size: 13px; }
+  .continue-reading a.btn-continue { font-size: 11px; padding: 6px 12px; }
+  .chapter-nav { margin-top: 40px; padding-top: 18px; }
+  .chapter-nav-title { font-size: 13px; }
+  .chapter-list-title { font-size: 14px; }
+  .chapter-list-excerpt { font-size: 12px; }
+  .part-card { padding: 16px; }
+  .part-card h2 { font-size: 15px; }
+  .part-card p { font-size: 12.5px; }
+  .toc-part a { font-size: 12px; padding: 3px 5px; }
+  .toc-part-title { font-size: 10px; }
+
+  .reader-top-actions a[href$="index.html"] { display: none; }
 }
 
 @media (max-width: 560px) {
-  .font-size-control { order: 5; }
+  .reader-top { height: 48px; padding: 0 10px; }
+  .brand { font-size: 12px; }
+  .reader-top-actions { gap: 4px; }
+  .reader-top-actions a { font-size: 10px; }
+  #search-open, #theme-toggle, #focus-toggle, #sidebar-toggle,
+  .font-size-control button { font-size: 10px; padding: 3px 6px; }
+  #sidebar-toggle { padding: 3px 5px; font-size: 14px; }
   #focus-toggle { display: none; }
-  .continue-reading { flex-direction: column; align-items: flex-start; }
+
+  .reader-sidebar { top: 48px; width: min(280px, 88vw); padding: 12px 10px; }
+
+  .reader-content { padding: 20px 12px; font-size: calc(9.5pt * var(--reader-font-scale)); overflow-x: hidden; }
+  .reader-content pre { overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: calc(8.5pt * var(--reader-font-scale)); }
+  .reader-content h1 { font-size: calc(15pt * var(--reader-font-scale)); margin-top: 32px; padding-top: 32px; }
+  .reader-content h2 { font-size: calc(12pt * var(--reader-font-scale)); }
+  .reader-content h3 { font-size: calc(10.5pt * var(--reader-font-scale)); }
+  .reader-content pre,
+  .reader-content code { font-size: calc(9.5pt * var(--reader-font-scale)); }
+
+  .breadcrumb { font-size: 10px; margin-bottom: 14px; }
+  .continue-reading { flex-direction: column; align-items: flex-start; gap: 10px; padding: 10px 12px; }
+  .continue-reading .cr-label { font-size: 10px; }
+  .continue-reading .cr-title { font-size: 12px; }
+  .continue-reading a.btn-continue { width: 100%; text-align: center; font-size: 10px; padding: 6px 10px; }
+
+  .chapter-nav { margin-top: 32px; padding-top: 14px; gap: 10px; }
+  .chapter-nav-label { font-size: 10px; }
+  .chapter-nav-title { font-size: 12px; }
+
+  .chapter-list a { padding: 12px 0; }
+  .chapter-list-title { font-size: 13px; }
+  .chapter-list-excerpt { font-size: 11px; margin-top: 3px; }
+
+  .part-card { padding: 14px; gap: 6px; }
+  .part-idx { font-size: 11px; }
+  .part-card h2 { font-size: 14px; }
+  .part-card p { font-size: 12px; }
+  .part-count { font-size: 10px; }
+
+  .toc-part { margin-bottom: 14px; }
+  .toc-part-title { font-size: 9px; margin-bottom: 4px; }
+  .toc-part a { font-size: 11px; padding: 2px 4px; }
+
+  .palette-box { width: 95vw; max-height: 70vh; }
+  #palette-input { font-size: 13px; padding: 12px 14px; }
+  .palette-result { padding: 8px 14px; }
+  .palette-result .pr-title { font-size: 12.5px; }
+  .palette-result .pr-meta { font-size: 10px; }
+  .palette-result .pr-excerpt { font-size: 11px; }
+}
+
+@media (max-width: 380px) {
+  .reader-top { padding: 0 8px; }
+  .reader-top-actions { gap: 3px; }
+  #search-open, #theme-toggle, #sidebar-toggle,
+  .font-size-control button { font-size: 9px; padding: 3px 5px; }
+  .reader-content { padding: 16px 10px; overflow-x: hidden; }
+  .reader-content pre { font-size: calc(8pt * var(--reader-font-scale)); }
+  .continue-reading { padding: 8px 10px; }
 }

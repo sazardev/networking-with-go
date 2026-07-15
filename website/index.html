@@ -250,7 +250,7 @@
     letter-spacing: 0.04em;
     background: transparent;
     color: var(--fg);
-    border: 1px solid var(--line);
+    border: none;
     padding: 5px 10px;
     cursor: pointer;
   }
@@ -272,6 +272,18 @@
     border-bottom: 1px solid transparent;
   }
   nav.top-nav a:hover { border-bottom-color: var(--fg); }
+
+  .menu-toggle {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+  }
 
   .hero { padding: 72px 0 56px; }
   .hero-grid {
@@ -546,17 +558,70 @@
   footer a { text-decoration: underline; }
 
   @media (max-width: 720px) {
-    .hero-grid { grid-template-columns: 1fr; }
-    .cover-frame { max-width: 220px; }
-    h1 { font-size: 32px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+    .cover-frame { max-width: 200px; margin: 0 auto; }
+    h1 { font-size: 28px; line-height: 1.15; margin: 16px 0 10px; }
+    .subtitle { font-size: 16px; margin: 0 0 16px; }
+    .byline { font-size: 12px; margin-bottom: 18px; }
     .grid-3, .formats { grid-template-columns: 1fr; }
-    nav.top-nav { gap: 14px; }
-    .stats .wrap { grid-template-columns: repeat(2, 1fr); }
-    .stat .num { font-size: 34px; }
-    .why-ai { padding: 64px 0; }
-    .why-ai-title { font-size: 26px; }
-    .axiom { font-size: 19px; }
-    .why-ai-grid { grid-template-columns: 1fr; gap: 24px; }
+    .stats .wrap { grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 24px 16px; }
+    .stat .num { font-size: 28px; }
+    .stat .num.small { font-size: 20px; }
+    .stat .label { font-size: 10px; }
+    .why-ai { padding: 48px 0; }
+    .why-ai-title { font-size: 22px; margin: 10px 0 18px; }
+    .why-ai-lead { font-size: 15px; margin: 0 0 24px; }
+    .axiom { font-size: 17px; margin: 0 0 32px; padding-left: 16px; }
+    .why-ai-grid { grid-template-columns: 1fr; gap: 20px; }
+    .why-ai-grid h3 { font-size: 14px; }
+    .why-ai-grid p { font-size: 13px; }
+    .btn-row { flex-direction: column; gap: 10px; }
+    .btn { width: 100%; justify-content: center; padding: 11px 16px; font-size: 12px; }
+    section { padding: 40px 0; }
+    h2 { font-size: 24px; }
+    .section-intro { font-size: 14px; margin: 0 0 24px; }
+    .wrap { padding: 0 16px; }
+    .quote { font-size: 18px; padding: 48px 16px; }
+    footer .wrap { flex-direction: column; align-items: flex-start; gap: 10px; font-size: 11px; }
+  }
+
+  @media (max-width: 560px) {
+    .menu-toggle { display: block; }
+    .header-right nav.top-nav {
+      display: none;
+      position: absolute;
+      top: 60px;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line-soft);
+      flex-direction: column;
+      gap: 0;
+      padding: 8px 0;
+      z-index: 100;
+    }
+    .header-right nav.top-nav.open { display: flex; }
+    .header-right nav.top-nav a {
+      padding: 12px 24px;
+      border-bottom: none;
+      font-size: 13px;
+    }
+    .header-right nav.top-nav a:hover { background: var(--card); }
+    .header-right { gap: 10px; }
+    #theme-toggle { font-size: 11px; padding: 4px 8px; }
+    .hero { padding: 40px 0 32px; }
+    .cover-frame { max-width: 160px; }
+    h1 { font-size: 24px; }
+    .subtitle { font-size: 15px; }
+    .pill { font-size: 10px; padding: 3px 8px; }
+    .card { padding: 18px; }
+    .card h3 { font-size: 15px; }
+    .card p { font-size: 13px; }
+    .format-card { padding: 18px; }
+    .format-card h3 { font-size: 15px; }
+    .faq-item summary { font-size: 14px; padding-right: 24px; }
+    .faq-item p { font-size: 13px; margin: 12px 0 0; }
+    ul.plain li { font-size: 13.5px; padding: 8px 0; }
   }
 </style>
 </head>
@@ -575,6 +640,7 @@
         <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
       </nav>
       <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+      <button class="menu-toggle" type="button" aria-label="Toggle menu" aria-expanded="false">&#9776;</button>
     </div>
   </div>
 </header>
@@ -819,6 +885,23 @@
 
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var menuToggle = document.querySelector('.menu-toggle');
+    var nav = document.querySelector('.top-nav');
+    if (menuToggle && nav) {
+      menuToggle.addEventListener('click', function () {
+        var isOpen = nav.classList.toggle('open');
+        menuToggle.setAttribute('aria-expanded', String(isOpen));
+      });
+      nav.addEventListener('click', function (e) {
+        if (e.target.tagName === 'A') {
+          nav.classList.remove('open');
+          menuToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+  })();
 
   (function () {
     var root = document.documentElement;
