@@ -20,3 +20,22 @@ render:
   margin_bottom: 15mm
   margin_left: 0mm
   margin_right: 0mm
+
+# Force an all-monospace look (headings, body, and code) instead of the
+# "default" theme's own mixed proportional-body/monospace-code design,
+# per the book owner's preference. Explicitly pinned, rather than left to
+# the theme's own font stack (which names fonts like "Inter"/"JetBrains
+# Mono" that aren't guaranteed installed anywhere): without a pin, the
+# theme's generic "sans-serif"/"monospace" keywords resolve to whatever
+# fallback each machine happens to have, which is exactly what caused this
+# book to render with a different, inconsistent font on every machine that
+# built it. Liberation Mono is listed first because it's free (OFL), and
+# already confirmed present both in local dev sandboxes and GitHub Actions'
+# ubuntu-latest runners; the rest of the stack is a safety net for any
+# other machine, always ending in the generic "monospace" family so the
+# result is never anything other than a fixed-width font.
+theme_options:
+  fonts:
+    heading: "Liberation Mono, JetBrains Mono, Consolas, Menlo, monospace"
+    body: "Liberation Mono, JetBrains Mono, Consolas, Menlo, monospace"
+    code: "Liberation Mono, JetBrains Mono, Consolas, Menlo, monospace"
