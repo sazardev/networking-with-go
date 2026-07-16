@@ -1,0 +1,199 @@
+---
+id: "[4.59.0]"
+title: "Message Queues and Service Discovery in Go"
+---
+
+# Message Queues and Service Discovery in Go
+
+> "The chat server case study mentioned a message bus standing in for an in-process channel once a single process can no longer hold every connection. This chapter is that message bus, made concrete — plus the other half of running many small services: how any of them finds the others in the first place, when 'the address' is no longer a fixed line in a config file."
+
+## Why Message Queues Exist
+
+Every client/server example so far in this book has one program talking directly to another: a dial, a request, a response. That works well when both sides are up at the same time and the caller can afford to wait. It breaks down once a system grows past a handful of processes:
+
+- **Decoupling in time.** A producer that publishes an event shouldn't have to know or care whether every consumer is currently running — a consumer that's mid-deploy should be able to catch up once it comes back, not lose whatever happened while it was down.
+- **Absorbing bursts.** A sudden spike of incoming work (an order surge, a batch job) can be written to a queue immediately and drained by consumers at whatever rate they can sustain, instead of every producer blocking or every consumer falling over.
+- **Fan-out.** The same event — "order placed" — often needs to trigger several independent reactions (send an email, update inventory, notify analytics) without the producer knowing about any of them individually.
+
+A message queue is the infrastructure that makes this possible: producers publish messages to it, consumers read from it, and the queue itself handles buffering, delivery, and (depending on the system) ordering and durability.
+
+<Axiom>A direct request is a promise the other side is listening right now. A queue turns that promise into "listening eventually" — and eventually is often good enough.</Axiom>
+
+### The Big Three, and Why This Chapter Picks One
+
+- **Kafka** is a distributed log built for very high throughput and long-term replay — consumers track their own position (an offset) in an append-only log, so multiple consumer groups can replay the same data independently. Common in event-sourcing and analytics pipelines.
+- **RabbitMQ** implements AMQP: a broker with routing logic (exchanges, queues, bindings), acknowledgments, and per-message delivery guarantees — a good fit when message routing rules matter more than raw throughput.
+- **NATS** is a lightweight, high-performance messaging system written in Go itself, with a client library (`nats.go`) that feels like a natural extension of the `net` package idioms this book has used throughout. This chapter builds working code against NATS specifically, because its API surface maps directly onto concepts already covered — publish, subscribe, request/reply — without a heavyweight broker-configuration model getting in the way of the networking concepts themselves. The same publish/subscribe shape applies conceptually to Kafka and RabbitMQ; only the client library and delivery guarantees differ.
+
+## Go Implementation: Publish/Subscribe with NATS
+
+Running a local NATS server for these examples is one command: `docker run -p 4222:4222 nats:latest`, or `go install github.com/nats-io/nats-server/v2@latest && nats-server`.
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/nats-io/nats.go"
+)
+
+func main() {
+	nc, err := nats.Connect(nats.DefaultURL) // "nats://127.0.0.1:4222"
+	if err != nil {
+		panic(err)
+	}
+	defer nc.Close()
+
+	// Subscribe first: a subscription only sees messages published
+	// after it exists, the same "start listening before events can
+	// arrive" ordering that matters for any pub/sub system.
+	sub, err := nc.Subscribe("orders.created", func(msg *nats.Msg) {
+		fmt.Printf("received: %s\n", string(msg.Data))
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer sub.Unsubscribe()
+
+	if err := nc.Publish("orders.created", []byte(`{"id": 42}`)); err != nil {
+		panic(err)
+	}
+
+	// Flush blocks until every buffered message has actually been
+	// written to the connection — without it, main can return and
+	// close nc before the publish and the async subscription
+	// callback both had a chance to run.
+	nc.Flush()
+}
+```
+
+<DeepDive title="Subjects instead of queue names">NATS routes messages by **subject** — a dot-separated string like `orders.created` — rather than a queue you explicitly create ahead of time. Subscribers can also use wildcards: `orders.*` matches `orders.created` and `orders.cancelled` but not `orders.created.eu`, while `orders.>` matches any number of trailing tokens. This is closer to the topic-based routing a pub/sub system offers than to a point-to-point queue.</DeepDive>
+
+<Warning title="Plain NATS is at-most-once delivery">The basic publish/subscribe shown above has no persistence: if no subscriber is connected when a message publishes, that message is gone, and a subscriber that crashes mid-processing loses whatever it hadn't finished. For at-least-once delivery with durable storage and replay, NATS offers **JetStream**, a persistence layer built on top of the same core protocol — the right choice once losing a message during a brief consumer outage is unacceptable.</Warning>
+
+## Go Implementation: Request/Reply
+
+Beyond fire-and-forget publishing, NATS supports a request/reply pattern built out of the same primitives — useful for RPC-style calls without standing up a dedicated server for every callee:
+
+```go
+// Responder: answers any request on "time.now" with the current time.
+sub, _ := nc.Subscribe("time.now", func(msg *nats.Msg) {
+	nc.Publish(msg.Reply, []byte(time.Now().Format(time.RFC3339)))
+})
+defer sub.Unsubscribe()
+
+// Caller: publishes a request and blocks for a reply, bounded by
+// a timeout — the same "don't wait forever" discipline the context
+// chapter applied to every other blocking network call in this book.
+resp, err := nc.Request("time.now", nil, 2*time.Second)
+if err != nil {
+	fmt.Println("no reply:", err)
+} else {
+	fmt.Println("server time:", string(resp.Data))
+}
+```
+
+Under the hood, `Request` generates a unique, temporary reply subject, subscribes to it, publishes the request with that subject attached as `msg.Reply`, and waits — the responder above never needs to know request/reply is even happening; it just publishes to whatever reply subject it was handed.
+
+## Why Service Discovery Is a Separate Problem
+
+A message queue solves "how do these processes exchange data without both being up at once." It doesn't solve a related but distinct problem: when a service needs to call *another specific service* directly — an HTTP API, a gRPC endpoint — how does it find that service's current address? In this book's earlier chapters, every address was a literal string: `"localhost:8080"`, `"example.com:443"`. That works on a single machine. It falls apart the moment services run across many machines that scale up and down, get rescheduled by an orchestrator, and change IP addresses constantly — exactly the deployment environment the deployment chapter's containers and the upcoming Docker/Kubernetes chapters describe.
+
+**Service discovery** is the mechanism that answers "where is `orders-service` right now" without hardcoding an answer that goes stale.
+
+### Two Common Approaches
+
+- **DNS-based discovery.** The simplest form: a name like `orders-service.default.svc.cluster.local` resolves, via the platform's own DNS, to whichever instance(s) are currently healthy — this is exactly how Kubernetes' internal service discovery works, reusing the `net.LookupHost`/`net.Resolver` machinery from the DNS chapter with no extra client library needed.
+- **A dedicated service registry**, like Consul or etcd, where services actively register themselves on startup and deregister (or get evicted) on shutdown or failed health checks, and callers query the registry directly instead of relying on DNS alone. This buys richer metadata (versions, tags, health status) than a bare DNS record can carry.
+
+## Go Implementation: Registering with Consul
+
+Consul's HTTP API has an official Go client, `github.com/hashicorp/consul/api`. A service registers itself once at startup:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	consul "github.com/hashicorp/consul/api"
+)
+
+func registerService(name string, port int) error {
+	client, err := consul.NewClient(consul.DefaultConfig())
+	if err != nil {
+		return err
+	}
+
+	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
+	registration := &consul.AgentServiceRegistration{
+		ID:   fmt.Sprintf("%s-%d", name, port),
+		Name: name,
+		Port: port,
+		Check: &consul.AgentServiceCheck{
+			HTTP:                           healthURL,
+			Interval:                       "10s",
+			DeregisterCriticalServiceAfter: "1m",
+		},
+	}
+	return client.Agent().ServiceRegister(registration)
+}
+```
+
+The embedded `Check` reuses exactly the health-check-endpoint pattern from the load balancer case study — Consul polls `/health` every 10 seconds and stops advertising this instance the moment it fails, the same "unhealthy backends stop receiving traffic" behavior, just implemented by the registry instead of a hand-rolled `healthCheckLoop`.
+
+## Go Implementation: Discovering a Service
+
+A caller looks up healthy instances of a service by name instead of hardcoding an address:
+
+```go
+func discoverService(name string) ([]string, error) {
+	client, err := consul.NewClient(consul.DefaultConfig())
+	if err != nil {
+		return nil, err
+	}
+
+	// The `true` argument filters to only instances currently passing
+	// their health check — the discovery-side mirror of the
+	// registration-side Check configured above.
+	entries, _, err := client.Health().Service(name, "", true, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var addrs []string
+	for _, entry := range entries {
+		addrs = append(addrs, fmt.Sprintf(
+			"%s:%d", entry.Service.Address, entry.Service.Port,
+		))
+	}
+	return addrs, nil
+}
+```
+
+<DeepDive title="This looks a lot like the load balancer's backend list, on purpose">`discoverService` returning a slice of addresses is deliberately the same shape as the `[]*backend` field on the `loadBalancer` type from the case-studies chapter. A production load balancer commonly calls something like `discoverService` on a timer instead of taking a static, hardcoded backend list at startup — service discovery and load balancing solve adjacent problems, and combining them (discover the current set, then round-robin or health-check within it) is the usual shape of a real one.</DeepDive>
+
+<Warning title="A registry outage shouldn't take down every caller at once">If a caller queries Consul (or etcd) on every single request and the registry becomes briefly unreachable, that failure now takes down every service that depends on it — turning one registry blip into a system-wide outage. Production clients cache the last known-good set of addresses and only refresh periodically or on a watch/event stream, so a transient registry failure degrades gracefully (stale addresses, still mostly correct) instead of catastrophically (no addresses at all).</Warning>
+
+## Frequently Asked Questions
+
+**Why does this chapter build working code against NATS instead of Kafka or RabbitMQ, given all three are widely used?**
+NATS's client API maps directly onto publish/subscribe and request/reply concepts this book already uses elsewhere, without requiring a broker-side configuration model (Kafka's partitions and consumer groups, RabbitMQ's exchanges and bindings) to explain before any code can run. The underlying decoupling problem — and the reasons a queue solves it — are the same regardless of which broker sits underneath.
+
+**If NATS can lose a message when no subscriber is listening, why use it instead of something durable by default?**
+Plenty of real use cases genuinely don't need durability — a live metrics feed or a cache-invalidation notification is only useful in the moment, and losing one during a brief outage is harmless. For the cases that do need at-least-once delivery and replay, NATS's own JetStream layer adds exactly that on top of the same core protocol, rather than requiring a switch to a different system entirely.
+
+**Isn't DNS-based service discovery basically the same thing Kubernetes already does?**
+Yes — that's precisely why it's listed as the simplest option. Kubernetes resolves a service name to its current healthy pod IPs using ordinary DNS, reusing the same `net.LookupHost` machinery from the DNS chapter, with no dedicated client library needed at all. A registry like Consul earns its extra complexity when you need more than an IP back — tags, versions, or custom health-check logic a bare A record can't carry.
+
+**Why cache discovered addresses instead of just querying Consul on every request?**
+Because querying the registry on the hot path makes every single request depend on the registry being reachable — a brief network blip to Consul would otherwise take down every service that calls it, turning one small outage into a cascading one. Caching the last known-good address list and refreshing on an interval (or a watch) means a registry hiccup degrades to "slightly stale addresses" instead of "no addresses at all."
+
+## Key Takeaways
+
+- Message queues decouple producers from consumers in time, absorb bursty load, and support fan-out to multiple independent consumers.
+- NATS's publish/subscribe and request/reply primitives map directly onto concepts already used throughout this book — Kafka and RabbitMQ solve the same core problem with different delivery guarantees and routing models.
+- Service discovery answers "where is this service right now" in environments where addresses change constantly — either via DNS (simplest, what Kubernetes uses internally) or a dedicated registry like Consul.
+- A registry-based health check is the same mechanism as the load balancer case study's `/health` polling, just run by the registry instead of hand-rolled.
+- Cache discovered addresses and refresh periodically rather than querying the registry per request, so a registry outage degrades gracefully instead of cascading.

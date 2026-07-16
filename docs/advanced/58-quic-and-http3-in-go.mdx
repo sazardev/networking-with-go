@@ -1,0 +1,191 @@
+---
+id: "[4.58.0]"
+title: "QUIC and HTTP/3 in Go"
+---
+
+# QUIC and HTTP/3 in Go
+
+> "Every earlier chapter in this book built on the same assumption: sockets are either the ordered, reliable stream of TCP or the fire-and-forget datagrams of UDP, and never both. QUIC breaks that assumption on purpose — it reimplements everything TCP and TLS gave you, but on top of UDP, so a lost packet on one request can no longer stall every other request sharing the connection."
+
+## Why QUIC Exists
+
+HTTP/2, covered in the HTTP chapter, multiplexes many requests over a single TCP connection to avoid opening a new connection per request. That fixed HTTP/1.1's connection overhead, but it exposed a problem TCP itself creates: **head-of-line blocking at the transport layer**. TCP guarantees bytes arrive in order, so if one packet is lost, every stream multiplexed on that connection stalls waiting for the retransmit — even streams that have nothing to do with the lost packet's data. A single dropped packet on a bad Wi-Fi connection can freeze an entire page load, not just the one image that was mid-transfer.
+
+QUIC (the name is not an acronym) solves this by moving multiplexing below the point where a single lost packet can block everything. It runs over UDP and reimplements the reliability, ordering, and congestion control TCP normally provides, but per-stream instead of per-connection — a lost packet only stalls the one stream it belonged to.
+
+<Axiom>QUIC didn't remove TCP's guarantees — it moved them up a layer, so one lost packet no longer holds every other stream hostage.</Axiom>
+
+### What QUIC Bundles Together
+
+QUIC merges three things that TCP + TLS + HTTP/2 handle as separate layers and separate round trips:
+
+- **Transport-layer reliability and ordering**, per stream rather than per connection — the fix for head-of-line blocking described above.
+- **Encryption by default.** Every QUIC connection is encrypted with TLS 1.3; there is no plaintext QUIC in practice, unlike TCP where TLS is an optional layer on top.
+- **A single combined handshake.** A fresh TCP + TLS 1.3 connection costs two round trips before the first application byte moves (one for the TCP handshake, one for TLS). QUIC folds both into one, and a client that has connected to a server recently can often send application data in its very first packet — **0-RTT** resumption, at the cost of those very first bytes being replayable by an attacker who captures them, which is why 0-RTT is reserved for idempotent requests.
+
+<DeepDive title="Connection IDs and migration">A TCP connection is identified by a 4-tuple: source IP, source port, destination IP, destination port. Change any of them — switch from Wi-Fi to cellular, for instance — and the connection breaks, forcing a fresh handshake. QUIC instead identifies a connection by a connection ID chosen by the endpoints themselves, independent of IP and port. A client whose network changes mid-connection can keep using the same QUIC connection on a new path, without renegotiating anything — the server recognizes the connection ID and picks up where it left off.</DeepDive>
+
+## HTTP/3: HTTP Semantics on Top of QUIC
+
+HTTP/3 is HTTP's familiar request/response model — methods, headers, status codes, all unchanged from HTTP/1.1 and HTTP/2 — carried over QUIC instead of TCP. From an application's perspective, an HTTP/3 handler looks identical to the `http.Handler` interface from the HTTP chapter; the protocol difference is entirely below that interface.
+
+<Warning title="Go's standard library does not implement HTTP/3">Unlike HTTP/1.1 and HTTP/2, which `net/http` supports natively, the standard library has no QUIC or HTTP/3 implementation as of this writing. Every example in this chapter depends on `github.com/quic-go/quic-go`, the de facto standard third-party implementation — install it with `go get github.com/quic-go/quic-go` before running any of the code below.</Warning>
+
+## Go Implementation: A Raw QUIC Echo Server
+
+Before layering HTTP/3 on top, it's worth seeing QUIC's own stream-based API directly — it looks a lot like `net.Listen`/`net.Dial`, just with an extra step to open a stream once a connection exists:
+
+```go
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+
+	"github.com/quic-go/quic-go"
+)
+
+func main() {
+	tlsConf := generateTLSConfig() // see the TLS chapter for a real cert
+	tlsConf.NextProtos = []string{"echo-quic"}
+
+	ln, err := quic.ListenAddr("localhost:9700", tlsConf, nil)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("QUIC echo server listening on :9700")
+
+	for {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			fmt.Println("accept error:", err)
+			continue
+		}
+		go handleConn(conn)
+	}
+}
+
+func handleConn(conn *quic.Conn) {
+	for {
+		// AcceptStream blocks until the client opens a new stream on
+		// this same connection — one connection can carry many
+		// independent streams, each with its own ordering guarantee.
+		stream, err := conn.AcceptStream(context.Background())
+		if err != nil {
+			return // connection closed
+		}
+		go func(s *quic.Stream) {
+			defer s.Close()
+			io.Copy(s, s) // echo whatever this stream sends back to it
+		}(stream)
+	}
+}
+```
+
+<DeepDive title="Why streams instead of one connection-wide read/write">A `*quic.Conn` has no `Read`/`Write` of its own — all data moves through streams opened on it, and that's deliberate. Each stream carries its own independent ordering guarantee, so a lost packet belonging to one stream only blocks reads on that stream; every other stream on the same connection keeps delivering data as it arrives. This is the concrete mechanism behind the head-of-line-blocking fix described earlier in this chapter.</DeepDive>
+
+`generateTLSConfig` needs a real certificate the same way the TLS chapter's server did — QUIC has no unencrypted mode, so there is no equivalent of a bare `net.Listen("tcp", ...)` to fall back to.
+
+## Go Implementation: An HTTP/3 Server
+
+`quic-go`'s `http3` subpackage adapts an ordinary `http.Handler` to serve over HTTP/3, so existing handler code from the HTTP chapters works unchanged:
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/quic-go/quic-go/http3"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "served over %s\n", r.Proto)
+	})
+
+	server := &http3.Server{
+		Addr:    ":9701",
+		Handler: mux,
+	}
+
+	fmt.Println("HTTP/3 server listening on :9701")
+	// ListenAndServeTLS needs a real certificate — HTTP/3 inherits
+	// QUIC's mandatory encryption, so plain http.ListenAndServe has
+	// no HTTP/3 equivalent.
+	if err := server.ListenAndServeTLS("server.crt", "server.key"); err != nil {
+		panic(err)
+	}
+}
+```
+
+The handler itself — `mux.HandleFunc`, `http.ResponseWriter`, `*http.Request` — is exactly the API from the HTTP protocol chapter. `r.Proto` reports `"HTTP/3.0"` for a request that arrived over QUIC, which is often the only line of application code that needs to know which protocol carried the request at all.
+
+<Warning title="A browser or client needs to know HTTP/3 is available first">A client dialing a URL for the first time has no way to know a server also speaks HTTP/3 over UDP — it has to be told, typically via the `Alt-Svc` HTTP response header (`Alt-Svc: h3=":9701"`) sent over a regular HTTP/1.1 or HTTP/2 response first. Browsers use that hint to open a QUIC connection on a subsequent request; a bare HTTP/3-only server with nothing else listening on TCP is unreachable by any client that hasn't already been told to look for it.</Warning>
+
+## Go Implementation: An HTTP/3 Client
+
+`http3.RoundTripper` implements `http.RoundTripper`, so it plugs directly into an ordinary `http.Client` — the same client type used throughout this book:
+
+```go
+package main
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+
+	"github.com/quic-go/quic-go/http3"
+)
+
+func main() {
+	roundTripper := &http3.RoundTripper{}
+	defer roundTripper.Close()
+
+	client := &http.Client{Transport: roundTripper}
+
+	resp, err := client.Get("https://localhost:9701/")
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println("response:", string(body))
+	fmt.Println("protocol:", resp.Proto)
+}
+```
+
+Nothing about `client.Get`, reading `resp.Body`, or checking `resp.Proto` differs from the plain HTTP client code in the HTTP chapter — swapping `http3.RoundTripper` in for the default `http.Transport` is the entire integration point.
+
+## When HTTP/3 Actually Helps
+
+HTTP/3's head-of-line-blocking fix matters most on lossy or high-latency networks — mobile connections switching cell towers, satellite links, congested Wi-Fi — where TCP's per-connection ordering guarantee turns an occasional dropped packet into a stall affecting every in-flight request. On a stable data-center-to-data-center link with negligible packet loss, HTTP/2 over TCP and HTTP/3 over QUIC perform similarly, because the problem HTTP/3 solves rarely triggers in the first place.
+
+<DeepDive title="Why QUIC is implemented in userspace, not the kernel">TCP's implementation lives in the operating system kernel, updated on the OS's release schedule. QUIC, running over plain UDP datagrams, is implemented entirely in userspace — inside `quic-go`, inside a browser, inside any library that speaks it. That's precisely why the protocol has been able to evolve so quickly (from an early Google-only variant to a full IETF standard in a few years): shipping a new QUIC feature means shipping a new library version, not waiting for kernel updates to reach users' machines.</DeepDive>
+
+## Frequently Asked Questions
+
+**Does QUIC replace TCP, or run alongside it?**
+Alongside — QUIC runs entirely over UDP and doesn't touch the kernel's TCP stack at all. A server commonly listens on the same port number for both: TCP for HTTP/1.1 and HTTP/2 clients, UDP for HTTP/3 clients, with `Alt-Svc` telling capable clients to switch.
+
+**Why does Go's standard library not support HTTP/3 the way it supports HTTP/2?**
+HTTP/2 could be added to `net/http` because it still runs over the same TCP `net.Conn` the standard library already understood. QUIC needs its own transport implementation over UDP, congestion control, and packet-loss recovery — a much larger addition — which is why `github.com/quic-go/quic-go` exists as the de facto standard implementation rather than something in the standard library itself.
+
+**If QUIC has no unencrypted mode, can I test it locally without a certificate authority?**
+Yes, the same way the TLS chapter's server did — generate a self-signed certificate for local testing, trusted explicitly by your test client, rather than skipping verification entirely. There is no equivalent of a bare, unencrypted `net.Listen("tcp", ...)` for QUIC to fall back to; encryption is not optional.
+
+**My HTTP/3 server works with `curl --http3`, but browsers never use it — why?**
+Almost always a missing or misconfigured `Alt-Svc` header. A browser has no way to guess a server also speaks HTTP/3 over UDP on its first request; it has to see `Alt-Svc: h3=":<port>"` in a response served over regular HTTP/1.1 or HTTP/2 first, then it will try QUIC on subsequent requests to that host.
+
+## Key Takeaways
+
+- QUIC runs over UDP and reimplements TCP's reliability and ordering per stream instead of per connection, fixing transport-layer head-of-line blocking.
+- Every QUIC connection is encrypted with TLS 1.3 by default — there is no unencrypted QUIC.
+- HTTP/3 is ordinary HTTP semantics over QUIC; `quic-go/http3` adapts existing `http.Handler` and `http.RoundTripper` code with minimal changes.
+- `Alt-Svc` is how a client learns a server also speaks HTTP/3 — without it, capable clients never try QUIC at all.
+- HTTP/3's benefit is concentrated on lossy, high-latency networks; on clean, low-latency links it performs similarly to HTTP/2.

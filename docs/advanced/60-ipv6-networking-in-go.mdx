@@ -1,0 +1,184 @@
+---
+id: "[4.60.0]"
+title: "IPv6 Networking in Go"
+---
+
+# IPv6 Networking in Go
+
+> "The IP addressing chapter back in Part 1 explained why IPv6 exists — 340 undecillion addresses instead of 4 billion. Every Go example since then quietly worked whether you gave it an IPv4 or IPv6 address, because the `net` package was built dual-stack from day one. This chapter makes that support explicit: how Go parses, dials, and listens on IPv6 specifically, and the handful of places where it genuinely isn't just IPv4 with longer numbers."
+
+## What's Actually Different for Application Code
+
+Every socket-level example in this book — `net.Dial`, `net.Listen`, `net.ListenUDP` — has worked with IPv6 addresses without a single line of IPv6-specific code, because Go's `net` package treats IPv4 and IPv6 as different address families behind the same API, not as different code paths you have to choose between. `net.Dial("tcp", "[2001:db8::1]:443")` and `net.Dial("tcp", "93.184.216.34:443")` run through identical code in your program; the address family is resolved by the string you pass in.
+
+That said, a handful of things genuinely need IPv6-aware handling: parsing addresses that contain colons (which collide syntactically with port separators), listening in a way that actually reaches both address families, link-local addresses that require specifying which network interface they're on, and testing your code against IPv6 at all when most local development defaults to IPv4.
+
+<Axiom>Go's `net` package doesn't have an "IPv6 mode" — it has one API that happens to work for both address families, which is exactly why most of this book's earlier code never had to think about it.</Axiom>
+
+## Parsing Addresses with `net/netip`
+
+Go 1.18 added `net/netip`, a smaller, comparable, allocation-free address type meant to replace `net.IP` for new code — worth using specifically for IPv6, where the older `net.IP`'s ambiguity between a 4-byte and a 16-byte representation of the same address causes real bugs.
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/netip"
+)
+
+func main() {
+	addr, err := netip.ParseAddr("2001:db8::1")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("is IPv6:", addr.Is6())
+	fmt.Println("is IPv4:", addr.Is4())
+	fmt.Println("is loopback:", addr.IsLoopback())
+	fmt.Println("is link-local unicast:", addr.IsLinkLocalUnicast())
+
+	// AddrPort pairs an address with a port — the netip equivalent of
+	// the "[addr]:port" string this book has used since the IP/ports
+	// chapter, but structured instead of stringly-typed.
+	ap := netip.AddrPortFrom(addr, 443)
+	fmt.Println("addr:port:", ap.String())
+}
+```
+
+<DeepDive title="Why net/netip over net.IP for new code">`net.IP` is a `[]byte` slice that can be either 4 or 16 bytes long, and — this is the sharp edge — a 4-byte IPv4 address and its 16-byte "IPv4-in-IPv6" equivalent (`::ffff:192.0.2.1`) can compare as unequal with `bytes.Equal` even though they represent the same address, depending on which form each value happens to be in. `netip.Addr` is a small, comparable value type (usable as a map key directly, unlike a `[]byte` slice) that normalizes this distinction and exposes it explicitly via `Is4In6()`, rather than leaving it as a bug waiting to happen in a byte-slice comparison.</DeepDive>
+
+<Warning title="Brackets are mandatory for IPv6 host:port strings">An IPv6 address already contains colons, which is exactly the character `host:port` strings use to separate the port. `net.Dial("tcp", "2001:db8::1:443")` doesn't fail — it just parses wrong, since Go can't tell where the address ends and the port begins. The fix is the bracket notation from the URL and HTTP chapters: `net.Dial("tcp", "[2001:db8::1]:443")`, or build the string safely with `net.JoinHostPort(host, port)` rather than concatenating it by hand.</Warning>
+
+## Dual-Stack Listening
+
+`net.Listen("tcp", ":8080")` — the form used throughout Part 2 — already listens on both IPv4 and IPv6 on most platforms, because Go asks the OS for an IPv6 socket and relies on the OS's own dual-stack support (IPv4-mapped IPv6 addresses) to accept IPv4 connections on the same socket:
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func main() {
+	// ":8080" with no host resolves to the unspecified address for
+	// both families — on a dual-stack host this accepts both IPv4
+	// and IPv6 clients on one listener.
+	ln, err := net.Listen("tcp", ":8080")
+	if err != nil {
+		panic(err)
+	}
+	defer ln.Close()
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
+		}
+		fmt.Println("connection from:", conn.RemoteAddr())
+		conn.Close()
+	}
+}
+```
+
+Force a single address family explicitly with `"tcp4"` or `"tcp6"` instead of `"tcp"` when dual-stack behavior isn't what you want — for example, a service that must never accept legacy IPv4 traffic at all.
+
+<Warning title="tcp6 with a bare port can still surprise you">`net.Listen("tcp6", ":8080")` binds only the IPv6 wildcard address — but on a system with `net.ipv6.bindv6only=0` (the historical Linux default, still common), an IPv6 socket bound to the wildcard address silently also accepts IPv4-mapped connections unless the application explicitly opts out via a raw socket option. Don't assume `"tcp6"` guarantees IPv4 clients are rejected without testing on your actual target platform — the guarantee is enforced by the OS, and OS defaults vary.</Warning>
+
+## Happy Eyeballs: Dialing Dual-Stack Hosts Without the Slow Path
+
+A hostname that resolves to both an IPv4 and an IPv6 address creates a real problem for a naive client: try IPv6 first, and if the network path to it is broken (a common real-world case — IPv6 configured but not actually routable), a client can hang for many seconds before falling back to IPv4. RFC 8305 ("Happy Eyeballs v2") specifies racing both address families with a short head start for the preferred one; `net.Dialer` implements this automatically for you, with no extra code, whenever you dial a hostname that resolves to both families:
+
+```go
+dialer := net.Dialer{
+	// FallbackDelay controls how long the dialer waits for an IPv6
+	// attempt before also starting a parallel IPv4 attempt — the
+	// "happy eyeballs" race. The zero value uses a sane default
+	// (300ms); a negative value disables the race and dials serially.
+	FallbackDelay: 300 * time.Millisecond,
+}
+conn, err := dialer.Dial("tcp", "example.com:443")
+```
+
+This is the same `net.Dialer` type from the TCP and DNS chapters — Happy Eyeballs isn't a separate API to opt into, it's what `Dial`/`DialContext` already does internally the moment a hostname resolves to more than one address family.
+
+<DeepDive title="Why this matters more for IPv6 specifically">IPv4 connectivity issues are usually all-or-nothing — if IPv4 is broken, nothing IPv4 works, and users notice immediately. IPv6 misconfiguration is often partial: a host has a valid-looking IPv6 address and route, but traffic silently blackholes somewhere upstream. Without Happy Eyeballs, that failure mode means every dual-stack hostname takes a full TCP connect timeout (which can be tens of seconds) before falling back to the IPv4 address that would have worked immediately — exactly the slow, user-visible stall the racing behavior exists to prevent.</DeepDive>
+
+## Link-Local Addresses and Zone IDs
+
+IPv6 link-local addresses (`fe80::/10`) are scoped to a single network interface by design — the same link-local address can legitimately exist on every interface on a machine simultaneously, since it's only ever meaningful on the link it was assigned to. Because of that, a link-local address alone is ambiguous; Go (like every IPv6-aware stack) requires a **zone ID** naming the interface to disambiguate it, appended after a `%`:
+
+```go
+package main
+
+import (
+	"fmt"
+	"net"
+)
+
+func main() {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		panic(err)
+	}
+
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet.IP.To4() != nil {
+				continue
+			}
+			if !ipNet.IP.IsLinkLocalUnicast() {
+				continue
+			}
+			fmt.Printf("%s%%%s\n", ipNet.IP, iface.Name)
+		}
+	}
+}
+```
+
+Dialing one of those addresses needs the zone ID attached exactly the way it printed above: `net.Dial("tcp", "[fe80::1%eth0]:8080")`. Omitting the zone on a link-local address either fails outright or, worse, silently resolves to whichever interface the OS guesses — never rely on the guess.
+
+<Warning title="Zone IDs don't survive being passed to another host">A zone ID like `%eth0` is only meaningful on the machine that has an interface named `eth0` — sending that string to a different machine, or even using it after the interface is renamed or replaced, makes it meaningless. Link-local addresses are for same-link communication (a node talking to its own default gateway, for instance), not for anything you'd store in a config file or pass between services.</Warning>
+
+## Testing IPv6 Locally
+
+Every machine has an IPv6 loopback address, `::1`, that works identically to `127.0.0.1` for local testing regardless of whether the machine has real IPv6 internet connectivity:
+
+```go
+ln, err := net.Listen("tcp", "[::1]:8080")
+```
+
+```go
+conn, err := net.Dial("tcp", "[::1]:8080")
+```
+
+This is the fastest way to exercise IPv6-specific code — parsing, dual-stack listener behavior, address formatting — without depending on your ISP or cloud provider actually supporting IPv6 end to end.
+
+## Frequently Asked Questions
+
+**Do I need to write separate code paths for IPv4 and IPv6 in a Go network application?**
+Almost never for ordinary client and server code — `net.Dial`, `net.Listen`, and `net.Resolver` all handle both address families through the same API, and `net.Dialer`'s built-in Happy Eyeballs behavior already races both when a hostname resolves to more than one. The places that do need explicit awareness are address parsing (bracket notation, `net/netip`) and link-local addresses, both covered in this chapter.
+
+**Why does `net.Dial("tcp", "2001:db8::1:443")` fail with a confusing error instead of just working?**
+Because an IPv6 address already contains colons, which collide with the colon `host:port` strings use to separate the port — Go has no way to tell where the address ends and the port begins without the bracket notation (`[2001:db8::1]:443`) this book has used since the URL and HTTP chapters. `net.JoinHostPort` builds this correctly for both address families so you don't have to special-case IPv6 by hand.
+
+**Should I switch existing `net.IP`-based code to `net/netip`?**
+For new code, yes — `netip.Addr` is a small, comparable value type that avoids the specific bug where an IPv4 address and its IPv4-in-IPv6 form can compare unequal as raw byte slices even though they're the same address. Existing, working `net.IP` code doesn't need an urgent rewrite, but `net/netip` (added in Go 1.18) is the standard library's own recommended direction going forward.
+
+**My server only listens on `tcp6` but IPv4 clients still connect — why?**
+Because on many systems, an IPv6 socket bound to the wildcard address still accepts IPv4-mapped connections unless the OS is explicitly configured otherwise (`net.ipv6.bindv6only` on Linux) — this is an operating-system-level default, not something `"tcp6"` alone guarantees from inside Go. Test the actual behavior on your deployment target rather than assuming the network string enforces it.
+
+## Key Takeaways
+
+- Go's `net` package handles IPv4 and IPv6 through the same API — most application code needs zero IPv6-specific branches.
+- Bracket notation (`[addr]:port`) or `net.JoinHostPort` is required for IPv6 addresses in host:port strings, since raw colons are ambiguous.
+- `net/netip` is the modern, comparable address type for new code, fixing a real IPv4-in-IPv6 comparison bug that `net.IP` byte slices have.
+- `net.Dialer`'s Happy Eyeballs behavior automatically races IPv4 and IPv6 attempts for dual-stack hosts — no extra code needed.
+- Link-local addresses require a zone ID (`%eth0`) naming the interface, and that zone ID is only meaningful on the machine that has it.

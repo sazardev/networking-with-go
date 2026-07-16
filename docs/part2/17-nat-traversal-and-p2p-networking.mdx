@@ -126,6 +126,8 @@ func main() {
 }
 ```
 
+[Exercise: Rendezvous Server](../../exercises/part2/17-rendezvous-server/main.go)
+
 Because the server reads the packet's source address itself (`addr` from `ReadFromUDP`) rather than trusting anything the client claims, it naturally learns each peer's real public IP and NAT-assigned port — exactly the information neither peer can see on its own.
 
 <DeepDive title="Why the Source Address Can't Be Spoofed Here (But the Session Can)">`addr` in `ReadFromUDP` is filled in by the kernel from the packet's actual IP header — a peer cannot lie about it by writing something different into the UDP payload. That's what makes the rendezvous server a trustworthy witness to each peer's public address. The session string is different: it travels inside the payload, entirely under the sender's control. Anyone who guesses a session ID before the intended second peer arrives can register in their place. For anything beyond a classroom exercise, generate session IDs as long random tokens (`crypto/rand`), not a short numeric counter.</DeepDive>

@@ -120,6 +120,8 @@ func main() {
 }
 ```
 
+[Exercise: TCP File Transfer Server](../../exercises/part2/14-tcp-file-transfer-server/main.go)
+
 <Warning title="Unbounded goroutines are a resource leak waiting to happen">`for { conn, _ := ln.Accept(); go handleConn(conn) }` spawns one goroutine per connection with no upper bound. Each goroutine holds a file descriptor and a stack, so a burst of connections (or a client opening thousands of them on purpose) can exhaust memory or file descriptors before any individual transfer misbehaves. Production servers bound concurrency with a buffered channel used as a semaphore (`sem := make(chan struct{}, maxConns)`, then `sem <- struct{}{}` before handling and `<-sem` when done) or a worker pool that pulls connections off a queue.</Warning>
 
 **Client** (sends a local file with the matching header):
@@ -210,7 +212,7 @@ func main() {
 }
 ```
 
-[Exercise: TCP File Transfer](../../exercises/part2/14-tcp-file-transfer/main.go)
+[Exercise: TCP File Transfer Client](../../exercises/part2/14-tcp-file-transfer-client/main.go)
 
 <Warning title="Never trust the declared size">A malicious or buggy client can lie about the size prefix. `io.CopyN` bounds how much the server reads, but production code should also enforce a maximum file size and validate the file name (reject `../` path traversal) before writing to disk.</Warning>
 

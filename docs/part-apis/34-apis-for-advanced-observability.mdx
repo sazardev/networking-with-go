@@ -1,9 +1,9 @@
 ---
 id: "[6.34.0]"
-title: "APIs for Advanced Observability"
+title: "APIs for Advanced Observability: Distributed Tracing"
 ---
 
-# APIs for Advanced Observability
+# APIs for Advanced Observability: Distributed Tracing
 
 The previous chapter instrumented a single service well: structured logs, metrics, health checks. But a request to a modern API rarely stays inside one service — it hits a gateway, calls three internal services, one of which queries a database and another of which calls a third-party API. When that request is slow, "check the logs" means checking logs in four or five different places, with no obvious way to tell which log lines even belong to the same request. Distributed tracing solves exactly this problem, and this chapter builds it with OpenTelemetry, the vendor-neutral standard that has become the default choice for Go services.
 
