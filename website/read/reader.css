@@ -144,6 +144,21 @@ html.sidebar-collapsed .reader-content { margin: 0 auto; }
   top: 56px;
   align-self: start;
   font-family: var(--sans);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-soft) transparent;
+}
+.reader-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.reader-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.reader-sidebar::-webkit-scrollbar-thumb {
+  background: var(--line-soft);
+  border-radius: 3px;
+}
+.reader-sidebar::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 /* Focus mode: hide the sidebar and narrow + center the reading column for
@@ -426,6 +441,21 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
     z-index: 30;
     background: var(--bg);
     padding: 16px 12px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-soft) transparent;
+  }
+  .reader-sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .reader-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .reader-sidebar::-webkit-scrollbar-thumb {
+    background: var(--line-soft);
+    border-radius: 3px;
+  }
+  .reader-sidebar::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
   }
   html.sidebar-open .reader-sidebar { display: block; }
 

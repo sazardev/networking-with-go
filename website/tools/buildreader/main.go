@@ -43,12 +43,14 @@ type part struct {
 }
 
 var parts = []part{
+	{"front-matter", "About the Author", "A short introduction to the person behind this book and why it exists.", "docs/front-matter"},
 	{"networking-foundations", "Networking Foundations", "OSI & TCP/IP models, IP addressing and subnetting, ports, sockets, protocols, firewalls, NAT, and VPNs — theory only, no code, told through real history.", "docs/part1"},
 	{"go-fundamentals", "Go From Scratch", "A full Go language crash course before the networking code starts, capped by a flagship chapter on goroutines, channels, and concurrency.", "docs/go-fundamentals"},
 	{"core-go-networking", "Core Go Networking", "TCP, UDP, HTTP, JSON, WebSockets, DNS, proxies, chat apps, file transfer, NAT traversal, context, and TLS — theory paired with runnable Go every time.", "docs/part2"},
 	{"advanced-specialized", "Advanced & Specialized", "gRPC, WebRTC, MQTT/IoT, SDN, NFV, packet inspection, custom protocols, mesh networks, and real-time networking for games and blockchain.", "docs/advanced"},
 	{"cybersecurity-ethical-hacking", "Cybersecurity & Ethical Hacking", "Scanning, sniffing, vulnerability assessment, IDS/IPS, SIEM, malware analysis, red team vs blue team, honeypots, and PKI — for authorized, ethical use.", "docs/part3"},
 	{"production-apis-architecture", "Production APIs & Architecture", "REST and gRPC APIs with Gin and Fiber, PostgreSQL and SQLite, Docker and Google Cloud, Clean/Hexagonal Architecture, and Domain-Driven Design.", "docs/part-apis"},
+	{"back-matter", "A Final Word", "Parting thoughts, advice on where to go from here, and how to keep growing after the last chapter.", "docs/back-matter"},
 }
 
 var (
@@ -625,7 +627,7 @@ func renderPartIndexPage(r partResult, sidebar, theme string) string {
 func renderIndexPage(results []partResult, sidebar, theme string) string {
 	meta := pageMeta{
 		Title:       "Read Online",
-		Description: "Read all 143 chapters of Networking with Go, Made Easy free in your browser — same content as the PDF, same fonts, with full-text search.",
+		Description: "Read all 150 chapters of Networking with Go, Made Easy free in your browser — same content as the PDF, same fonts, with full-text search.",
 		Canonical:   siteBase + "/read/index.html",
 		OGType:      "website",
 	}
@@ -637,7 +639,7 @@ func renderIndexPage(results []partResult, sidebar, theme string) string {
 	b.WriteString(sidebar)
 	b.WriteString(`<main class="reader-content">` + "\n")
 	b.WriteString(`<h1>Read Networking with Go, Made Easy — online</h1>` + "\n")
-	b.WriteString(`<p>All 143 chapters, six parts, right in the browser — same content as the PDF, same fonts, always in sync with the latest edit.</p>` + "\n")
+	b.WriteString(`<p>All 150 chapters, eight parts, right in the browser — same content as the PDF, same fonts, always in sync with the latest edit.</p>` + "\n")
 	b.WriteString(`<div class="part-grid">` + "\n")
 	for i, r := range results {
 		fmt.Fprintf(&b, `<a class="part-card" href="%s/index.html"><span class="part-idx">%02d</span><h2>%s</h2><p>%s</p><span class="part-count">%d chapters</span></a>`+"\n",

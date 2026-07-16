@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Page Not Found — Networking with Go, Made Easy</title>
+<meta name="description" content="The page you're looking for doesn't exist. Go back to the home page or start reading the book.">
+<meta name="robots" content="noindex">
+<meta name="author" content="Omar Flores Salazar">
+<meta name="theme-color" content="#000000">
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000'/%3E%3Ccircle cx='16' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='48' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='32' cy='16' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='19' y1='43' x2='29' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='45' y1='43' x2='35' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='21' y1='46' x2='43' y2='46' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #0a0a0a;
+    --muted: #5c5c5c;
+    --line: #0a0a0a;
+    --line-soft: #d9d9d9;
+    --card: #fafafa;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a;
+      --fg: #f5f5f5;
+      --muted: #a6a6a6;
+      --line: #f5f5f5;
+      --line-soft: #333333;
+      --card: #111111;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --fg: #0a0a0a;
+    --muted: #5c5c5c;
+    --line: #0a0a0a;
+    --line-soft: #d9d9d9;
+    --card: #fafafa;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0a;
+    --fg: #f5f5f5;
+    --muted: #a6a6a6;
+    --line: #f5f5f5;
+    --line-soft: #333333;
+    --card: #111111;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  a { color: inherit; }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  header.top {
+    border-bottom: 1px solid var(--line-soft);
+  }
+  header.top .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    gap: 16px;
+  }
+  .header-right { display: flex; align-items: center; gap: 22px; }
+  #theme-toggle {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    background: transparent;
+    color: var(--fg);
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  #theme-toggle:hover { opacity: 0.75; }
+  .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+  }
+  .brand span { color: var(--muted); }
+  nav.top-nav { display: flex; gap: 22px; }
+  nav.top-nav a {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-decoration: none;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid transparent;
+  }
+  nav.top-nav a:hover { border-bottom-color: var(--fg); }
+
+  .menu-toggle {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 60px - 80px);
+    padding: 72px 24px;
+    text-align: center;
+  }
+  .error-code {
+    font-family: var(--mono);
+    font-size: 120px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    margin: 0 0 16px;
+  }
+  .error-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+  .error-message {
+    font-size: 16px;
+    color: var(--muted);
+    max-width: 480px;
+    margin: 0 0 32px;
+  }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    border: 1px solid var(--line);
+  }
+  .btn-primary { background: var(--fg); color: var(--bg); }
+  .btn-secondary { background: transparent; color: var(--fg); }
+  .btn:hover { opacity: 0.75; }
+
+  footer {
+    border-top: 1px solid var(--line-soft);
+    padding: 28px 0 40px;
+  }
+  footer .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  footer a { text-decoration: underline; }
+
+  @media (max-width: 560px) {
+    .menu-toggle { display: block; }
+    .header-right nav.top-nav {
+      display: none;
+      position: absolute;
+      top: 60px;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line-soft);
+      flex-direction: column;
+      gap: 0;
+      padding: 8px 0;
+      z-index: 100;
+    }
+    .header-right nav.top-nav.open { display: flex; }
+    .header-right nav.top-nav a {
+      padding: 12px 24px;
+      border-bottom: none;
+      font-size: 13px;
+    }
+    .header-right nav.top-nav a:hover { background: var(--card); }
+    .header-right { gap: 10px; }
+    #theme-toggle { font-size: 11px; padding: 4px 8px; }
+    .error-code { font-size: 72px; }
+    .error-title { font-size: 20px; }
+    .error-message { font-size: 14px; margin: 0 0 24px; }
+    .btn-row { flex-direction: column; gap: 10px; }
+    .btn { width: 100%; justify-content: center; padding: 11px 16px; font-size: 12px; }
+    footer .wrap { flex-direction: column; align-items: flex-start; gap: 10px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/">net<span>/</span>go<span>.</span>book</a>
+    <div class="header-right">
+      <nav class="top-nav">
+        <a href="/read/index.html">Read Online</a>
+        <a href="/#why-ai">Why This Book</a>
+        <a href="/#learn">Contents</a>
+        <a href="/#formats">Formats</a>
+        <a href="/#faq">FAQ</a>
+        <a href="/#author">About</a>
+        <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
+      </nav>
+      <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+      <button class="menu-toggle" type="button" aria-label="Toggle menu" aria-expanded="false">&#9776;</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="error-code">404</div>
+  <h1 class="error-title">Page not found</h1>
+  <p class="error-message">The page you're looking for doesn't exist or has been moved. Try going back to the home page or start reading the book.</p>
+  <div class="btn-row">
+    <a class="btn btn-primary" href="/">Go Home</a>
+    <a class="btn btn-secondary" href="/read/index.html">Read the Book</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>&copy; <span id="year"></span> Omar Flores Salazar &middot; Book: CC BY-NC 4.0 &middot; Code: MIT</span>
+    <span>
+      <a href="https://github.com/sazardev/networking-with-go">Repository</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/blob/master/.github/CONTRIBUTING.md">Contributing</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/issues">Issues</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/blob/master/LICENSE-CONTENT">Book License</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/blob/master/LICENSE">Code License</a> &middot;
+      <a href="/license.html">Licenses</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var menuToggle = document.querySelector('.menu-toggle');
+    var nav = document.querySelector('.top-nav');
+    if (menuToggle && nav) {
+      menuToggle.addEventListener('click', function () {
+        var isOpen = nav.classList.toggle('open');
+        menuToggle.setAttribute('aria-expanded', String(isOpen));
+      });
+      nav.addEventListener('click', function (e) {
+        if (e.target.tagName === 'A') {
+          nav.classList.remove('open');
+          menuToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+  })();
+
+  (function () {
+    var root = document.documentElement;
+    var toggle = document.getElementById('theme-toggle');
+
+    function effectiveTheme() {
+      var attr = root.getAttribute('data-theme');
+      if (attr) return attr;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function render() {
+      var eff = effectiveTheme();
+      toggle.textContent = eff === 'dark' ? 'Light mode' : 'Dark mode';
+      toggle.setAttribute('aria-pressed', String(eff === 'dark'));
+    }
+
+    var saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') {
+      root.setAttribute('data-theme', saved);
+    }
+    render();
+
+    toggle.addEventListener('click', function () {
+      var next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      render();
+    });
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Licenses — Networking with Go, Made Easy</title>
+<meta name="description" content="Licensing information for Networking with Go, Made Easy. Book text is CC BY-NC 4.0, source code is MIT.">
+<meta name="robots" content="index, follow">
+<meta name="author" content="Omar Flores Salazar">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://sazardev.github.io/networking-with-go/license.html">
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000'/%3E%3Ccircle cx='16' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='48' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='32' cy='16' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='19' y1='43' x2='29' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='45' y1='43' x2='35' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='21' y1='46' x2='43' y2='46' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Networking with Go, Made Easy">
+<meta property="og:title" content="Licenses — Networking with Go, Made Easy">
+<meta property="og:description" content="Licensing information for Networking with Go, Made Easy. Book text is CC BY-NC 4.0, source code is MIT.">
+<meta property="og:url" content="https://sazardev.github.io/networking-with-go/license.html">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Licenses — Networking with Go, Made Easy">
+<meta name="twitter:description" content="Licensing information for Networking with Go, Made Easy. Book text is CC BY-NC 4.0, source code is MIT.">
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #0a0a0a;
+    --muted: #5c5c5c;
+    --line: #0a0a0a;
+    --line-soft: #d9d9d9;
+    --card: #fafafa;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a;
+      --fg: #f5f5f5;
+      --muted: #a6a6a6;
+      --line: #f5f5f5;
+      --line-soft: #333333;
+      --card: #111111;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --fg: #0a0a0a;
+    --muted: #5c5c5c;
+    --line: #0a0a0a;
+    --line-soft: #d9d9d9;
+    --card: #fafafa;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0a;
+    --fg: #f5f5f5;
+    --muted: #a6a6a6;
+    --line: #f5f5f5;
+    --line-soft: #333333;
+    --card: #111111;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  a { color: inherit; }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  header.top {
+    border-bottom: 1px solid var(--line-soft);
+  }
+  header.top .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+    gap: 16px;
+  }
+  .header-right { display: flex; align-items: center; gap: 22px; }
+  #theme-toggle {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    background: transparent;
+    color: var(--fg);
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  #theme-toggle:hover { opacity: 0.75; }
+  .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+  }
+  .brand span { color: var(--muted); }
+  nav.top-nav { display: flex; gap: 22px; }
+  nav.top-nav a {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-decoration: none;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid transparent;
+  }
+  nav.top-nav a:hover { border-bottom-color: var(--fg); }
+
+  .menu-toggle {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  main { padding: 72px 0 64px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    font-size: 42px;
+    line-height: 1.1;
+    margin: 14px 0 16px;
+    letter-spacing: -0.015em;
+    font-weight: 800;
+  }
+
+  .lead {
+    font-size: 17px;
+    color: var(--muted);
+    max-width: 640px;
+    margin: 0 0 48px;
+    line-height: 1.6;
+  }
+
+  .license-section {
+    border-top: 1px solid var(--line-soft);
+    padding: 48px 0;
+  }
+  .license-section:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+
+  .license-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  h2 {
+    font-size: 28px;
+    line-height: 1.2;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+
+  .scope {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 24px;
+    line-height: 1.6;
+  }
+  .scope code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--card);
+    border: 1px solid var(--line-soft);
+    padding: 1px 5px;
+  }
+
+  .license-body {
+    font-size: 15px;
+    line-height: 1.7;
+    max-width: 720px;
+    margin: 0 0 24px;
+  }
+  .license-body p {
+    margin: 0 0 16px;
+  }
+  .license-body ul {
+    margin: 0 0 16px;
+    padding: 0 0 0 20px;
+  }
+  .license-body ul li {
+    margin-bottom: 8px;
+  }
+  .license-body a {
+    text-decoration: underline;
+  }
+
+  .license-full {
+    background: var(--card);
+    border: 1px solid var(--line-soft);
+    padding: 24px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    margin-top: 24px;
+    max-width: 720px;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    border: 1px solid var(--line-soft);
+    background: var(--line-soft);
+    max-width: 720px;
+    margin: 24px 0;
+  }
+  .summary-card {
+    background: var(--card);
+    padding: 20px;
+  }
+  .summary-card h3 {
+    font-size: 14px;
+    margin: 0 0 8px;
+    font-family: var(--mono);
+    font-weight: 600;
+  }
+  .summary-card p {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.55;
+  }
+
+  .back-link {
+    display: inline-block;
+    margin-top: 48px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-decoration: underline;
+  }
+
+  footer {
+    border-top: 1px solid var(--line-soft);
+    padding: 28px 0 40px;
+  }
+  footer .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  footer a { text-decoration: underline; }
+
+  @media (max-width: 560px) {
+    .menu-toggle { display: block; }
+    .header-right nav.top-nav {
+      display: none;
+      position: absolute;
+      top: 60px;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line-soft);
+      flex-direction: column;
+      gap: 0;
+      padding: 8px 0;
+      z-index: 100;
+    }
+    .header-right nav.top-nav.open { display: flex; }
+    .header-right nav.top-nav a {
+      padding: 12px 24px;
+      border-bottom: none;
+      font-size: 13px;
+    }
+    .header-right nav.top-nav a:hover { background: var(--card); }
+    .header-right { gap: 10px; }
+    #theme-toggle { font-size: 11px; padding: 4px 8px; }
+    main { padding: 40px 0 48px; }
+    h1 { font-size: 28px; line-height: 1.15; }
+    .lead { font-size: 15px; margin: 0 0 32px; }
+    h2 { font-size: 22px; }
+    .license-section { padding: 32px 0; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .license-full { font-size: 11.5px; padding: 16px; }
+    footer .wrap { flex-direction: column; align-items: flex-start; gap: 10px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/">net<span>/</span>go<span>.</span>book</a>
+    <div class="header-right">
+      <nav class="top-nav">
+        <a href="/read/index.html">Read Online</a>
+        <a href="/#why-ai">Why This Book</a>
+        <a href="/#learn">Contents</a>
+        <a href="/#formats">Formats</a>
+        <a href="/#faq">FAQ</a>
+        <a href="/#author">About</a>
+        <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
+      </nav>
+      <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+      <button class="menu-toggle" type="button" aria-label="Toggle menu" aria-expanded="false">&#9776;</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <span class="eyebrow">Legal</span>
+    <h1>Licenses</h1>
+    <p class="lead">
+      This repository uses two separate licenses to cover its two distinct kinds of content. The book's written text and the source code that accompanies it are licensed independently, so you always know exactly what you can do with each part.
+    </p>
+
+    <section class="license-section">
+      <span class="license-badge">Book Text &middot; CC BY-NC 4.0</span>
+      <h2>Creative Commons Attribution-NonCommercial 4.0</h2>
+      <p class="scope">
+        Covers every file under <code>docs/**/*.mdx</code> (all chapters, across all parts) and any HTML, PDF, EPUB, or other rendered form of that text.
+      </p>
+      <div class="license-body">
+        <p>Copyright &copy; 2025 Omar Flores Salazar</p>
+        <p>This work is licensed under the <a href="https://creativecommons.org/licenses/by-nc/4.0/">Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0)</a>.</p>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <h3>You are free to</h3>
+            <p><strong>Share</strong> &mdash; copy and redistribute the material in any medium or format.</p>
+            <p><strong>Adapt</strong> &mdash; remix, transform, and build upon the material.</p>
+          </div>
+          <div class="summary-card">
+            <h3>Under the following terms</h3>
+            <p><strong>Attribution</strong> &mdash; You must give appropriate credit to Omar Flores Salazar, provide a link to this license, and indicate if changes were made.</p>
+            <p><strong>NonCommercial</strong> &mdash; You may not use the material for commercial purposes.</p>
+            <p><strong>No additional restrictions</strong> &mdash; You may not apply legal terms or technological measures that legally restrict others from doing anything the license permits.</p>
+          </div>
+        </div>
+
+        <p>
+          Full legal text: <a href="https://creativecommons.org/licenses/by-nc/4.0/legalcode">creativecommons.org/licenses/by-nc/4.0/legalcode</a><br>
+          Human-readable summary: <a href="https://creativecommons.org/licenses/by-nc/4.0/">creativecommons.org/licenses/by-nc/4.0</a>
+        </p>
+      </div>
+      <div class="license-full">Networking with Go, Made Easy — Book Text License
+
+Scope: this license covers the book's written content — every file under
+`docs/**/*.mdx` (all chapters, across all parts) — and any HTML, PDF, EPUB,
+or other rendered form of that text. It does NOT cover the source code in
+this repository (`exercises/`, `website/`, build tooling), which remains
+MIT-licensed; see the Code License section below.
+
+Copyright (c) 2025 Omar Flores Salazar
+
+This work is licensed under the Creative Commons
+Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0).
+
+You are free to:
+  - Share — copy and redistribute the material in any medium or format.
+  - Adapt — remix, transform, and build upon the material.
+
+Under the following terms:
+  - Attribution — You must give appropriate credit to Omar Flores Salazar,
+    provide a link to this license, and indicate if changes were made. You
+    may do so in any reasonable manner, but not in any way that suggests
+    the licensor endorses you or your use.
+  - NonCommercial — You may not use the material for commercial purposes.
+  - No additional restrictions — You may not apply legal terms or
+    technological measures that legally restrict others from doing
+    anything the license permits.
+
+Full legal text: https://creativecommons.org/licenses/by-nc/4.0/legalcode
+Human-readable summary: https://creativecommons.org/licenses/by-nc/4.0/</div>
+    </section>
+
+    <section class="license-section">
+      <span class="license-badge">Source Code &middot; MIT</span>
+      <h2>MIT License</h2>
+      <p class="scope">
+        Covers the source code in this repository only &mdash; <code>exercises/</code>, <code>website/</code>, build configuration, and tooling. The book text under <code>docs/**/*.mdx</code> is licensed separately under CC BY-NC 4.0; see the Book Text section above.
+      </p>
+      <div class="license-body">
+        <p>Copyright &copy; 2025 Omar Flores Salazar</p>
+      </div>
+      <div class="license-full">MIT License
+
+Scope: this license covers the source code in this repository only —
+`exercises/`, `website/`, build configuration, and tooling. The book text
+under `docs/**/*.mdx` is licensed separately under CC BY-NC 4.0; see
+LICENSE-CONTENT.
+
+Copyright (c) 2025 Omar Flores Salazar
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</div>
+    </section>
+
+    <a class="back-link" href="/">&larr; Back to home</a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>&copy; <span id="year"></span> Omar Flores Salazar &middot; Book: CC BY-NC 4.0 &middot; Code: MIT</span>
+    <span>
+      <a href="https://github.com/sazardev/networking-with-go">Repository</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/blob/master/.github/CONTRIBUTING.md">Contributing</a> &middot;
+      <a href="https://github.com/sazardev/networking-with-go/issues">Issues</a> &middot;
+      <a href="/license.html">Licenses</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var menuToggle = document.querySelector('.menu-toggle');
+    var nav = document.querySelector('.top-nav');
+    if (menuToggle && nav) {
+      menuToggle.addEventListener('click', function () {
+        var isOpen = nav.classList.toggle('open');
+        menuToggle.setAttribute('aria-expanded', String(isOpen));
+      });
+      nav.addEventListener('click', function (e) {
+        if (e.target.tagName === 'A') {
+          nav.classList.remove('open');
+          menuToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+  })();
+
+  (function () {
+    var root = document.documentElement;
+    var toggle = document.getElementById('theme-toggle');
+
+    function effectiveTheme() {
+      var attr = root.getAttribute('data-theme');
+      if (attr) return attr;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function render() {
+      var eff = effectiveTheme();
+      toggle.textContent = eff === 'dark' ? 'Light mode' : 'Dark mode';
+      toggle.setAttribute('aria-pressed', String(eff === 'dark'));
+    }
+
+    var saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') {
+      root.setAttribute('data-theme', saved);
+    }
+    render();
+
+    toggle.addEventListener('click', function () {
+      var next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      render();
+    });
+  })();
+</script>
+
+</body>
+</html>
