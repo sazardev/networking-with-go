@@ -254,3 +254,5 @@ This repository uses two licenses:
 ---
 
 > "The best way to learn networking is to build, break, and secure it."
+
+<sub>If this book saved you some time, you can [buy me a coffee](https://buymeacoffee.com/sazarcode) — never required, always appreciated.</sub>
