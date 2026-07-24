@@ -56,7 +56,7 @@ func main() {
 }
 ```
 
-[Ejercicio: Goroutines Básicas](../../exercises/part2/08-goroutines-basic/main.go)
+[Exercise: Goroutines Basics](../../exercises/part2/08-goroutines-basic/main.go)
 
 ---
 
@@ -81,7 +81,7 @@ func main() {
 }
 ```
 
-[Ejercicio: Canales Básicos](../../exercises/part2/08-channels-basic/main.go)
+[Exercise: Channels Basics](../../exercises/part2/08-channels-basic/main.go)
 
 <DeepDive title="Buffered vs. Unbuffered Channels">The channel above, `make(chan string)`, is **unbuffered**: a send blocks until another goroutine is ready to receive, so the two sides briefly synchronize on the handoff. A **buffered** channel, `make(chan string, 3)`, lets up to 3 sends complete with no receiver present — the sender only blocks once the buffer fills up. Use unbuffered channels when you need a guarantee that the value was actually received; use buffered channels to absorb bursts of work between producers and consumers, like a small queue.</DeepDive>
 
@@ -113,7 +113,7 @@ func main() {
 }
 ```
 
-[Ejercicio: Concurrent TCP Server](../../exercises/part2/08-tcp-concurrent-server/main.go)
+[Exercise: Concurrent TCP Server](../../exercises/part2/08-tcp-concurrent-server/main.go)
 
 ---
 
@@ -212,7 +212,7 @@ func main() {
 }
 ```
 
-[Ejercicio: Channel Broadcast](../../exercises/part2/08-channel-broadcast/main.go)
+[Exercise: Channel Broadcast](../../exercises/part2/08-channel-broadcast/main.go)
 
 <Warning title="Closed and Nil Channels Are Not the Same as Empty">Sending on a **closed** channel panics immediately with `send on closed channel`, even though receiving from it keeps returning the zero value forever — that asymmetry is why only the sender should ever call `close`. A **nil** channel (a `chan T` left at its zero value, never initialized with `make`) blocks forever on both send and receive; a `select` with a nil-channel case simply never picks it, which is a handy trick to "disable" a case at runtime.</Warning>
 
@@ -239,7 +239,7 @@ default:
 }
 ```
 
-[Ejercicio: Select Statement](../../exercises/part2/08-select-statement/main.go)
+[Exercise: Select Statement](../../exercises/part2/08-select-statement/main.go)
 
 ---
 
@@ -351,15 +351,6 @@ flowchart TD
 - The broadcaster goroutine sends messages into a channel.
 - Multiple receivers can read from the channel, each in their own goroutine.
 - This pattern is great for chat servers, notifications, or event systems.
-
----
-
-## Fun Facts & Go Memes
-- Go’s mascot, the gopher, is often shown juggling or running—just like goroutines!
-- The phrase "Don’t communicate by sharing memory; share memory by communicating" is a Go proverb.
-- You can run 100,000+ goroutines on a modern laptop—try it!
-- Channels are so central to Go, they have their own operator: `<-`.
-- Go’s concurrency model is so admired, other languages have copied it (Rust, Elixir, etc.).
 
 ---
 

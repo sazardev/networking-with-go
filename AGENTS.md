@@ -16,8 +16,8 @@ Install the PDF tool once: `go install github.com/sazardev/go-pretty-pdf/cmd/pre
 
 ## Running exercises
 
-- **Stdlib-only exercises** (most): `go run ./exercises/part2/<exercise-dir>`
-- **Third-party deps** (exercises 12 & 13, gorilla/websocket): `cd exercises/part2/<dir> && go run .` — these have their own `go.mod`
+- **Stdlib-only exercises** (most): `GO111MODULE=off go run ./exercises/part2/<exercise-dir>` (required because Go detects the parent `.git` directory without a `go.mod`)
+- **Third-party deps** (exercises 12 & 13, gorilla/websocket): `cd exercises/part2/<dir> && go run .` — these have their own `go.mod`. Not all chapter 12 exercises use gorilla/websocket; the native WebSocket exercises (websocket-hello-server, websocket-native-client, websocket-native-server) are stdlib-only.
 
 ## Critical rules
 

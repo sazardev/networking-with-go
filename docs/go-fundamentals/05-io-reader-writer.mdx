@@ -1,0 +1,240 @@
+---
+id: "[2.5.0]"
+title: "io.Reader, io.Writer, and Streaming Data"
+---
+
+# io.Reader, io.Writer, and Streaming Data
+
+Every networked program in Go moves bytes. A TCP connection reads bytes from the network and writes bytes back. An HTTP handler reads a request body and writes a response body. A file server reads a file from disk and writes it to a socket. All of these are the same operation — reading from something, writing to something — and Go models that operation with two interfaces so central that almost every package in the standard library depends on them.
+
+<Axiom>If you understand `io.Reader` and `io.Writer`, you understand how data flows through every Go program — network or otherwise.</Axiom>
+
+---
+
+## The io.Reader Interface
+
+```go
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+```
+
+One method. `Read` fills the caller-provided buffer `p` with up to `len(p)` bytes, returns how many bytes it actually wrote into `p`, and optionally an error. The caller owns the buffer — `Read` does not allocate.
+
+Key contract details:
+
+- `Read` may return `n > 0` and a non-nil error (including `io.EOF`) in the *same* call. Code that checks the error first and discards `n` when `err != nil` silently drops the last chunk of data.
+- `Read` is allowed to return fewer than `len(p)` bytes even when more data is available — a short read is not an error.
+- When no more data exists, `Read` returns `0, io.EOF`. A well-behaved reader returns `0, io.EOF` on every subsequent call.
+
+<Warning title="io.EOF is not an error to panic on">`io.EOF` signals "no more data," not a failure. Loops that `break` on `io.EOF` and `log.Fatal` on everything else are the standard pattern — treating `io.EOF` as a fatal error would make every connection close a crash.</Warning>
+
+### Common io.Reader Implementations
+
+Every one of these satisfies `io.Reader`:
+
+| Type | What it reads from |
+|------|--------------------|
+| `*os.File` | A file on disk |
+| `net.Conn` | A network connection |
+| `*bytes.Buffer` | An in-memory byte slice |
+| `*strings.Reader` | A string |
+| `http.Request.Body` | An HTTP request body |
+| `*bufio.Reader` | A buffered wrapper around any Reader |
+| `*gzip.Reader` | Decompressed gzip data |
+| `*crypto/tls.Conn` | An encrypted TLS connection |
+
+```go
+// All three of these satisfy io.Reader — your code that calls Read
+// doesn't care which one is underneath.
+var r io.Reader
+r = os.Stdin                  // terminal input
+r = strings.NewReader("abc")  // a string
+r = bytes.NewBuffer([]byte{1, 2, 3}) // a buffer
+```
+
+<DeepDive title="net.Conn is both an io.Reader and an io.Writer">`net.Conn` embeds `io.Reader` and `io.Writer`, so every TCP connection, UDP connection, and TLS connection can be passed to any function that accepts either interface. This is why `io.Copy(os.Stdout, conn)` works — `conn` is a `Reader` and `os.Stdout` is a `Writer`.</DeepDive>
+
+---
+
+## The io.Writer Interface
+
+```go
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+```
+
+The mirror image. `Write` takes a caller-owned byte slice and writes `len(p)` bytes to the underlying sink. It returns how many bytes were written — the caller must check that `n == len(p)`, because a short write with a non-nil error means not everything was written.
+
+### Common io.Writer Implementations
+
+| Type | What it writes to |
+|------|-------------------|
+| `*os.File` | A file on disk |
+| `net.Conn` | A network connection |
+| `*bytes.Buffer` | An in-memory byte slice |
+| `http.ResponseWriter` | An HTTP response |
+| `*bufio.Writer` | A buffered wrapper around any Writer |
+| `*gzip.Writer` | Compressed gzip output |
+| `os.Stdout` / `os.Stderr` | Terminal output |
+
+---
+
+## io.ReadAll, io.Copy, and Friends
+
+The `io` package provides convenience functions built on `Reader` and `Writer`:
+
+```go
+// Read everything from a Reader into memory
+data, err := io.ReadAll(r)
+
+// Copy everything from a Reader to a Writer, in 32KB chunks,
+// without ever holding the full content in memory.
+written, err := io.Copy(w, r)
+
+// Copy exactly N bytes
+written, err := io.CopyN(w, r, 1024)
+
+// Read at least min bytes into buf, or fill it entirely
+n, err := io.ReadAtLeast(r, buf, min)
+
+// Read exactly len(buf) bytes
+n, err := io.ReadFull(r, buf)
+```
+
+`io.Copy` is the workhorse. When a Go HTTP proxy forwards a response, a file server sends a file to a client, or a TCP relay pipes data between two connections, the implementation is `io.Copy`:
+
+```go
+func handleConn(client net.Conn, upstream string) {
+    defer client.Close()
+    server, err := net.Dial("tcp", upstream)
+    if err != nil {
+        return
+    }
+    defer server.Close()
+
+    // Pipe data in both directions concurrently
+    go io.Copy(server, client)
+    io.Copy(client, server)
+}
+```
+
+`io.Copy` uses a 32KB internal buffer and never grows beyond that — it streams data in chunks instead of loading everything into memory first. This is the difference between a file server that handles any file size and one that crashes on a 2GB download.
+
+<Warning title="io.ReadAll with unbounded input">`io.ReadAll(r)` reads until `io.EOF`, growing its buffer as needed. If `r` is a `net.Conn` attached to a client that never closes the connection, `io.ReadAll` grows forever — or until the process runs out of memory. Use `io.LimitReader` (below) when reading from an untrusted source, or stream with `io.Copy` instead.</Warning>
+
+---
+
+## Composing Readers
+
+Go's `io` package provides composable readers — wrappers that take an existing `Reader` and add behavior without the wrapped type needing to know:
+
+```go
+// LimitReader stops after N bytes — protects against unbounded input.
+r := io.LimitReader(conn, 1<<20) // 1 MB max
+
+// TeeReader duplicates reads: everything read from r is also written to w.
+// Useful for logging or inspecting data as it passes through.
+r := io.TeeReader(conn, os.Stdout)
+
+// MultiReader concatenates multiple readers into one stream.
+r := io.MultiReader(
+    strings.NewReader("prefix\n"),
+    file,
+    strings.NewReader("\nsuffix"),
+)
+```
+
+These compose because they all implement `io.Reader`. A `TeeReader` wrapping a `LimitReader` wrapping a `net.Conn` is still an `io.Reader` — the caller calling `Read` never knows the chain exists.
+
+```go
+// Log everything a client sends, but cap it at 1 MB.
+r := io.LimitReader(io.TeeReader(conn, os.Stdout), 1<<20)
+io.Copy(io.Discard, r) // reads, logs, and discards — all through one pipe
+```
+
+---
+
+## io.Pipe
+
+An `io.Pipe` creates a synchronous in-memory pipe: one side is a `*io.PipeReader`, the other a `*io.PipeWriter`. Writes on one end block until the other end reads — it is an `io.Reader`/`io.Writer` pair connected together, no goroutine required:
+
+```go
+r, w := io.Pipe()
+
+go func() {
+    defer w.Close()
+    fmt.Fprintf(w, "Hello from the pipe!\n")
+}()
+
+data, _ := io.ReadAll(r)
+fmt.Print(string(data))
+```
+
+`io.Pipe` is useful for connecting a function that expects a `Writer` to one that expects a `Reader` without staging data through a temporary file or buffer.
+
+<Warning title="io.Pipe is synchronous — write without a reader deadlocks">Every `w.Write` blocks until the corresponding `r.Read` consumes it. Always pair `io.Pipe` with a goroutine — one side writes, the other side reads, on separate goroutines.</Warning>
+
+---
+
+## Why This Matters for Networking
+
+Every `net.Conn` is an `io.Reader` and an `io.Writer`. This means:
+
+- `io.Copy(os.Stdout, conn)` prints everything the connection sends.
+- `io.Copy(conn, os.Stdin)` sends everything you type.
+- `bufio.NewScanner(conn)` reads lines from a network connection — `Scanner` wraps any `io.Reader`.
+- `json.NewDecoder(conn).Decode(&v)` parses JSON from a network stream — `Decoder` wraps any `io.Reader`.
+- `io.LimitReader(conn, 1<<20)` caps a request body at 1 MB — critical for any HTTP handler that reads `r.Body`.
+- `conn.SetReadDeadline(time.Now().Add(5 * time.Second))` makes the next `Read` time out — the interface stays the same, but the concrete `net.Conn` underneath enforces a deadline.
+
+<Axiom>Go's networking primitives don't need special types for every data source and sink. They need two interfaces, and everything — files, connections, buffers, encoders, decompressors — agrees to implement them.</Axiom>
+
+---
+
+## Try It Yourself: A Line Echo Server with bufio.Scanner
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "log"
+    "net"
+)
+
+func main() {
+    ln, err := net.Listen("tcp", ":8080")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer ln.Close()
+    fmt.Println("Listening on :8080...")
+
+    for {
+        conn, err := ln.Accept()
+        if err != nil {
+            log.Println("accept error:", err)
+            continue
+        }
+        go func(c net.Conn) {
+            defer c.Close()
+            scanner := bufio.NewScanner(c) // c is an io.Reader
+            for scanner.Scan() {
+                line := scanner.Text()
+                fmt.Fprintf(c, "echo: %s\n", line) // c is an io.Writer
+            }
+        }(conn)
+    }
+}
+```
+
+`bufio.NewScanner` wraps the `net.Conn` and scans it line by line. `fmt.Fprintf` writes back on the same connection. The `Scanner` handles buffering, line splitting, and partial reads — no manual byte-slice management required.
+
+---
+
+### Where This Goes From Here
+
+The next chapter covers slices, arrays, and maps — the data structures you will use to hold the bytes, connections, and routing tables that `io.Reader` and `io.Writer` stream through. Every networked program in this book, from the simplest echo server to the largest production API, is built on these two interfaces.

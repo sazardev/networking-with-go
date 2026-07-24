@@ -318,14 +318,3 @@ No, the code is fine, the socket just isn't configured for it: the kernel refuse
 Because for some workloads a late packet is worse than a lost one — a stale video frame or a delayed voice sample isn't worth waiting for. That tradeoff is exactly what the "Try It Yourself" reliability layer above is meant to teach: protocols like QUIC and TFTP start from UDP's speed and bolt on only the guarantees they actually need, rather than accepting TCP's all-or-nothing bundle.
 
 ---
-
-## Fun Facts & Go Memes
-- UDP is the favorite for online games, streaming, and VoIP because
-  of its speed.
-- If you lose a UDP packet, nobody cries (but your video might skip
-  a frame).
-- You can build your own reliable protocol on top of UDP (but it's
-  extra work!).
-- UDP is like a ninja courier: fast, but it sometimes drops a
-  package.
-- Go makes working with UDP just as easy as TCP, but much faster.

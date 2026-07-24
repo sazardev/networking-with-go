@@ -16,7 +16,7 @@ pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
 ## Repository structure
 
 - `README.md` — the master table of contents for the whole book, linking every chapter in reading order. **If you add, remove, rename, or reorder a chapter file in `docs/`, update the corresponding entry/link in `README.md` too** — the two are expected to stay in sync.
-- `docs/part1/` — pure networking theory (introduction, history, types of networks, topologies, OSI/TCP-IP, IP/subnetting, ports/sockets, TCP vs UDP, protocols, security fundamentals, firewalls/NAT/VPN, troubleshooting, performance), written in a warm, story-driven, passionate voice — real history, analogies, and fun facts, not dry reference prose. No Go code anywhere in Part 1, including chapters 1 and 2 — that was tried and deliberately reverted; every chapter is code-free theory, full stop.
+- `docs/part1/` — pure networking theory (introduction, history, types of networks, topologies, OSI/TCP-IP, IP/subnetting, ports/sockets, TCP vs UDP, protocols, security fundamentals, firewalls/NAT/VPN, troubleshooting, performance), written in a warm, story-driven, passionate voice — real history, analogies, and fun facts, not dry reference prose. Chapters 3-13 are theory-only with no Go code. Chapters 1-2 are the sole exception (one small diagram snippet each at the end).
 - `docs/go-fundamentals/` — a dedicated crash course in the Go language itself (installation through testing, plus a flagship goroutines/channels/concurrency chapter), sitting between Part 1 and Part 2. This is where hands-on Go code actually begins for the reader.
 - `docs/part2/` — core Go networking topics (TCP/UDP, HTTP, WebSockets, DNS, concurrency, context, security, etc.); each chapter pairs theory with Go code samples inline. `exercises/part2/` contains the runnable counterparts to these chapters.
 - `docs/advanced/` — specialized/advanced networking topics (gRPC, WebRTC, MQTT, SDN, NFV, etc.).
@@ -31,12 +31,19 @@ Each exercise directory is a single `package main` with a `main.go`. Most have *
 ```sh
 go run ./exercises/part2/<exercise-dir>
 ```
+This works only from inside an exercise directory with `GO111MODULE=off`, since Go detects the parent `.git` directory. The reliable command is:
+
+```sh
+GO111MODULE=off go run ./exercises/part2/<exercise-dir>
+```
 
 A few exercises pull in third-party packages (currently just `gorilla/websocket`, used by the WebSocket/chat exercises numbered 12 and 13) and therefore have their own `go.mod`/`go.sum` scoped to that single directory. For those, `cd` into the directory first:
 
 ```sh
 cd exercises/part2/12-websocket-echo-server && go run .
 ```
+
+Not all chapter 12 exercises use gorilla/websocket — the native WebSocket exercises (`websocket-hello-server`, `websocket-native-client`, `websocket-native-server`) are stdlib-only.
 
 When adding a new exercise:
 - Only add a `go.mod` if the exercise needs a dependency outside the standard library; otherwise leave it out, consistent with the rest of `exercises/part2/`.

@@ -113,7 +113,7 @@ container network, say) can only dial one of the two.
 
 <Warning title="net.LookupHost vs net.LookupIP">`net.LookupHost` returns `[]string` (already formatted), while `net.LookupIP` returns `[]net.IP` (structured values you can inspect with `.To4()` and similar methods). Reach for `LookupIP` whenever you need to reason about the address itself, `LookupHost` to just print it.</Warning>
 
-[Ejercicio: Lookup IP](../../exercises/part2/04-lookup-ip/main.go)
+[Exercise: Lookup IP](../../exercises/part2/04-lookup-ip/main.go)
 
 ---
 
@@ -150,7 +150,7 @@ inverse; use the two as a matched pair.
 
 <Warning title="Don't build host:port strings with fmt.Sprintf or +">`fmt.Sprintf("%s:%d", host, port)` looks harmless until `host` is an IPv6 address like `2001:db8::1` — the result, `2001:db8::1:8080`, is ambiguous and unparsable, since IPv6 addresses already use colons as separators. `net.JoinHostPort` wraps an IPv6 host in brackets (`[2001:db8::1]:8080`) automatically — use it and `net.SplitHostPort` as a matched pair, and never hand-roll the colon.</Warning>
 
-[Ejercicio: Split Host and Port](../../exercises/part2/04-split-host-port/main.go)
+[Exercise: Split Host and Port](../../exercises/part2/04-split-host-port/main.go)
 
 ---
 
@@ -188,7 +188,7 @@ reach the underlying `net.IP` and call `IsLoopback()` — used here to skip
 
 <DeepDive title="InterfaceAddrs vs Interfaces">`net.InterfaceAddrs()` flattens every interface's addresses into one slice. When you need to know *which* interface an address belongs to (picking a NIC for multicast, or a VPN-aware program), use `net.Interfaces()` for each `net.Interface` (`Name`, MTU, hardware address), then call `iface.Addrs()` on the one you care about.</DeepDive>
 
-[Ejercicio: List Local IPs](../../exercises/part2/04-list-local-ips/main.go)
+[Exercise: List Local IPs](../../exercises/part2/04-list-local-ips/main.go)
 
 ---
 
@@ -245,7 +245,7 @@ channel, and builds each address with `net.JoinHostPort` instead of
 
 <Warning title="Port scanning has legal and ethical limits">`scanme.nmap.org` is provided by the Nmap project for testing scanners like this one — running the same code against a host you don't own or have permission to test can violate its terms of service, or the law. Keep experiments pointed at hosts you control or that allow scanning.</Warning>
 
-[Ejercicio: Simple Port Scanner](../../exercises/part2/04-port-scanner/main.go)
+[Exercise: Simple Port Scanner](../../exercises/part2/04-port-scanner/main.go)
 
 ---
 
@@ -280,7 +280,7 @@ func main() {
 
 <Warning title="net.ParseIP returns nil, not an error, on failure">Unlike most Go parsing functions, `net.ParseIP` doesn't return an `error` — it returns `nil` if the string isn't a valid IP address. Always check `if ip == nil`; a `nil` `net.IP` printed with `fmt.Println` prints `<nil>`, easy to miss in a log line.</Warning>
 
-[Ejercicio: IPv6 Address Parsing](../../exercises/part2/04-ipv6-parse/main.go)
+[Exercise: IPv6 Address Parsing](../../exercises/part2/04-ipv6-parse/main.go)
 
 ---
 
@@ -365,17 +365,6 @@ client follows: resolve, inspect, format, connect.
      |
  [Socket] = [IP:Port]
 ```
-
----
-
-## Fun Facts & Go Memes
-- The first IP address ever assigned was 0.0.0.0 (reserved for special use).
-- IPv6 has enough addresses for every atom on Earth (and then some!).
-- In Go, you can build a DNS resolver, a port scanner, or even your own network protocol with just a few lines of code.
-- Ports below 1024 are called "privileged"—only root/admin can use them on most systems.
-- Go’s networking is so fast, you can scan thousands of ports in seconds!
-- Go’s `net` package is cross-platform: your code works on Windows, Linux, and Mac without changes.
-- Go handles all the low-level socket magic for you—no need to mess with C or system calls!
 
 ---
 
