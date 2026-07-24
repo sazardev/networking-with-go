@@ -1,0 +1,51 @@
+name: Vet Exercises
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "exercises/**"
+      - ".github/workflows/vet-exercises.yml"
+  pull_request:
+    paths:
+      - "exercises/**"
+      - ".github/workflows/vet-exercises.yml"
+  workflow_dispatch:
+
+jobs:
+  vet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      # Exercises that depend only on the standard library (most of them)
+      # need GO111MODULE=off because Go detects the parent .git directory
+      # without a top-level go.mod.
+      - name: Vet stdlib-only exercises
+        run: |
+          for dir in exercises/part2/*/; do
+            if [ -f "$dir/go.mod" ]; then
+              continue  # has own go.mod, handled in the next step
+            fi
+            echo "=== $dir ==="
+            GO111MODULE=off go vet "./$dir" || exit 1
+          done
+
+      # Exercises numbered 12 and 13 use gorilla/websocket and have their
+      # own go.mod/go.sum -- vet those with regular module mode from inside
+      # each directory.
+      - name: Vet third-party exercises
+        run: |
+          for dir in exercises/part2/*/; do
+            if [ ! -f "$dir/go.mod" ]; then
+              continue
+            fi
+            echo "=== $dir ==="
+            (cd "$dir" && go vet ./...) || exit 1
+          done

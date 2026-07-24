@@ -1,6 +1,6 @@
 # Networking with Go, Made Easy
 
-[![Go Version](https://img.shields.io/badge/Go-1.22-blue?logo=go)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.24-blue?logo=go)](https://golang.org/)
 [![Code License: MIT](https://img.shields.io/badge/Code-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Book License: CC BY-NC 4.0](https://img.shields.io/badge/Book%20text-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://makeapullrequest.com)
@@ -162,7 +162,9 @@ Offensive and defensive security for networked systems, taught for authorized, e
 103. [Emerging Threats and Future Trends in Network Security](docs/part3/32-emerging-threats-and-future-trends-in-network-security.mdx)
 
 ### Part APIs: Building Modern APIs & Backends with Go
-Everything about building, securing, testing, and operating HTTP APIs and backends in Go — from `net/http` fundamentals through frameworks, real-time features, real databases (PostgreSQL, SQLite), Docker and Google Cloud deployment, production-grade architecture (Clean Architecture, Hexagonal Architecture, Domain-Driven Design), and thinking like an attacker to secure what you ship.
+Everything about building, securing, testing, and operating HTTP APIs and backends in Go -- from `net/http` fundamentals through frameworks, real-time features, real databases (PostgreSQL, SQLite), Docker and Google Cloud deployment, production-grade architecture (Clean Architecture, Hexagonal Architecture, Domain-Driven Design), and thinking like an attacker to secure what you ship.
+
+Chapter numbers 104-149 below map to files `01-` through `46-` under `docs/part-apis/`.
 
 104. [API Fundamentals: REST, HTTP, and the Web](docs/part-apis/01-api-fundamentals-rest-http-and-the-web.mdx)
 105. [Designing Clean URLs, Query Params, and Routing](docs/part-apis/02-designing-clean-urls-query-params-and-routing.mdx)
@@ -196,8 +198,8 @@ Everything about building, securing, testing, and operating HTTP APIs and backen
 133. [APIs for Serverless and FaaS](docs/part-apis/30-apis-for-serverless-and-faas.mdx)
 134. [APIs for Edge Computing and CDN](docs/part-apis/31-apis-for-edge-computing-and-cdn.mdx)
 135. [APIs for Advanced Security](docs/part-apis/32-apis-for-advanced-security.mdx)
-136. [APIs for Advanced Observability: Metrics and Logging](docs/part-apis/33-apis-for-advanced-observability.mdx)
-137. [APIs for Advanced Observability: Distributed Tracing](docs/part-apis/34-apis-for-advanced-observability.mdx)
+136. [APIs for Advanced Observability: Metrics and Logging](docs/part-apis/33-apis-for-advanced-observability-metrics-logging.mdx)
+137. [APIs for Advanced Observability: Distributed Tracing](docs/part-apis/34-apis-for-advanced-observability-distributed-tracing.mdx)
 138. [RPC and gRPC for APIs](docs/part-apis/35-rpc-and-grpc-for-apis.mdx)
 139. [Working with SQL Databases: PostgreSQL](docs/part-apis/36-working-with-sql-databases-postgresql.mdx)
 140. [Working with SQLite in Go](docs/part-apis/37-working-with-sqlite-in-go.mdx)
@@ -229,7 +231,7 @@ Everything about building, securing, testing, and operating HTTP APIs and backen
 - **Want the production-backend track specifically?** Part APIs chapters 137-144 (RPC/gRPC, PostgreSQL, SQLite, Docker, Clean/Hexagonal Architecture, DDD) build one coherent example project across all of them, capped by chapter 144's end-to-end walkthrough — read that run in order even if you jump around elsewhere.
 - **Looking for something specific?** Use the table of contents above — every chapter is self-contained enough to read on its own, with cross-references where it depends on an earlier concept.
 - Every hands-on code block is meant to be copied, run, and modified — try the "Try It Yourself" prompts, don't just read past them.
-- The small runnable programs under [`exercises/`](exercises/) mirror many Part 2 chapters if you want a bare, ready-to-run version outside the prose (see `CLAUDE.md` for how to run them).
+- The small runnable programs under [`exercises/`](exercises/) mirror many Part 2 chapters if you want a bare, ready-to-run version outside the prose (see `CLAUDE.md` for how to run them). Exercises currently cover Part 2 only; standalone exercises for Advanced, Part 3, and Part APIs chapters are planned and contributions are welcome.
 
 ## Building the PDF
 The whole book compiles into a single PDF with [go-pretty-pdf](https://github.com/sazardev/go-pretty-pdf):
@@ -239,6 +241,8 @@ go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@latest
 pretty-pdf check   # validate every chapter's format
 pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
 ```
+
+Prebuilt PDF and EPUB downloads are available on the [GitHub Releases page](https://github.com/sazardev/networking-with-go/releases) for every tagged version.
 
 ## Contributing
 PRs, issues, and suggestions are welcome — new labs, corrections, clearer explanations, or entirely new chapters. See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the basics, and `.claude/skills/mdx-pdf-format/SKILL.md` if you're adding or editing a chapter file, for the exact format the build expects.
