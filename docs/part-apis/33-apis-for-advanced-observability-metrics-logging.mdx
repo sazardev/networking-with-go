@@ -27,6 +27,8 @@ var logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	// authenticate is the same token-parsing helper introduced in
+	// Chapter 6.10's auth middleware.
 	userID, err := authenticate(r)
 	if err != nil {
 		logger.Warn("login failed",
@@ -49,6 +51,22 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 Every call emits a JSON object with consistent field names (`user_id`, `duration_ms`, `error`), which means your log aggregation system (Loki, Elasticsearch, CloudWatch Logs Insights) can filter on `user_id="42"` or aggregate `duration_ms` into a histogram, instead of parsing free-form sentences. Attach a request-scoped logger with common fields (a request ID, the route) once per request, so every log line inside that request automatically carries them:
 
 ```go
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+)
+
+type contextKey string
+
+const loggerContextKey contextKey = "logger"
+
+func generateRequestID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
 func withRequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get("X-Request-ID")
@@ -70,6 +88,8 @@ Logs answer "what happened in this one request." Metrics answer "how is the syst
 
 ```go
 import (
+	"fmt"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -93,7 +113,22 @@ func init() {
 	prometheus.MustRegister(requestDuration, requestsInFlight)
 }
 
-func metricsMiddleware(next http.Handler) http.Handler {
+// statusRecorder wraps http.ResponseWriter to capture the status code a
+// handler wrote, since the standard interface has no way to read it back.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+// metricsMiddleware takes the route pattern as registered on the mux (for
+// example "/users/{id}"), not the resolved request path, so that a path
+// containing a real ID never becomes a label value — see the Warning below.
+func metricsMiddleware(pattern string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestsInFlight.Inc()
 		defer requestsInFlight.Dec()
@@ -103,7 +138,7 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 
 		requestDuration.WithLabelValues(
-			r.Method, r.URL.Path, fmt.Sprint(rec.status),
+			r.Method, pattern, fmt.Sprint(rec.status),
 		).Observe(time.Since(start).Seconds())
 	})
 }
@@ -113,9 +148,10 @@ func metricsMiddleware(next http.Handler) http.Handler {
 
 ```go
 mux.Handle("/metrics", promhttp.Handler())
+mux.Handle("/users/{id}", metricsMiddleware("/users/{id}", userHandler))
 ```
 
-<Warning title="Label cardinality can quietly take down your metrics backend">`r.URL.Path` is fine as a label only if your routes are a small, fixed set. If a raw path containing a user ID or UUID ever ends up as a label value (`/users/8f3a2b91-...`), Prometheus creates a new time series per unique value it sees — with enough distinct IDs, this can produce millions of series and overwhelm the metrics backend. Always normalize to the route pattern (`/users/{id}`), never the raw resolved path, before using it as a label.</Warning>
+<Warning title="Label cardinality can quietly take down your metrics backend">Labeling with `r.URL.Path` is fine only if your routes are a small, fixed set. If a raw path containing a user ID or UUID ever ends up as a label value (`/users/8f3a2b91-...`), Prometheus creates a new time series per unique value it sees — with enough distinct IDs, this can produce millions of series and overwhelm the metrics backend. That's why `metricsMiddleware` above takes the registered route pattern as an explicit parameter instead of reading `r.URL.Path`: always normalize to the route pattern (`/users/{id}`), never the raw resolved path, before using it as a label.</Warning>
 
 ## Health and readiness endpoints
 

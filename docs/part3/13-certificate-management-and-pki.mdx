@@ -65,8 +65,17 @@ func inspect(host string) error {
 	fmt.Printf("DNS names:   %v\n", leaf.DNSNames)
 
 	// Verify explicitly against the system trust store, independent of
-	// whatever tls.Dial already did during the handshake itself.
-	opts := x509.VerifyOptions{DNSName: host}
+	// whatever tls.Dial already did during the handshake itself. Real
+	// leaf certificates are almost never signed directly by a root (see
+	// the chain-of-trust section above), so the intermediates the server
+	// presented alongside the leaf must be added to the pool — otherwise
+	// Verify fails with "certificate signed by unknown authority" even
+	// for a perfectly valid certificate.
+	intermediates := x509.NewCertPool()
+	for _, cert := range certs[1:] {
+		intermediates.AddCert(cert)
+	}
+	opts := x509.VerifyOptions{DNSName: host, Intermediates: intermediates}
 	if _, err := leaf.Verify(opts); err != nil {
 		return fmt.Errorf("verification failed: %w", err)
 	}

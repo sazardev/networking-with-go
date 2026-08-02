@@ -15,6 +15,10 @@ A JWT signed with a single, permanent key has a quiet failure mode: the moment t
 package main
 
 import (
+	"crypto/rsa"
+	"fmt"
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -53,7 +57,7 @@ Keeping the previous key around lets tokens issued right before a rotation keep 
 
 ## Mutual TLS between services
 
-Ordinary TLS proves the server's identity to the client. Mutual TLS (mTLS) adds the reverse: the server also verifies a certificate presented by the client, which is the standard way internal services authenticate each other without passing bearer tokens around. Go's `crypto/tls` supports this natively on both ends:
+Ordinary TLS proves the server's identity to the client. Mutual TLS (mTLS) adds the reverse: the server also verifies a certificate presented by the client, which is the standard way internal services authenticate each other without passing bearer tokens around. Chapter 3.19 covers the base TLS handshake and certificate verification this builds on; Chapter 4.9 applies the same mechanism to zero trust service-to-service authentication. Go's `crypto/tls` supports this natively on both ends:
 
 ```go
 func newMTLSServer(certFile, keyFile, clientCAFile string) *http.Server {

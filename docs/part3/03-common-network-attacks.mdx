@@ -99,6 +99,9 @@ func (l *limiter) allow(addr net.Addr) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	host, _, _ := net.SplitHostPort(addr.String())
+	if _, seen := l.tokens[host]; !seen {
+		l.tokens[host] = l.max
+	}
 	if l.tokens[host] <= 0 {
 		return false
 	}

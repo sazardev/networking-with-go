@@ -178,6 +178,9 @@ The `Upgrade: websocket` handshake is still a normal HTTP request before the pro
 ```go
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
+	// parseToken is the same JWT-parsing helper Chapter 6.10 covers in
+	// full; borrowed a couple of chapters early because this handshake
+	// needs it before the protocol switches away from plain HTTP.
 	claims, err := parseToken(token)
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)

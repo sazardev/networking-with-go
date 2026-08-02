@@ -15,13 +15,15 @@ At its core, a feature flag is a named boolean (or, more usefully, a named boole
 package main
 
 import (
+	"database/sql"
 	"sync"
 	"time"
 )
 
 type FlagStore struct {
-	mu    sync.RWMutex
-	flags map[string]bool
+	mu     sync.RWMutex
+	flags  map[string]bool
+	config RuntimeConfig
 }
 
 func (s *FlagStore) IsEnabled(name string) bool {
@@ -125,8 +127,25 @@ The same infrastructure that flips features on and off is a natural home for oth
 
 ```go
 type RuntimeConfig struct {
-	MaxPageSize     int
+	MaxPageSize       int
 	DownstreamTimeout time.Duration
+}
+
+// refreshConfig loads the current config row on the same polling cadence as
+// refresh above, and populates the config field added to FlagStore's struct
+// definition earlier in this chapter.
+func (s *FlagStore) refreshConfig(db *sql.DB) {
+	var cfg RuntimeConfig
+	var timeoutMs int
+	row := db.QueryRow(`SELECT max_page_size, downstream_timeout_ms FROM runtime_config WHERE id = 1`)
+	if err := row.Scan(&cfg.MaxPageSize, &timeoutMs); err != nil {
+		return
+	}
+	cfg.DownstreamTimeout = time.Duration(timeoutMs) * time.Millisecond
+
+	s.mu.Lock()
+	s.config = cfg
+	s.mu.Unlock()
 }
 
 func (s *FlagStore) Config() RuntimeConfig {
@@ -135,6 +154,8 @@ func (s *FlagStore) Config() RuntimeConfig {
 	return s.config
 }
 ```
+
+Call `refreshConfig` from `startPolling` alongside `refresh` so both the flags and the config stay current on the same interval.
 
 ## Exposing flag state through your own API
 

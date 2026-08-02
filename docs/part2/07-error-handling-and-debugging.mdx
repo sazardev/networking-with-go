@@ -34,7 +34,7 @@ Networking is unpredictable: cables unplug, servers crash, packets vanish. Good 
 
 ---
 
-## Go in Action: Basic Error Handling (Paso a Paso)
+## Go in Action: Basic Error Handling (Step by Step)
 
 ```go
 package main
@@ -64,7 +64,7 @@ func main() {
 }
 ```
 
-- **¿Qué hace cada parte?**
+- **What does each part do?**
   - `net.Dial`: Tries to open a TCP connection.
   - `err`: If there is an error (e.g., no server), it is captured here.
   - `errors.As(err, &netErr)`: Walks the error chain looking for a
@@ -110,7 +110,7 @@ func main() {
 }
 ```
 
-- **¿Qué hace cada parte?**
+- **What does each part do?**
   - `net.LookupHost`: Tries to resolve a hostname.
   - `*net.DNSError`: The concrete error type the resolver returns; it
     carries structured fields (`Name`, `IsNotFound`, `IsTimeout`)
@@ -155,7 +155,7 @@ func main() {
 }
 ```
 
-- **¿Qué hace cada parte?**
+- **What does each part do?**
   - `fmt.Errorf(...%w...)`: Wraps the original error with context.
   - `errors.Is`: Checks for specific error types.
 
@@ -229,7 +229,7 @@ func main() {
 }
 ```
 
-- **¿Qué hace cada parte?**
+- **What does each part do?**
   - `connectWithRetry`: Calls `connect` up to `attempts` times,
     backing off a little longer after each failure (`i * 200ms`).
   - `fmt.Errorf("attempt %d/%d: %w", ...)`: Wraps the *previous*

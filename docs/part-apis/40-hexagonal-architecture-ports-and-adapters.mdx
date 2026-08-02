@@ -84,6 +84,11 @@ type EventPublisher interface {
 }
 ```
 
+`Order`, `NewOrder`, and `ErrOrderNotPaid` (used throughout this chapter's
+code) are the same `domain/order.go` types from Chapter 6.39, folded here
+into the `core` package along with the use case — this chapter reuses that
+file rather than redefining it.
+
 `OrderRepository` is a driven port — the core calls out through it.
 `EventPublisher` is also driven — publishing an `OrderShipped` event (the
 kind of event Chapter 6.23 covers turning into an outbound webhook) is
@@ -127,6 +132,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"ordermgmt/internal/core"
@@ -143,7 +149,7 @@ func (h *OrderHandler) Ship(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusOK)
-	case err == core.ErrOrderNotPaid:
+	case errors.Is(err, core.ErrOrderNotPaid):
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	default:

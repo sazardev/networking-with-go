@@ -25,6 +25,21 @@ Before Bluetooth, the answer to "how do two nearby gadgets talk without a cable"
 
 A PAN, in other words, is not a lesser network because it is small. It is a network engineered, on purpose, to be exactly as small and as power-frugal as the problem demands — nothing more.
 
+```mermaid
+flowchart TB
+    master["Phone / Laptop<br/>(Bluetooth Master)"]
+    left["Left Earbud<br/>(BLE Slave)"]
+    right["Right Earbud<br/>(BLE Slave)"]
+    watch["Smartwatch<br/>(BLE Slave)"]
+    tracker["Fitness Tracker<br/>(BLE Slave)"]
+    master --- left
+    master --- right
+    master --- watch
+    master --- tracker
+```
+
+In a Bluetooth piconet the master coordinates all communication — slaves never talk directly to each other. The star topology and deliberately short radio range keep the power draw low enough for coin-sized batteries.
+
 ### LAN: Local Area Network
 
 Widen the circle past your own body and you reach the network most people actually picture when they hear the word "network" at all: the **Local Area Network**, confined to a single building, floor, or campus, and almost always owned by one person or one organization. Your home Wi-Fi is a LAN. So is the row of desks in a small office all plugged into the same switch, and so is a school computer lab where thirty machines share one printer down the hall.
@@ -35,6 +50,23 @@ A LAN is the network equivalent of a household — everyone under the same roof,
 
 What makes a LAN feel so different from everything bigger than it is trust and speed happening almost for free. Devices on the same LAN are usually a few dozen meters apart at most, so signals arrive in a fraction of a millisecond, and the whole thing is typically administered by one person or one small team who can see, physically, every cable and every device on it. That closeness is exactly why a LAN is where you first plug in a printer, share a file, or stream a movie to the television without a second thought about who else might be listening in.
 
+```mermaid
+flowchart TB
+    router["Router / Switch<br/>Gateway 192.168.1.1<br/>(DHCP, NAT, Firewall)"]
+    laptop["Laptop<br/>192.168.1.10"]
+    printer["Network Printer<br/>192.168.1.20"]
+    tv["Smart TV<br/>192.168.1.30"]
+    ap["Wi-Fi Access Point"]
+    router --- laptop
+    router --- printer
+    router --- tv
+    router --- ap
+    ap -.- phone["Phone<br/>192.168.1.40"]
+    ap -.- tablet["Tablet<br/>192.168.1.50"]
+```
+
+Every device shares the same private subnet and the same gateway — the router — which is the only device that sees the public internet. Communication between any two devices on the LAN stays entirely inside the building and adds sub-millisecond latency.
+
 ### MAN: Metropolitan Area Network
 
 Keep widening the circle and you leave the building behind entirely, moving up to something that spans a whole city or a large multi-site campus: the **Metropolitan Area Network**. Picture a university with a library downtown and a dormitory across town, both wired into the same high-speed fiber backbone, so a student's laptop reaches the exact same file server whether they are sitting in a lecture hall or lying in bed. Picture a hospital system linking several clinics scattered across a city to one shared patient-records system, so a doctor at any location sees the same chart. Picture a city government running its own fiber ring beneath the streets to connect traffic-light controllers, public Wi-Fi kiosks, and municipal offices without leasing capacity from a private telecom company for every single link.
@@ -42,6 +74,21 @@ Keep widening the circle and you leave the building behind entirely, moving up t
 A MAN is best understood as a network of LANs — it takes several buildings, each with its own tidy local network, and stitches them together with links fast and reliable enough that the seams mostly disappear. Telecom companies and universities were the earliest builders of these city-scale backbones, often laying fiber rings specifically because a ring, unlike a single straight line, can survive one break by simply sending traffic the other way around — an idea that echoes all the way back to the self-healing dual-ring designs you will meet again when topologies come up in the next chapter.
 
 The word "metropolitan" is doing real work in that name. A MAN is deliberately sized to a city's geography — usually somewhere between one and a hundred kilometers — which is exactly the range where a private company or a single university system can justify running and owning its own dedicated fiber, but where reaching an entire country or continent would require a completely different scale of investment. That in-between quality is precisely why MANs, of the four categories in this chapter, are the one most people have never consciously heard of, even while they benefit from one every day they use a big city's public Wi-Fi.
+
+```mermaid
+flowchart TB
+    ring["City Fiber Ring<br/>self-healing: traffic reroutes<br/>around any single break"]
+    lib["Library (LAN A)"]
+    dorm["Dormitory (LAN B)"]
+    hall["Lecture Hall (LAN C)"]
+    hospital["Hospital (LAN D)"]
+    lib --- ring
+    dorm --- ring
+    hall --- ring
+    hospital --- ring
+```
+
+A MAN stitches together several independent LANs across a city. The fiber ring is the critical architectural choice: if any single segment is cut — by construction, weather, or equipment failure — traffic simply flows the other direction around the ring. Each building still runs its own internal LAN; the ring makes them behave as one.
 
 ### WAN: Wide Area Network
 
@@ -52,6 +99,19 @@ The physical story of the WAN is, quite literally, a story about the bottom of t
 <DeepDive title="Why WAN links behave differently">The defining engineering challenge of a WAN is not bandwidth — it is **latency**, the time it takes a signal to physically travel the distance involved, and no amount of money buys that time back. Light in fiber travels at roughly two-thirds the speed of light in a vacuum, so a round trip between New York and Tokyo takes on the order of 150 to 200 milliseconds no matter how much bandwidth you buy along the way. This is why a video call across an ocean feels very slightly laggy even on a blazing-fast connection, while the same call across a LAN feels instantaneous — the bottleneck has stopped being how much data you can push and become, simply, how far away the other person happens to be standing on a spinning planet.</DeepDive>
 
 WANs are where the polite fiction of "the network never fails" finally gives way to the truth every network engineer eventually learns to live with: links this long *will* be cut by a fishing trawler's anchor, a backhoe on a construction site, or a curious shark, and the entire discipline of WAN engineering is built around routing around that reality rather than pretending it will not happen.
+
+```mermaid
+flowchart TB
+    internet["The Public Internet<br/>(WAN backbone)"]
+    ny["New York Office<br/>Private LAN"]
+    london["London Office<br/>Private LAN"]
+    tokyo["Tokyo Office<br/>Private LAN"]
+    ny ---|"~70 ms RTT"| internet
+    london ---|"~35 ms RTT"| internet
+    tokyo ---|"~150 ms RTT"| internet
+```
+
+A WAN connects independently owned networks across continents. The latency labels — New York to London at roughly 70 milliseconds, Tokyo to either at over 150 milliseconds — are physical limits set by the speed of light in glass, not by the capacity of the line. No amount of money buys those milliseconds back.
 
 ### Seeing the Same Idea at Every Scale
 
@@ -64,16 +124,6 @@ Lay all four side by side and a pattern falls out that is easy to miss when you 
 | Speed | Low-Medium | High | High | Medium-High |
 | Typical latency | Near-zero | Very low | Low | Higher, variable |
 | Example | Bluetooth earbuds | Home or office Wi-Fi | City-wide fiber | The Internet |
-
-```
-[Personal Devices] (PAN)
-      |
-[Home/Office] (LAN)
-      |
-[City/University] (MAN)
-      |
-[World/Internet] (WAN)
-```
 
 None of this is purely academic trivia, and it is worth resisting the temptation to file it away as a table to memorize for a quiz. A network engineer troubleshooting a slow connection asks, almost instinctively, "which of these four am I even looking at right now?" before touching anything, because the answer changes everything about what could plausibly be wrong. A dropped Bluetooth connection, a Wi-Fi dead zone, a city fiber ring outage, and a severed transatlantic cable are four completely different failures, with four completely different fixes, that all present to an ordinary user as the exact same symptom: "the internet stopped working."
 

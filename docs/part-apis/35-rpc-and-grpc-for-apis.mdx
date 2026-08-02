@@ -12,8 +12,8 @@ collection can all speak it without prior coordination. But REST is not the
 only way to build an API, and it is not always the best one. This chapter
 looks at RPC (Remote Procedure Call) as a different API style, and at gRPC,
 its most successful modern implementation, from the angle of building APIs
-rather than the general networking angle already covered in the gRPC and
-Protocol Buffers chapter earlier in this book.
+rather than the general networking angle already covered in Chapter 4.1, gRPC and
+Protocol Buffers in Go.
 
 ### RPC as an API Style
 
@@ -64,7 +64,7 @@ and performance or streaming matters, gRPC usually wins.
 gRPC uses Protocol Buffers (protobuf) as its schema language -- the
 mechanics of protobuf encoding, field numbers, and the four RPC shapes
 (unary, server streaming, client streaming, bidirectional streaming) are
-covered in depth in the gRPC and Protocol Buffers chapter. Here we focus on
+covered in depth in Chapter 4.1. Here we focus on
 using that same machinery to build an API, with a small inventory service
 as the running example:
 

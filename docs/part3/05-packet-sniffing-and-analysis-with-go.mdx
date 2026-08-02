@@ -21,7 +21,7 @@ This is invaluable for legitimate work: debugging why a TCP handshake never comp
 
 ## Why Go Needs Help From libpcap
 
-Go's standard library gives you sockets, not raw frame capture — reading link-layer frames and enabling promiscuous mode requires OS-level support that `net` doesn't expose. The standard tool for this is **`gopacket`** (`github.com/google/gopacket`), a widely used Go wrapper around `libpcap` (Linux/macOS) or `Npcap`/`WinPcap` (Windows). It needs that native library installed, and capturing on a real interface needs elevated privileges (root, or `CAP_NET_RAW`/`CAP_NET_ADMIN` on Linux) — capturing on a loopback interface for local testing usually needs less.
+Go's standard library gives you sockets, not raw frame capture — reading link-layer frames and enabling promiscuous mode requires OS-level support that `net` doesn't expose. The standard tool for this is **`gopacket`** (`github.com/google/gopacket`), a widely used Go wrapper around `libpcap` (Linux/macOS) or `Npcap`/`WinPcap` (Windows). It needs that native library installed, and capturing on a real interface needs elevated privileges (root, or `CAP_NET_RAW`/`CAP_NET_ADMIN` on Linux) — capturing on a loopback interface for local testing usually needs less. Chapter 4.6 introduced `gopacket` and this same capture setup for deep packet inspection; this chapter reuses it with a security-analysis lens instead.
 
 ---
 

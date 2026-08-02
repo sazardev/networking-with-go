@@ -131,13 +131,33 @@ Clicking "Try it out," entering an ID, and executing sends a real `GET /tasks/3`
 Beyond display, an OpenAPI document is machine-checkable: request validation middleware can reject a payload that doesn't match the schema before your handler ever sees it, using a library like `github.com/getkin/kin-openapi` to load the spec and check incoming requests against it:
 
 ```go
-loader := openapi3.NewLoader()
-doc, _ := loader.LoadFromFile("openapi.yaml")
-router, _ := legacyrouter.NewRouter(doc)
+import (
+	"log"
+	"net/http"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers"
+	legacyrouter "github.com/getkin/kin-openapi/routers/legacy"
+)
+
+var apiRouter routers.Router
+
+func init() {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromFile("openapi.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+	apiRouter, err = legacyrouter.NewRouter(doc)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func validationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		route, pathParams, err := router.FindRoute(r)
+		route, pathParams, err := apiRouter.FindRoute(r)
 		if err == nil {
 			reqValidationInput := &openapi3filter.RequestValidationInput{
 				Request: r, PathParams: pathParams, Route: route,

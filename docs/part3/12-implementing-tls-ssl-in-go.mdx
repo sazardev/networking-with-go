@@ -23,7 +23,7 @@ Go's `crypto/tls` package implements the protocol directly in the standard libra
 
 ## The Handshake, Briefly
 
-Before any application data flows, client and server perform a handshake: they agree on a TLS version and cipher suite, the server presents its certificate chain, the client verifies it against trusted root certificates, and both sides derive a shared symmetric key used to encrypt everything that follows. TLS 1.3 (the current version you should target) simplified this considerably compared to 1.2, cutting a round trip and removing several legacy, weaker options entirely.
+Before any application data flows, client and server perform a handshake: they agree on a TLS version and cipher suite, the server presents its certificate chain, the client verifies it against trusted root certificates, and both sides derive a shared symmetric key used to encrypt everything that follows. TLS 1.3 (the current version you should target) simplified this considerably compared to 1.2, cutting a round trip and removing several legacy, weaker options entirely. Chapter 3.19 walked through this same handshake and Go's `crypto/tls` client/server setup in more depth; this chapter takes it from there and into certificate handling specifics.
 
 ---
 

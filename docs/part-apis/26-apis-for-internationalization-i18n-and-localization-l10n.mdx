@@ -75,7 +75,11 @@ For anything beyond a handful of strings, `message.SetString` calls scattered th
 Locale affects far more than word choice: `1,234.56` in the US is `1.234,56` in Germany, and dates ordered month-day-year in the US are day-month-year almost everywhere else. `golang.org/x/text/number` and `golang.org/x/text/currency` handle this formatting correctly per locale:
 
 ```go
-import "golang.org/x/text/currency"
+import (
+	"golang.org/x/text/currency"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
+)
 
 func formatPrice(amount float64, locale language.Tag) string {
 	p := message.NewPrinter(locale)

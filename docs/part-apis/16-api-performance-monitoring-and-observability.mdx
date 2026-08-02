@@ -126,7 +126,8 @@ func getTask(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracer.Start(r.Context(), "getTask")
 	defer span.End()
 
-	task, err := store.GetWithContext(ctx, id)
+	_ = ctx // passed to any downstream call that accepts one, so it joins this span
+	task, err := store.Get(id) // Store.Get, unchanged from Chapter 6.4/6.13
 	// ...
 }
 ```

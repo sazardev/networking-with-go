@@ -26,7 +26,7 @@ Where a traditional firewall enforces policy at a handful of chokepoints (the ne
 
 ### The Mechanism That Makes This Real: Mutual TLS
 
-Verifying identity "explicitly, every time" needs something stronger than a source IP address, which is trivially spoofable and tells you nothing about which specific service or user is really on the other end. Mutual TLS (mTLS) is the mechanism most zero trust architectures actually build on: both sides of a connection present a certificate, and both sides verify the other's certificate against a trusted certificate authority, so each party cryptographically proves its identity, not just its network location.
+Verifying identity "explicitly, every time" needs something stronger than a source IP address, which is trivially spoofable and tells you nothing about which specific service or user is really on the other end. Mutual TLS (mTLS) is the mechanism most zero trust architectures actually build on: both sides of a connection present a certificate, and both sides verify the other's certificate against a trusted certificate authority, so each party cryptographically proves its identity, not just its network location. Chapter 3.19 covers the ordinary, server-only TLS handshake and certificate verification in Go in full; what follows here is specifically the mutual-authentication piece layered on top of that same mechanism.
 
 ### Go Implementation: Enforcing Identity and Policy at the Connection Level
 

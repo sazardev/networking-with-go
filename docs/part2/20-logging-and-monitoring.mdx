@@ -132,7 +132,7 @@ Wrapping `http.ResponseWriter` this way — capturing the status code as a side 
 
 ## Contextual Logging with Request IDs
 
-In a concurrent server handling many requests at once, log lines from different requests interleave in the output. Attaching a unique request ID to each request — carried through `context.Context`, the same mechanism used for cancellation and for the authenticated user ID in the previous chapter — lets you filter a log stream down to a single request's story:
+In a concurrent server handling many requests at once, log lines from different requests interleave in the output. Attaching a unique request ID to each request — carried through `context.Context`, the same mechanism used for cancellation and for the authenticated user ID in Chapter 3.18 — lets you filter a log stream down to a single request's story:
 
 ```go
 type contextKey string
