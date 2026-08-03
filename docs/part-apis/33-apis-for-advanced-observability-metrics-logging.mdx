@@ -27,8 +27,8 @@ var logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	// authenticate is the same token-parsing helper introduced in
-	// Chapter 6.10's auth middleware.
+	// authenticate wraps parseToken, the token-parsing helper introduced
+	// in Chapter 6.10's auth middleware.
 	userID, err := authenticate(r)
 	if err != nil {
 		logger.Warn("login failed",

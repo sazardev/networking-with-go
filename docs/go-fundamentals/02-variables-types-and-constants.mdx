@@ -247,9 +247,12 @@ func main() {
 
 1. Run it with `go run main.go` and confirm `24.0 C` reports as `75.2 F`.
 2. Change `celsius := 24.0` to `celsius := 24` (dropping the decimal point)
-   and try to run it again — read the compiler error about mixing an `int`
-   with the untyped float constants `9`, `5`, and `32`, then explain in your
-   own words why removing the decimal point changed the inferred type.
+   and run it again. It compiles and runs — `celsius` silently becomes an
+   `int`, the formula's division truncates, and `fmt.Printf`'s `%.1f` verb
+   fed an `int` prints the tell-tale `%!f(int=...)` instead of a number.
+   Explain in your own words why removing the decimal point changed the
+   inferred type, and why the mismatch shows up at runtime instead of
+   as a compile error.
 3. Add a `const boilingC float64 = 100` and print its Fahrenheit
    equivalent using the same formula.
 4. **Bonus:** rewrite the day-of-week `iota` example from this chapter and
@@ -265,8 +268,8 @@ func main() {
 **Why does `var count int` not just crash or hold garbage like it would in some other languages?**
 Because Go defines a zero value for every type and guarantees a freshly declared variable holds it immediately, with no gap where the variable exists but its contents are undefined. That single design decision is what makes `var count int` safe to read on the very next line — you get a real, predictable `0`, not whatever bits happened to be sitting in memory beforehand.
 
-**I wrote `celsius := 24` instead of `24.0` and the compiler complained about mixing int and float — what actually happened?**
-Dropping the decimal point changed what Go inferred for `celsius`: `24` infers as `int`, while `24.0` infers as `float64`. Once `celsius` is an `int`, the untyped constants `9`, `5`, and `32` in the conversion formula can't silently combine with it the way they could with a float variable, and Go's strict conversion rules refuse to guess which type you actually meant — you have to convert explicitly with `float64(celsius)` or write the literal with a decimal point in the first place.
+**I wrote `celsius := 24` instead of `24.0` and the program still ran, just with wrong-looking output — what actually happened?**
+Dropping the decimal point changed what Go inferred for `celsius`: `24` infers as `int`, while `24.0` infers as `float64`. The untyped constants `9`, `5`, and `32` in the formula happily adopt `int` from context too, so the whole expression still compiles — it just now does integer division and produces an `int` result. The visible symptom shows up one step later, at the `fmt.Printf` call: `%.1f` expects a floating-point value, and handing it an `int` prints Go's format-mismatch marker, `%!f(int=24)`, instead of a number. Nothing here is a compiler error; it is Go quietly inferring a different, internally consistent type for the whole expression, with the mismatch only surfacing once that value reaches a format verb that assumes float64.
 
 **Do I need to memorize every rule about byte versus rune before moving on?**
 Not fully — just remember the shape of the problem: a Go string is a sequence of bytes, `len(s)` counts bytes not characters, and `range` over a string walks runes (whole Unicode code points), not bytes. That's usually enough to avoid the classic trap of indexing a string with non-ASCII text and getting a stray byte instead of the character you expected; reach back for `utf8.RuneCountInString` and the full byte/rune breakdown once you actually hit that situation in real code.

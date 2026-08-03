@@ -86,9 +86,9 @@ import (
 // once per interval. It's a minimal illustration, not a production
 // rate limiter (consider golang.org/x/time/rate for real services).
 type limiter struct {
-	mu      sync.Mutex
-	tokens  map[string]int
-	max     int
+	mu     sync.Mutex
+	tokens map[string]int
+	max    int
 }
 
 func newLimiter(max int) *limiter {
