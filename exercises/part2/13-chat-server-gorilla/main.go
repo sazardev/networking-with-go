@@ -35,7 +35,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		log.Println("Upgrade error:", err)
 		return
 	}
-	client := &Client{conn: conn, send: make(chan []byte)}
+	client := &Client{conn: conn, send: make(chan []byte, 16)}
 	mu.Lock()
 	clients[client] = true
 	mu.Unlock()

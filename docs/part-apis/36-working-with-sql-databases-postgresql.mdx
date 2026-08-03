@@ -14,7 +14,7 @@ weekend project to a system handling millions of rows without a rewrite. This ch
 correct path from an empty database to a Go API that queries it safely,
 migrates its schema, and manages its connections responsibly.
 
-### database/sql: Go's Standard Abstraction
+## database/sql: Go's Standard Abstraction
 
 Go ships a database-agnostic interface in the standard library,
 `database/sql`. You never import a specific driver's types directly in your
@@ -28,7 +28,7 @@ generic calls into the wire protocol a specific database speaks.
 Go opens, reuses, and closes on your behalf, which is exactly why the pool
 sizing settings later in this chapter matter so much.
 
-### Connecting to Postgres with pgx
+## Connecting to Postgres with pgx
 
 The historically popular Postgres driver, `lib/pq`, is no longer actively
 developed. The modern, recommended driver is
@@ -114,7 +114,7 @@ the `database/sql` equivalents of `pgxpool.Config`'s `MaxConns`,
 APIs expressing the same underlying idea: how many connections you keep
 open, and how long you let them live.
 
-### Parameterized Queries
+## Parameterized Queries
 
 Every query you send to Postgres from Go should use placeholders for any
 value that comes from outside your program, never string concatenation.
@@ -131,7 +131,7 @@ if err := row.Scan(&name, &email); err != nil {
 
 <Warning title="String concatenation in SQL is a security incident waiting to happen">Building a query by concatenating a value into the SQL text lets an attacker supply input that changes the query's structure, not just its data -- this is SQL injection, one of the oldest and still most damaging web vulnerabilities. Compare the two approaches directly: `pool.QueryRow(ctx, "SELECT * FROM users WHERE email = '"+email+"'")` lets a value like `x' OR '1'='1` return every row in the table, while `pool.QueryRow(ctx, "SELECT * FROM users WHERE email = $1", email)` sends `email` as a separate, strictly-typed parameter that the Postgres wire protocol can never reinterpret as SQL syntax. Always use placeholders; never build a query string with `fmt.Sprintf` or `+` around a value that came from a request.</Warning>
 
-### Scanning Rows into Structs
+## Scanning Rows into Structs
 
 `database/sql` and pgx both give you rows one at a time; mapping columns
 onto a struct is a manual, explicit step -- there is no silent reflection
@@ -172,7 +172,7 @@ Checking `rows.Err()` after the loop is easy to forget and important not
 to: `rows.Next()` returning `false` means either "no more rows" or "an
 error interrupted iteration," and only `rows.Err()` tells you which.
 
-### Migrations
+## Migrations
 
 Hand-running `CREATE TABLE` statements against production is how schemas
 drift out of sync with code. A migration tool tracks schema changes as
@@ -204,7 +204,7 @@ you could write that by hand -- it's that every environment, from a
 laptop to production, ends up with the exact same schema history, applied
 in the exact same order.
 
-### Transactions
+## Transactions
 
 Anything that must succeed or fail as a unit -- moving money between two
 rows, for example -- belongs in a transaction. pgx's transaction handle
@@ -248,7 +248,7 @@ landed.
 
 <DeepDive title="Why Rollback after Commit is safe">Once `tx.Commit` returns without error, the transaction is closed on both the client and server. Calling `Rollback` afterward finds nothing left to roll back and returns `pgx.ErrTxClosed`, which every idiomatic transaction wrapper discards. This is what makes `defer tx.Rollback(ctx)` safe to write unconditionally right after `BeginTx`, instead of threading a `committed bool` flag through every return path.</DeepDive>
 
-### Connection Pool Sizing
+## Connection Pool Sizing
 
 Every Postgres server has a hard ceiling on simultaneous connections, set
 by `max_connections` in `postgresql.conf` (commonly 100 by default). That
@@ -290,7 +290,7 @@ Hand-running schema changes works until you have more than one environment, at w
 **Is checking `rows.Err()` after a `for rows.Next()` loop really necessary if I'm already checking `Scan`'s error?**
 Yes -- they catch different failures. `rows.Next()` returning `false` is ambiguous by itself: it means either "there are no more rows" or "an error interrupted iteration partway through," and only `rows.Err()` after the loop tells you which one actually happened. Skipping it means a truncated result set from a dropped connection can look identical to a query that simply finished normally.
 
-### Key Takeaways
+## Key Takeaways
 
 - `database/sql` is Go's driver-agnostic interface; `pgx/v5` is the modern
   recommended Postgres driver, usable either through its native `pgxpool`

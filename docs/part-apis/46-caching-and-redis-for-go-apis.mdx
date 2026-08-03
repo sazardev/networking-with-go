@@ -15,7 +15,7 @@ answer somewhere much faster than the database, for exactly as long as
 that answer is allowed to be a little stale—and Redis is the default
 place most Go services keep that memory.
 
-### Why an In-Memory Cache, Not Just a Bigger Database
+## Why an In-Memory Cache, Not Just a Bigger Database
 
 Redis keeps its entire dataset in RAM, which is what makes a lookup take
 microseconds instead of the milliseconds a disk-backed query costs, even
@@ -28,7 +28,7 @@ answer a question before the real database ever has to.
 
 <Axiom>A cache that can never be safely thrown away and rebuilt from the real data source isn't a cache—it's an undocumented second database.</Axiom>
 
-### Connecting with go-redis
+## Connecting with go-redis
 
 `github.com/redis/go-redis/v9` is the standard Go client for Redis—
 already previewed in the networking packages overview chapter as
@@ -76,7 +76,7 @@ works identically here.
 
 <Warning title="A cache call is still a network round trip">It's easy to reach for Redis assuming it's effectively free, but every `Get` or `Set` still crosses the network and pays real, if small, latency—typically far less than a SQL query, but never zero. `DialTimeout`, `ReadTimeout`, and `WriteTimeout` above matter for the same reason `http.Client.Timeout` mattered in the HTTP chapter: an unreachable or overloaded Redis instance should fail fast, not hang every request that touches the cache.</Warning>
 
-### The Cache-Aside Pattern
+## The Cache-Aside Pattern
 
 The most common way to use a cache is **cache-aside**: on a read, check
 the cache first; on a miss, fall back to the database, then populate the
@@ -120,7 +120,7 @@ same way. A cache is allowed to fail; the request it's serving isn't.
 
 [Exercise: extend this into a small HTTP handler that serves `GET /users/{id}` through this exact cache-aside path, then use `curl` twice in a row and watch the second response return meaningfully faster—the same before/after comparison the Performance Optimization chapter's benchmarking section teaches you to look for.]
 
-### TTL and Why Redis Isn't the Source of Truth
+## TTL and Why Redis Isn't the Source of Truth
 
 The `5*time.Minute` passed to `Set` above is a **TTL** (time to live)—
 after it elapses, Redis deletes the key on its own, and the very next
@@ -141,7 +141,7 @@ your TTL even expires.
 
 <Warning title="Redis persistence (RDB/AOF) is not a backup strategy for this use case">Redis can be configured to snapshot to disk (RDB) or log every write (AOF) so a restart doesn't lose everything. That's valuable for workloads that treat Redis as more than a cache—job queues, real-time counters—but for the cache-aside pattern in this chapter, don't lean on it. Losing the entire cache on restart should be a non-event: the next request for each key just takes the slow, database-backed path once and repopulates it.</Warning>
 
-### Invalidating a Cache on Write
+## Invalidating a Cache on Write
 
 TTL alone means a write to the database can leave a stale cached value
 sitting around for however long the TTL still has left. Whenever a write
@@ -178,7 +178,7 @@ correctly from scratch.
 
 <Axiom>There really are only two hard problems in caching: invalidation, and convincing yourself you don't need to think about invalidation.</Axiom>
 
-### The Cache Stampede Problem
+## The Cache Stampede Problem
 
 Picture a cached value with a five-minute TTL that backs a genuinely
 expensive query, sitting behind an endpoint getting hundreds of requests
@@ -237,7 +237,7 @@ it.
 
 <DeepDive title="singleflight only collapses calls within one process">`singleflight.Group` deduplicates concurrent calls inside a single Go process—it does nothing across multiple replicas of your API running behind a load balancer, each with their own `Group`. A stampede that spans replicas (all ten of them missing the same key within the same second) needs a different tool, typically a short-lived "lock" key in Redis itself (`SET key value NX PX 5000`) that only one replica successfully acquires, with the rest either waiting briefly or serving a slightly stale value while the winner repopulates the cache.</DeepDive>
 
-### Beyond Caching: Sessions and Rate Limiting
+## Beyond Caching: Sessions and Rate Limiting
 
 Redis's speed and simple data structures make it the usual backing store
 for more than read-through caching:

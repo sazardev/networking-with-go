@@ -21,7 +21,7 @@ This chapter looks at zero trust from the other direction: the attacker's-eye vi
 
 Every principle in the Advanced chapter's coverage maps directly onto one or more attack techniques from earlier in this book:
 
-- **"Never trust based on network location"** — this directly defeats the attacker who compromises a VPN endpoint or a phished laptop and then moves laterally because internal services trust anything on the corporate subnet (the exact scenario Chapters 5.1 and 5.3 describe). If every service verifies identity per-request, reaching the internal network from a compromised device gets the attacker no further than the first service they hit.
+- **"Never trust based on network location"** — this directly defeats the attacker who compromises a VPN endpoint or a phished laptop and then moves laterally because internal services trust anything on the corporate subnet (the kind of attack path Chapters 5.1 and 5.3 warn about generally). If every service verifies identity per-request, reaching the internal network from a compromised device gets the attacker no further than the first service they hit.
 
 - **"Verify explicitly, every time"** — this defeats replay attacks and session hijacking that would otherwise let an attacker reuse a stale credential captured during a passive sniff (Chapter 5.5). Mutual TLS as covered in the Advanced chapter enforces fresh verification on every connection, not just initial session setup, so a captured handshake has no replay value.
 

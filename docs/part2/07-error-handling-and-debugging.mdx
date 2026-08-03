@@ -28,9 +28,9 @@ Networking is unpredictable: cables unplug, servers crash, packets vanish. Good 
 
 <Axiom>An error you don't check is a bug you haven't met yet — it is just waiting for the worst possible moment to surface.</Axiom>
 
-**Fun Fact:**
+**Note:**
 - The Go team considered exceptions, but after much debate, chose explicit errors for clarity and reliability.
-- The phrase "Don't just check errors, handle them gracefully" is a Go mantra!
+- "Don't just check errors, handle them gracefully" is a common Go mantra.
 
 ---
 
@@ -256,9 +256,9 @@ func main() {
 
 <DeepDive title="panic/recover across goroutines">`recover` only has an effect inside a deferred function, and only catches a panic in the *same goroutine* that is unwinding. If a goroutine started with `go` panics and never recovers, that panic is **not** contained — it crashes the entire process, taking every other goroutine down with it. The fix is to put the `defer`/`recover` pair inside the goroutine itself: ```go func safeGo(work func()) { go func() { defer func() { if r := recover(); r != nil { log.Printf("recovered from panic: %v", r) } }() work() }() } ``` Reserve `panic` for programmer errors that should never happen at runtime (a broken invariant, a truly impossible state). Never use it for ordinary, expected failures like "connection refused" or "file not found" — those are exactly what the `error` return value is for.</DeepDive>
 
-**Fun Fact:**
-- The Go Playground is a real Go program running in a sandboxed environment—great for quick tests!
-- Go's error values are so lightweight, you can return them from thousands of goroutines without worry.
+**Note:**
+- The Go Playground is a real Go program running in a sandboxed environment—useful for quick tests.
+- Go's error values are lightweight enough to return from thousands of goroutines without a second thought.
 
 ---
 

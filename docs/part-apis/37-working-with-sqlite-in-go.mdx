@@ -13,7 +13,7 @@ Go services better than a client-server database ever could. This chapter
 covers when that's true, the practical tradeoffs between Go's two main
 SQLite drivers, and a complete, correct working example.
 
-### When SQLite Is the Right Choice
+## When SQLite Is the Right Choice
 
 SQLite stores an entire database as one file on disk, and the "database
 server" is just your own process linking against the SQLite library.
@@ -34,7 +34,7 @@ constantly:
   no meaningful multi-writer load to justify a client-server database at
   all.
 
-### When SQLite Is the Wrong Choice
+## When SQLite Is the Wrong Choice
 
 SQLite's core constraint is that only **one writer** can hold the database
 lock at a time, across the entire file, regardless of how many separate
@@ -55,7 +55,7 @@ proper client-server database is built to avoid.
 
 <Axiom>SQLite scales down brilliantly and scales out badly -- know which direction your service is going to move before you pick it.</Axiom>
 
-### Two Drivers, One Real Tradeoff
+## Two Drivers, One Real Tradeoff
 
 Go has two mainstream SQLite drivers, and the choice between them is a
 real engineering tradeoff, not a matter of taste:
@@ -80,7 +80,7 @@ easier and safer starting point. Reach for `mattn/go-sqlite3` only if you
 have already measured a real performance gap that matters for your
 workload.
 
-### A Complete Working Example
+## A Complete Working Example
 
 Install the pure-Go driver:
 
@@ -155,7 +155,7 @@ variables, and `?` as SQLite's placeholder syntax (rather than Postgres's
 your query logic -- it means changing the driver import and, occasionally,
 the placeholder style.
 
-### Enabling WAL Mode
+## Enabling WAL Mode
 
 By default, SQLite uses a rollback-journal mode where writers and readers
 briefly block each other. **Write-Ahead Logging** (WAL) mode changes that:
@@ -182,7 +182,7 @@ contention moment into a real, handled error only if it actually persists.
 
 <Warning title="A blank busy_timeout makes contention look like a bug">Without `PRAGMA busy_timeout`, any write that overlaps another in-flight write fails immediately with `SQLITE_BUSY`, and that error surfaces in your Go code as a hard failure your handler has to deal with on every request. Setting a busy timeout of a few seconds turns brief, ordinary lock contention into an invisible short wait instead of a user-facing error -- do this on every connection you open, not just the first one you happen to test with.</Warning>
 
-### Sizing the Connection Pool
+## Sizing the Connection Pool
 
 The previous chapter spent real effort sizing a Postgres pool against the
 server's `max_connections`. SQLite flips that problem around: because only
@@ -207,7 +207,7 @@ deliberately -- copying a Postgres-sized pool of twenty or fifty
 connections onto a SQLite file is a good way to manufacture lock
 contention that wouldn't otherwise exist.
 
-### Backups Are Just File Copies -- Almost
+## Backups Are Just File Copies -- Almost
 
 Because a SQLite database is a single file, backing it up sounds as simple
 as `cp app.db backup.db`. That's true only when nothing is writing to the
@@ -222,7 +222,7 @@ near real time and can restore a database to any recent point. For
 anything beyond a personal project, prefer one of those over a raw file
 copy.
 
-### Testing with an In-Memory Database
+## Testing with an In-Memory Database
 
 <DeepDive title="In-memory SQLite for fast repository tests">Chapter 6.13 covered testing and mocking APIs, including the tradeoff between mocking a data layer and exercising a real one. SQLite's `:memory:` special filename gives you a third option that is often better than either: `sql.Open("sqlite", ":memory:")` creates a fresh, empty database that lives only for the lifetime of the connection, with zero setup cost and no Docker container to start. Your repository code runs against a real SQL engine -- real constraints, real transactions, real query syntax -- instead of a hand-written mock that can silently drift from what the production database actually enforces. There is one sharp edge: `database/sql` pools multiple connections, and by default each new connection to `:memory:` gets its own separate, empty database, so a pooled test that opens more than one connection can appear to "lose" rows it just inserted. The fix is either `db.SetMaxOpenConns(1)` in tests, so every query shares one connection, or a shared-cache DSN such as `"file::memory:?cache=shared"`, which lets multiple connections see the same in-memory database. Either way, in-memory SQLite turns repository tests from slow, container-dependent integration tests into tests that run in milliseconds as part of `go test ./...`.</DeepDive>
 
@@ -243,7 +243,7 @@ Only safely if nothing is writing to it at that exact moment, and in WAL mode a 
 **Why does testing with `:memory:` sometimes look like it "loses" rows I just inserted?**
 Because `database/sql` pools multiple connections, and by default each new connection to `:memory:` opens its own separate, empty database rather than sharing one -- so a test that inserts on one pooled connection and reads on another sees nothing. Either force `db.SetMaxOpenConns(1)` in tests so every query shares a single connection, or use the shared-cache DSN `"file::memory:?cache=shared"`, which lets multiple connections see the same in-memory database.
 
-### Key Takeaways
+## Key Takeaways
 
 - SQLite fits embedded, single-binary services, CLI tools, tests, and
   low-traffic or edge deployments; it is the wrong choice once multiple

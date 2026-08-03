@@ -104,8 +104,6 @@ Notice the message carries its own `From`/`To`/`Subject` headers, entirely separ
 
 <DeepDive title="What SendMail actually negotiates">`smtp.SendMail` connects in plaintext, sends `EHLO`, and — only if the server advertises the `STARTTLS` extension in its reply — upgrades that same TCP connection to TLS before anything else happens. This is why port 587 works over a socket that starts out unencrypted: STARTTLS turns it into an encrypted one mid-conversation, unlike port 465 (`smtps`), which is encrypted from the very first byte. `smtp.PlainAuth` goes a step further on its own: its `Start` method refuses to hand over credentials at all unless the connection is already TLS-protected (or the server is literally `localhost`), returning an "unencrypted connection" error instead of ever emitting `AUTH PLAIN` in the clear.</DeepDive>
 
-[Exercise: Send Email](../../exercises/part2/25-email-send/main.go)
-
 <Warning title="net/smtp is intentionally minimal">`net/smtp` has no retry logic, no connection pooling, and no MIME construction helpers — it hands you a `Client` that speaks raw SMTP commands and a `SendMail` convenience wrapper around the common case. For anything beyond a simple, occasional notification email, most Go programs either build MIME messages by hand (shown next) or reach for a maintained third-party mail library rather than driving `net/smtp` directly against a real provider's quirks.</Warning>
 
 ---

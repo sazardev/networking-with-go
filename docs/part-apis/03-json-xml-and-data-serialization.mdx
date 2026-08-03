@@ -66,10 +66,10 @@ When writing HTTP handlers, prefer streaming over a `[]byte` round trip: `json.N
 
 ```go
 type Order struct {
-	XMLName xml.Name `xml:"order"`
-	ID      int      `xml:"id,attr"`
-	Item    string   `xml:"item"`
-	Price   float64  `xml:"price"`
+	XMLName xml.Name `xml:"order" json:"-"`
+	ID      int      `xml:"id,attr" json:"id"`
+	Item    string   `xml:"item" json:"item"`
+	Price   float64  `xml:"price" json:"price"`
 }
 ```
 

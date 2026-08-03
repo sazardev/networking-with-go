@@ -235,6 +235,22 @@ func main() {
 
 ---
 
+## Frequently Asked Questions
+
+**Why would `Read` ever return `n > 0` and a non-nil error in the same call — isn't that contradictory?**
+It's not a contradiction, it's the contract: `Read` is telling you "here are the last `n` bytes I have, and also, that was the end." A common bug is checking `err != nil` first and returning immediately without looking at `n`, which silently drops that final chunk of data. Always process `p[:n]` before checking whether `err` says to stop.
+
+**If `io.EOF` isn't an error, why does it satisfy the `error` interface at all?**
+Because Go's error handling has no separate "signal" type — `io.EOF` is a sentinel value that happens to implement `error` so it can travel through the same return slot every other failure uses. The distinction isn't in the type, it's in what you do with it: code that treats `io.EOF` as "stop the loop, everything's fine" versus `log.Fatal`-ing on every other error is the standard, correct pattern.
+
+**When should I reach for `io.LimitReader` instead of just calling `io.ReadAll` and checking the length afterward?**
+As soon as the data source isn't fully trusted — which, for networked code, is almost always. `io.ReadAll` has no way to stop early; it keeps growing its buffer until `io.EOF` or the process runs out of memory, so checking the length *after* the call is checking it after the damage is already done. `io.LimitReader` caps the read itself, before a single byte over the limit is ever allocated.
+
+**Why does `io.Pipe` need a goroutine on each side instead of just working like a buffer?**
+Because it's synchronous by design — a write blocks until a read consumes it, with no internal storage in between. That's different from `bytes.Buffer`, which happily stores everything you write to it with no reader required. `io.Pipe` exists specifically for cases where you want backpressure (the writer can't get ahead of the reader), and backpressure requires two independent goroutines actually running at the same time, not just two variables.
+
+---
+
 ### Where This Goes From Here
 
 The next chapter covers slices, arrays, and maps — the data structures you will use to hold the bytes, connections, and routing tables that `io.Reader` and `io.Writer` stream through. Every networked program in this book, from the simplest echo server to the largest production API, is built on these two interfaces.
