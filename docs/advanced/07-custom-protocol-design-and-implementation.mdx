@@ -183,6 +183,6 @@ Framing (this chapter's main subject) tells you where one message ends and the n
 
 - `net.Conn` gives you an ordered byte stream or discrete datagrams; defining what a "message" is, and where one ends, is your own protocol's job.
 - Length-prefixed framing is the right default for most binary protocols -- no escaping needed, and the reader knows exactly how much to read.
-- `io.ReadFull` is required reading length-prefixed data correctly, because a single `conn.Read` is never guaranteed to fill your buffer.
+- `io.ReadFull` is required for reading length-prefixed data correctly, because a single `conn.Read` is never guaranteed to fill your buffer.
 - A length field read off the network needs an upper bound before you allocate, or a hostile peer can force unbounded memory use.
 - Put a version byte in from day one; retrofitting one after a protocol has shipped is far more painful than reserving it up front.

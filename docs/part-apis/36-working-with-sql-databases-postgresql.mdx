@@ -212,6 +212,14 @@ follows the same `Commit`/`Rollback` shape you'll recognize from
 `database/sql`:
 
 ```go
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
 func transferFunds(
 	ctx context.Context, pool *pgxpool.Pool, from, to int64, amount int,
 ) error {

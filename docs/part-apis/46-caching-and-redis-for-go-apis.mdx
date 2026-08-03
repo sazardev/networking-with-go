@@ -118,7 +118,7 @@ same way. A cache is allowed to fail; the request it's serving isn't.
 
 <DeepDive title="Why check err == nil instead of err == redis.Nil specifically">`redis.Nil` is the sentinel `go-redis` returns for "key not found," and a stricter version of this function would check for it explicitly to distinguish "cache miss" from "Redis is down." In practice both cases want the same fallback—read from the database—so treating any error as a reason to fall through keeps the happy path simple. The distinction matters more for observability (you'd want a metric that specifically counts real Redis errors, separate from ordinary misses) than for correctness here.</DeepDive>
 
-[Exercise: extend this into a small HTTP handler that serves `GET /users/{id}` through this exact cache-aside path, then use `curl` twice in a row and watch the second response return meaningfully faster—the same before/after comparison the Performance Optimization chapter's benchmarking section teaches you to look for.]
+**Try It Yourself:** extend this into a small HTTP handler that serves `GET /users/{id}` through this exact cache-aside path, then use `curl` twice in a row and watch the second response return meaningfully faster—the same before/after comparison the Performance Optimization chapter's benchmarking section teaches you to look for. There's no bundled exercise file for this chapter yet — the snippet above is everything you need to start.
 
 ## TTL and Why Redis Isn't the Source of Truth
 

@@ -60,6 +60,13 @@ Keeping the previous key around lets tokens issued right before a rotation keep 
 Ordinary TLS proves the server's identity to the client. Mutual TLS (mTLS) adds the reverse: the server also verifies a certificate presented by the client, which is the standard way internal services authenticate each other without passing bearer tokens around. Chapter 3.19 covers the base TLS handshake and certificate verification this builds on; Chapter 4.9 applies the same mechanism to zero trust service-to-service authentication. Go's `crypto/tls` supports this natively on both ends:
 
 ```go
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"net/http"
+	"os"
+)
+
 func newMTLSServer(certFile, keyFile, clientCAFile string) *http.Server {
 	clientCAPool := x509.NewCertPool()
 	caCert, _ := os.ReadFile(clientCAFile)
@@ -98,6 +105,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 For API clients that are other services or third-party integrations rather than end users, HMAC request signing (the same primitive from the webhooks chapter, applied to outbound API calls instead of inbound events) avoids handing out long-lived bearer tokens that can leak in logs:
 
 ```go
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"net/http"
+	"time"
+)
+
 func signRequest(req *http.Request, secret, body []byte) {
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
 	mac := hmac.New(sha256.New, secret)
@@ -117,6 +133,15 @@ Including the timestamp in the signed payload lets the receiver reject requests 
 None of the above matters if the private keys and HMAC secrets themselves live in a `.env` file committed to source control. Production systems fetch secrets at startup from a dedicated store — HashiCorp Vault, AWS Secrets Manager, or a cloud provider's equivalent — rather than reading them from environment variables set by a deploy script:
 
 ```go
+import (
+	"context"
+	"crypto/rsa"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/golang-jwt/jwt/v5"
+)
+
 func loadSigningKey(
 	ctx context.Context, client *secretsmanager.Client, secretID string,
 ) (*rsa.PrivateKey, error) {
@@ -137,6 +162,13 @@ func loadSigningKey(
 Rotating a signing key stops new tokens from being forged with a compromised one, but it does nothing about tokens already issued and still within their expiry window — if a token is stolen, key rotation alone won't invalidate it before it naturally expires. For access that needs to be revocable immediately (a user reports a stolen session, an employee is offboarded), keep short expiries on the token itself and maintain a denylist checked on verification for the rare case that a specific token needs killing before it would otherwise expire:
 
 ```go
+import (
+	"context"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
 func isRevoked(ctx context.Context, rdb *redis.Client, tokenID string) bool {
 	exists, _ := rdb.Exists(ctx, "revoked:"+tokenID).Result()
 	return exists > 0

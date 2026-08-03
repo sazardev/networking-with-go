@@ -16,6 +16,7 @@ package main
 
 import (
 	"database/sql"
+	"log"
 	"sync"
 	"time"
 )
@@ -43,8 +44,15 @@ func (s *FlagStore) refresh(db *sql.DB) {
 	for rows.Next() {
 		var name string
 		var enabled bool
-		rows.Scan(&name, &enabled)
+		if err := rows.Scan(&name, &enabled); err != nil {
+			log.Printf("scan feature flag row: %v", err)
+			return
+		}
 		next[name] = enabled
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("iterate feature flag rows: %v", err)
+		return
 	}
 
 	s.mu.Lock()

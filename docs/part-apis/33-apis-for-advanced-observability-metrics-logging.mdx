@@ -158,6 +158,13 @@ mux.Handle("/users/{id}", metricsMiddleware("/users/{id}", userHandler))
 Container orchestrators like Kubernetes need two different questions answered, and conflating them causes real outages: **liveness** ("is this process stuck and needs to be killed and restarted") and **readiness** ("is this process currently able to serve traffic, even if it's healthy"). A service can be alive but not ready — for instance, still warming its cache or waiting on a database connection at startup.
 
 ```go
+import (
+	"context"
+	"database/sql"
+	"net/http"
+	"time"
+)
+
 func livenessHandler(w http.ResponseWriter, r *http.Request) {
 	// if this handler runs at all, the process is alive
 	w.WriteHeader(http.StatusOK)
