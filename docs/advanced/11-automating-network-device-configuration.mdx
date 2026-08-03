@@ -5,11 +5,11 @@ title: "Automating Network Device Configuration"
 
 # Automating Network Device Configuration
 
-> "A medieval scribe copied books by hand, one letter at a time, and every copy risked a new typo. The printing press didn't just make copying faster—it made every copy identical. Automating network configuration is your printing press: instead of an engineer retyping the same VLAN change into four hundred switches at 2 a.m., one program applies it everywhere, the same way, every time."
+> "A medieval scribe copied books by hand, one letter at a time, and every copy risked a new typo. The printing press didn't just make copying faster — it made every copy identical. Automating network configuration is your printing press: instead of an engineer retyping the same VLAN change into four hundred switches at 2 a.m., one program applies it everywhere, the same way, every time."
 
 ## Why Manual Configuration Doesn't Scale
 
-Every network engineer has a story about a single mistyped `no shutdown` that took down a branch office. Manual, interactive configuration—SSH in, type commands, hope you remembered all of them—works fine for one device. It falls apart at scale for reasons that have nothing to do with skill:
+Every network engineer has a story about a single mistyped `no shutdown` that took down a branch office. Manual, interactive configuration — SSH in, type commands, hope you remembered all of them — works fine for one device. It falls apart at scale for reasons that have nothing to do with skill:
 
 - **Config drift.** Devices configured by hand slowly diverge from each other and from whatever is written in the runbook.
 - **No audit trail.** "Who changed the ACL on Tuesday?" is hard to answer when the answer lives in someone's terminal history.
@@ -22,11 +22,11 @@ Automation replaces "an engineer remembers to do this correctly" with "a program
 
 Network devices expose configuration through two broad styles, and it matters which one you're automating against.
 
-**CLI screen-scraping** treats the device like a human would: you open an SSH session, send text commands (`show version`, `configure terminal`, `interface GigabitEthernet0/1`), and parse the text that comes back. This works on almost any device ever made, because almost every device has a CLI. Its weakness is that the output format is meant for human eyes, not machines—vendors change wording between firmware versions, and your parser breaks.
+**CLI screen-scraping** treats the device like a human would: you open an SSH session, send text commands (`show version`, `configure terminal`, `interface GigabitEthernet0/1`), and parse the text that comes back. This works on almost any device ever made, because almost every device has a CLI. Its weakness is that the output format is meant for human eyes, not machines — vendors change wording between firmware versions, and your parser breaks.
 
-**Model-driven APIs**—NETCONF and its younger sibling gNMI—exchange structured data (XML for NETCONF, protobuf for gNMI) instead of freeform text, validated against a formal schema (YANG). You ask for "the operational state of interface 3" and get a typed structure back, not a paragraph you have to regex. These are the right long-term answer, but not every device in a real network supports them yet, which is why screen-scraping automation is still a large, legitimate part of the job.
+**Model-driven APIs** — NETCONF and its younger sibling gNMI — exchange structured data (XML for NETCONF, protobuf for gNMI) instead of freeform text, validated against a formal schema (YANG). You ask for "the operational state of interface 3" and get a typed structure back, not a paragraph you have to regex. These are the right long-term answer, but not every device in a real network supports them yet, which is why screen-scraping automation is still a large, legitimate part of the job.
 
-<DeepDive title="NETCONF and gNMI, briefly">NETCONF (RFC 6241) runs over SSH and exchanges XML "configuration datastores." gNMI is Google's newer, gRPC-based equivalent, exchanging protobuf messages and supporting streaming telemetry as well as configuration. Both are modeled against YANG schemas defined by the OpenConfig project or the vendor. Go has real client libraries for both ecosystems (for example `openconfig/gnmic` for gNMI), but the concepts—not a specific API—are what you need to recognize when you meet them in a real network.</DeepDive>
+<DeepDive title="NETCONF and gNMI, briefly">NETCONF (RFC 6241) runs over SSH and exchanges XML "configuration datastores." gNMI is Google's newer, gRPC-based equivalent, exchanging protobuf messages and supporting streaming telemetry as well as configuration. Both are modeled against YANG schemas defined by the OpenConfig project or the vendor. Go has real client libraries for both ecosystems (for example `openconfig/gnmic` for gNMI), but the concepts — not a specific API — are what you need to recognize when you meet them in a real network.</DeepDive>
 
 ## Go Implementation
 
@@ -34,7 +34,7 @@ Go's standard library doesn't ship a network-automation package, but it gives yo
 
 ### Talking to a Device Over SSH
 
-`golang.org/x/crypto/ssh` is the real, widely used Go SSH client. Here's a minimal function that opens a session, runs a single command, and returns the output—the building block of any screen-scraping automation tool:
+`golang.org/x/crypto/ssh` is the real, widely used Go SSH client. Here's a minimal function that opens a session, runs a single command, and returns the output — the building block of any screen-scraping automation tool:
 
 ```go
 package main
@@ -80,7 +80,7 @@ func runCommand(addr, user, password, cmd string) (string, error) {
 
 ### Generating Configuration from a Template
 
-The safest way to avoid typos is to never type the configuration by hand. `text/template` (standard library) lets you define a config skeleton once and fill it in from a Go struct—the same approach tools like Ansible use, minus the YAML:
+The safest way to avoid typos is to never type the configuration by hand. `text/template` (standard library) lets you define a config skeleton once and fill it in from a Go struct — the same approach tools like Ansible use, minus the YAML:
 
 ```go
 package main
@@ -112,7 +112,7 @@ func renderConfig(iface Interface) error {
 }
 ```
 
-Because the template is data, not code, the same rendering function produces correct, consistent output whether you're configuring one interface or ten thousand—and you can unit test the rendered string before it ever touches a device.
+Because the template is data, not code, the same rendering function produces correct, consistent output whether you're configuring one interface or ten thousand — and you can unit test the rendered string before it ever touches a device.
 
 ### Fanning Out Across a Fleet
 
@@ -174,24 +174,24 @@ Automation that applies changes instantly and irreversibly is automation that tu
 - **Rollback plan.** Save the previous configuration before changing it, and have an automated path back to it.
 - **Idempotency.** Running the same automation twice should produce the same end state, not stack duplicate changes.
 
-None of these are exotic—the network simulation and virtual lab techniques from the previous chapter are exactly where you should be testing this kind of automation before it ever touches production hardware.
+None of these are exotic — the network simulation and virtual lab techniques from the previous chapter are exactly where you should be testing this kind of automation before it ever touches production hardware.
 
 ## Frequently Asked Questions
 
-**Why not just automate against the CLI everywhere—why bother with NETCONF or gNMI at all?**
+**Why not just automate against the CLI everywhere — why bother with NETCONF or gNMI at all?**
 Because screen-scraping is fundamentally guessing. When you parse the text output of `show version`, you're relying on wording that a vendor is free to change in the next firmware release, and your regex has no idea that happened until it silently returns garbage. NETCONF and gNMI exchange data validated against a YANG schema, so you get a typed structure back instead of a paragraph to reverse-engineer. The honest answer is that both approaches matter today: structured APIs are where the industry is heading, but screen-scraping is still how a lot of real, older hardware gets automated.
 
 **Is `ssh.InsecureIgnoreHostKey()` ever okay to use?**
-Only in a lab, and only because you already know exactly which device you're talking to. In production it defeats the entire point of host key verification—it will happily hand your credentials and configuration commands to an attacker sitting in the middle of the connection, and never tell you anything went wrong. Swap it for `ssh.FixedHostKey` or a callback that checks a known-hosts file before this code goes anywhere near real infrastructure.
+Only in a lab, and only because you already know exactly which device you're talking to. In production it defeats the entire point of host key verification — it will happily hand your credentials and configuration commands to an attacker sitting in the middle of the connection, and never tell you anything went wrong. Swap it for `ssh.FixedHostKey` or a callback that checks a known-hosts file before this code goes anywhere near real infrastructure.
 
 **Why generate configuration from a `text/template` instead of just building the string with `fmt.Sprintf`?**
-`fmt.Sprintf` works until the config gets complicated enough that you're concatenating conditionals and loops into a string by hand—exactly the conditions that produce a typo nobody notices until it's live on four hundred switches. A template separates the shape of the configuration from the data filling it in, so the same tested skeleton produces correct output whether you're rendering one interface or ten thousand, and you can diff or unit-test the rendered text before it ever reaches a device.
+`fmt.Sprintf` works until the config gets complicated enough that you're concatenating conditionals and loops into a string by hand — exactly the conditions that produce a typo nobody notices until it's live on four hundred switches. A template separates the shape of the configuration from the data filling it in, so the same tested skeleton produces correct output whether you're rendering one interface or ten thousand, and you can diff or unit-test the rendered text before it ever reaches a device.
 
 **What happens if `applyToFleet` hits a device that's down or refuses the SSH connection?**
-That device's goroutine records its own `Result{Device: device, Err: err}` and moves on—the failure is isolated per device rather than aborting the whole run. That's deliberate: a fleet-wide rollout where one unreachable switch stops progress on the other three hundred devices is worse than a rollout that reports "these five failed, here's why" and keeps going. It's also why the takeaways call for canary devices and a rollback plan—a program applying changes uniformly is only safe if there's a well-tested way to undo it.
+That device's goroutine records its own `Result{Device: device, Err: err}` and moves on — the failure is isolated per device rather than aborting the whole run. That's deliberate: a fleet-wide rollout where one unreachable switch stops progress on the other three hundred devices is worse than a rollout that reports "these five failed, here's why" and keeps going. It's also why the takeaways call for canary devices and a rollback plan — a program applying changes uniformly is only safe if there's a well-tested way to undo it.
 
 **Do I need to have gone through the network simulation chapter before trying any of this?**
-It helps a lot. The safety nets section leans directly on the virtual-lab techniques from the previous chapter—dry runs, canary rollouts, and rollback plans are things you want to rehearse against simulated devices, not discover for the first time against production hardware at 2 a.m.
+It helps a lot. The safety nets section leans directly on the virtual-lab techniques from the previous chapter — dry runs, canary rollouts, and rollback plans are things you want to rehearse against simulated devices, not discover for the first time against production hardware at 2 a.m.
 
 ## Key Takeaways
 

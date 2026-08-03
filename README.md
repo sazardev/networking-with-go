@@ -227,7 +227,7 @@ Chapter numbers 104-149 below map to files `01-` through `46-` under `docs/part-
 ## How to Use This Repo
 - **New to networking and Go?** Start at Part 1, go through Go Fundamentals next, then move into Part 2 in order — each chapter builds on the last.
 - **Know Go already, new to networking?** Skim or skip Go Fundamentals, but still read Part 1 and Part 2 in order.
-- **Know networking already, new to Go?** Skip to Go Fundamentals — don't skip chapter 22 (Goroutines, Channels, and Concurrency) even if you've used other languages' concurrency models, Go's is different — then jump straight into whichever later part matches what you're building.
+- **Know networking already, new to Go?** Skip to Go Fundamentals — don't skip chapter 23 (Goroutines, Channels, and Concurrency) even if you've used other languages' concurrency models, Go's is different — then jump straight into whichever later part matches what you're building.
 - **Want the production-backend track specifically?** Part APIs chapters 138-145 (RPC/gRPC, PostgreSQL, SQLite, Docker, Clean/Hexagonal Architecture, DDD) build one coherent example project across all of them, capped by chapter 145's end-to-end walkthrough — read that run in order even if you jump around elsewhere.
 - **Looking for something specific?** Use the table of contents above — every chapter is self-contained enough to read on its own, with cross-references where it depends on an earlier concept.
 - Every hands-on code block is meant to be copied, run, and modified — try the "Try It Yourself" prompts, don't just read past them.
