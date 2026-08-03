@@ -5,11 +5,11 @@ title: "WebRTC and P2P Communication in Go"
 
 # WebRTC and P2P Communication in Go
 
-> Two people want to talk directly, but neither knows the other's address. So they both call a mutual friend first, who introduces them and passes along contact details, then steps out of the conversation entirely. From that point on, the two talk directly, with no middleman relaying every word. That mutual friend is a signaling server. The direct conversation that follows is WebRTC.
+> "Two people want to talk directly, but neither knows the other's address. So they both call a mutual friend first, who introduces them and passes along contact details, then steps out of the conversation entirely. From that point on, the two talk directly, with no middleman relaying every word. That mutual friend is a signaling server. The direct conversation that follows is WebRTC."
 
 WebRTC (Web Real-Time Communication) is best known as "the thing that makes video calls work in a browser without a plugin," but at its core it is a general-purpose framework for establishing a direct, low-latency connection between two peers -- audio, video, or arbitrary data -- even when both peers are behind NAT and have no public IP address. You already met NAT traversal, STUN, and TURN in the P2P chapter earlier in this book; WebRTC is where that theory becomes a concrete, standardized protocol stack you can drive from Go.
 
-### The Pieces of a WebRTC Connection
+## The Pieces of a WebRTC Connection
 
 A `PeerConnection` is the central object on each side. Getting two of them talking involves a handshake that never touches the media path itself:
 
@@ -18,7 +18,7 @@ A `PeerConnection` is the central object on each side. Getting two of them talki
 - **ICE (Interactive Connectivity Establishment)**: the process of gathering candidate addresses (local interface, server-reflexive via STUN, relayed via TURN) and testing pairs of them until a working path is found.
 - **Data channels**: once connected, peers can open SCTP-backed data channels that behave like ordered or unordered, reliable or unreliable, message streams -- useful for anything that is not audio/video (game state, file chunks, chat).
 
-### Go Implementation
+## Go Implementation
 
 Go does not ship a WebRTC implementation in the standard library -- this is squarely third-party territory, and the reference implementation in the Go ecosystem is [pion/webrtc](https://github.com/pion/webrtc), a pure-Go library used in production by projects that need WebRTC without a browser or a C++ dependency.
 
@@ -94,25 +94,25 @@ On the receiving side, the remote peer calls `SetRemoteDescription` with the off
 
 <DeepDive title="Why signaling is not part of WebRTC">The standard deliberately leaves signaling transport undefined because every application's needs differ: a video-calling app might reuse its existing chat server's WebSocket connection, while a game might use its matchmaking service. WebRTC only standardizes what happens *after* both sides know how to reach each other.</DeepDive>
 
-### When Direct Connection Is Not Possible
+## When Direct Connection Is Not Possible
 
 ICE tries host candidates first (direct LAN or public IP), then server-reflexive candidates discovered via STUN (your public IP:port as seen from outside your NAT), and finally falls back to a TURN relay if no direct path works -- typically because both peers sit behind symmetric NATs that STUN cannot punch through. A TURN server is not optional infrastructure for a serious deployment; without one, a meaningful percentage of real-world connections (mobile networks, corporate NATs) will simply fail to connect.
 
 <Warning title="STUN alone is not enough for production">The public Google STUN server used above is fine for local testing, but production WebRTC deployments need their own STUN/TURN infrastructure (for example, `coturn`) with authentication, since an open relay is both a cost and an abuse vector.</Warning>
 
-### Where This Fits Outside the Browser
+## Where This Fits Outside the Browser
 
 You do not need a browser on either end. Two Go processes can use pion/webrtc to establish a direct, NAT-traversing data channel between them -- useful for peer-to-peer file transfer tools, decentralized applications, or any system where you want to avoid routing bulk traffic through a central server once the two ends have found each other. The signaling server stays lightweight (it only ever sees small SDP/ICE messages), while the actual payload travels the shortest path the network allows.
 
-### A Minimal Signaling Server
+## A Minimal Signaling Server
 
 Since WebRTC leaves signaling entirely up to you, a small `net/http` server exchanging SDP blobs by ID is often all a demo needs -- no dedicated WebSocket infrastructure required for a simple two-party handshake:
 
 ```go
 type sessionStore struct {
-	mu       sync.Mutex
-	offers   map[string]webrtc.SessionDescription
-	answers  map[string]webrtc.SessionDescription
+	mu      sync.Mutex
+	offers  map[string]webrtc.SessionDescription
+	answers map[string]webrtc.SessionDescription
 }
 
 func (s *sessionStore) postOffer(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +144,10 @@ No. Everything demonstrated here runs as two plain Go processes using pion/webrt
 **How does this relate to the manual NAT traversal and STUN/TURN material from the earlier P2P chapter?**
 This chapter is where that theory stops being abstract: `OnICECandidate` fires for every candidate address ICE discovers, exactly the kind of host/server-reflexive/relayed candidates described earlier. The difference is that you are no longer implementing the hole-punching algorithm by hand -- pion/webrtc runs the full ICE state machine for you, and your job shrinks to relaying handshake messages over whatever signaling channel you choose.
 
-### Comparing This to What You Already Know
+## Key Takeaways
 
-If the NAT traversal chapter's STUN/TURN discussion felt abstract, WebRTC is where that theory becomes something you can watch happen: `OnICECandidate` fires once for every candidate address ICE discovers, and `OnICEConnectionStateChange` reports the moment a usable pair is confirmed. Unlike the manual UDP hole-punching techniques covered earlier, you are not implementing the NAT traversal algorithm yourself -- pion/webrtc implements the full ICE state machine, and your job is limited to relaying the handshake messages it produces.
+- WebRTC establishes a direct, low-latency peer connection -- audio, video, or data -- even across NAT, once a signaling channel carries the offer, answer, and ICE candidates.
+- Signaling is deliberately left undefined by the standard; a small WebSocket or HTTP server exchanging SDP blobs is usually all it takes.
+- ICE tries direct, then STUN-discovered, then TURN-relayed candidates in order, and `OnICEConnectionStateChange` reports when a working path is found.
+- `pion/webrtc` runs the full ICE state machine for you -- your job shrinks to relaying handshake messages, not implementing NAT traversal by hand.
+- The public Google STUN server is fine for local testing only; production deployments need their own STUN/TURN infrastructure with authentication.

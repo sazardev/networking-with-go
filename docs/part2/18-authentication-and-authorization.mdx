@@ -226,6 +226,8 @@ func requireRole(
 }
 ```
 
+[Exercise: JWT Auth Server](../../exercises/part2/18-jwt-auth-server/main.go)
+
 Attaching the authenticated user ID to the request's `context.Context` — the same context type used for cancellation earlier in the book — lets downstream handlers retrieve "who is making this request" without re-parsing the token, using `r.Context().Value(userIDKey)`.
 
 Note the distinct status codes: `401 Unauthorized` means "I don't know who you are," while `403 Forbidden` means "I know who you are, and the answer is no" — a direct reflection of the authn/authz split at the HTTP level.

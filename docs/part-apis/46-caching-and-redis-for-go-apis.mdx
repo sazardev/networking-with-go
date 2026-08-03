@@ -289,3 +289,9 @@ You can, for workloads that are genuinely fine with Redis's persistence guarante
 - A cache stampede happens when a hot key's expiration causes many concurrent misses to hit the database at once; `singleflight` collapses those within one process, and a Redis-based lock is needed across replicas.
 - Every `go-redis` call takes a `context.Context` and a real network round trip—set explicit timeouts, the same way you would for an HTTP client or a database pool.
 - Redis's speed also makes it the usual backing store for sessions, rate limiting, and feature flags—the same primitive, applied to different problems than caching a database read.
+
+---
+
+## Closing This Part, and This Book
+
+This is the last chapter of Part APIs, and of the book. It's a fitting place to stop: caching is what you reach for once an API already works and needs to survive real traffic, and that's the whole arc this part walked—REST fundamentals, frameworks, auth, rate limiting, architecture, databases, deployment, and now the layer that keeps all of it fast under load. Pair it with everything Part 3 taught about defending what you build, and you have the two halves of running production software: making it work, and keeping it working. From here, the only thing left is to go build something real with it.

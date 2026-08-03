@@ -54,7 +54,9 @@ func (s *FlagStore) refresh(db *sql.DB) {
 
 func (s *FlagStore) startPolling(db *sql.DB, interval time.Duration) {
 	go func() {
-		for range time.Tick(interval) {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
 			s.refresh(db)
 		}
 	}()

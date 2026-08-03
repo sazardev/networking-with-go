@@ -102,12 +102,76 @@ pushes onto `broadcast` — it never writes to the connection directly.
 
 ## Example: Minimal Go WebSocket Chat Server (Gorilla)
 
-See: [`main.go`](../../exercises/part2/13-chat-server-gorilla/main.go)
-
 ```go
-// ...see exercises/part2/13-chat-server-gorilla/main.go
-// for the full, commented code...
+type Client struct {
+    conn *websocket.Conn
+    send chan []byte
+}
+
+var (
+    clients   = make(map[*Client]bool)
+    broadcast = make(chan []byte)
+    mu        sync.Mutex
+)
+
+func handleConnections(w http.ResponseWriter, r *http.Request) {
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        log.Println("Upgrade error:", err)
+        return
+    }
+    client := &Client{conn: conn, send: make(chan []byte)}
+    mu.Lock()
+    clients[client] = true
+    mu.Unlock()
+    defer func() {
+        mu.Lock()
+        delete(clients, client)
+        mu.Unlock()
+        conn.Close()
+    }()
+
+    go func() {
+        for msg := range client.send {
+            if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+                break
+            }
+        }
+    }()
+
+    for {
+        _, msg, err := conn.ReadMessage()
+        if err != nil {
+            break
+        }
+        broadcast <- msg
+    }
+}
+
+func handleBroadcast() {
+    for msg := range broadcast {
+        mu.Lock()
+        for client := range clients {
+            select {
+            case client.send <- msg:
+            default:
+                close(client.send) // client too slow: drop it
+                delete(clients, client)
+            }
+        }
+        mu.Unlock()
+    }
+}
+
+func main() {
+    http.HandleFunc("/ws", handleConnections)
+    go handleBroadcast()
+    fmt.Println("Chat server running at ws://localhost:8080/ws ...")
+    log.Fatal(http.ListenAndServe(":8080", nil))
+}
 ```
+
+Full, runnable file: [`main.go`](../../exercises/part2/13-chat-server-gorilla/main.go).
 
 **How to use:**
 1. Install gorilla/websocket: `go get github.com/gorilla/websocket`

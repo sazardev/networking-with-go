@@ -129,7 +129,7 @@ The handler itself — `mux.HandleFunc`, `http.ResponseWriter`, `*http.Request` 
 
 ## Go Implementation: An HTTP/3 Client
 
-`http3.RoundTripper` implements `http.RoundTripper`, so it plugs directly into an ordinary `http.Client` — the same client type used throughout this book:
+`http3.Transport` implements `http.RoundTripper`, so it plugs directly into an ordinary `http.Client` — the same client type used throughout this book:
 
 ```go
 package main
@@ -143,7 +143,7 @@ import (
 )
 
 func main() {
-	roundTripper := &http3.RoundTripper{}
+	roundTripper := &http3.Transport{}
 	defer roundTripper.Close()
 
 	client := &http.Client{Transport: roundTripper}
@@ -160,7 +160,7 @@ func main() {
 }
 ```
 
-Nothing about `client.Get`, reading `resp.Body`, or checking `resp.Proto` differs from the plain HTTP client code in the HTTP chapter — swapping `http3.RoundTripper` in for the default `http.Transport` is the entire integration point.
+Nothing about `client.Get`, reading `resp.Body`, or checking `resp.Proto` differs from the plain HTTP client code in the HTTP chapter — swapping `http3.Transport` in for the default `http.Transport` is the entire integration point.
 
 ## When HTTP/3 Actually Helps
 

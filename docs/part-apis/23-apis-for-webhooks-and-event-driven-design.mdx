@@ -21,7 +21,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"time"
 )
 
 func sendWebhook(url, secret string, event any) error {

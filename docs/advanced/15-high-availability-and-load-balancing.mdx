@@ -27,7 +27,7 @@ Most load balancers pick from a small set of well-understood strategies:
 
 ## Go Implementation: A Reverse Proxy Load Balancer
 
-The standard library's `net/http/httputil` package includes `ReverseProxy`, which is real, production-capable machinery for forwarding HTTP requests to a backend. Building a load balancer on top of it means picking which backend to hand each request to.
+The standard library's `net/http/httputil` package includes `ReverseProxy`, which is real, production-capable machinery for forwarding HTTP requests to a backend. Building a load balancer on top of it means picking which backend to hand each request to. This is the production-hardened version of the same idea from the case study in Chapter 3.24: the same atomic round-robin shape, now paired with the background health checks and failover machinery a real deployment needs.
 
 ### Backend Pool with Health Checks
 

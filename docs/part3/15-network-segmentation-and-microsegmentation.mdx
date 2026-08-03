@@ -1,5 +1,5 @@
 ---
-id: "[5.16.0]"
+id: "[5.15.0]"
 title: "Network Segmentation and Microsegmentation"
 ---
 
@@ -11,7 +11,7 @@ title: "Network Segmentation and Microsegmentation"
 
 ## Limiting the Blast Radius
 
-Chapter 5.15 introduced zero trust as a policy philosophy: never trust a connection just because of where it came from. **Segmentation** is the structural tool that makes enforcing that policy practical — dividing a network into smaller zones with controlled boundaries between them, so that a compromise in one zone doesn't automatically grant access to every other zone.
+Chapter 5.14 introduced zero trust as a policy philosophy: never trust a connection just because of where it came from. **Segmentation** is the structural tool that makes enforcing that policy practical — dividing a network into smaller zones with controlled boundaries between them, so that a compromise in one zone doesn't automatically grant access to every other zone.
 
 The core benefit is containment. If an attacker compromises one host, the question that matters most afterward is: what else can they reach *from there*? A flat network answers "everything." A well-segmented network answers "almost nothing" — which directly limits the scope of the incident response described in Chapter 5.9.
 
@@ -38,7 +38,7 @@ This is usually implemented through:
 
 - **Host-based firewalls** enforcing rules per machine rather than relying solely on a network device upstream.
 - **Software-defined networking (SDN) policies** that travel with a workload regardless of which physical host or subnet it's scheduled onto — essential in dynamic, container-orchestrated environments where IP addresses are not stable identifiers.
-- **Service mesh sidecars**, common in Kubernetes environments, which enforce per-service authorization and encryption (often via mutual TLS, tying directly back to Chapter 5.12 and 5.15) at the level of individual service calls rather than network segments.
+- **Service mesh sidecars**, common in Kubernetes environments, which enforce per-service authorization and encryption (often via mutual TLS, tying directly back to Chapter 5.11 and 5.14) at the level of individual service calls rather than network segments.
 
 The practical difference from traditional segmentation: a traditional firewall rule might say "the app tier can reach the database tier on port 5432." A microsegmentation policy says "*this specific service* can reach *this specific database service*, and nothing else in the database tier can be reached by it at all" — a much tighter, per-relationship model of trust.
 
@@ -85,7 +85,7 @@ func main() {
 }
 ```
 
-Notice that `web-frontend` cannot reach `orders-db` directly even though it can reach services that eventually do — exactly the kind of containment that limits how far a single compromised service can pivot, since a real policy enforcement point (Chapter 5.15) would block that connection attempt entirely rather than letting a compromised frontend probe the database tier directly.
+Notice that `web-frontend` cannot reach `orders-db` directly even though it can reach services that eventually do — exactly the kind of containment that limits how far a single compromised service can pivot, since a real policy enforcement point (Chapter 5.14) would block that connection attempt entirely rather than letting a compromised frontend probe the database tier directly.
 
 ---
 
@@ -118,4 +118,4 @@ Zero trust is the philosophy — never grant trust based on network location alo
 
 ## Closing Part 3's First Arc
 
-Chapters 5.1 through 5.16 have moved from fundamentals through hands-on Go tooling to the architectural principles — zero trust and segmentation — that shape how secure networks are actually built and operated. The chapters ahead go deeper into detection, response at scale, and the offensive and defensive disciplines that build on everything covered here.
+Chapters 5.1 through 5.15 have moved from fundamentals through hands-on Go tooling to the architectural principles — zero trust and segmentation — that shape how secure networks are actually built and operated. The chapters ahead go deeper into detection, response at scale, and the offensive and defensive disciplines that build on everything covered here.

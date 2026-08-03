@@ -5,7 +5,7 @@ title: "Error Handling and Debugging: Concepts and Go Implementation"
 
 # Error Handling and Debugging: Concepts and Go Implementation
 
-> "Imagine you’re a detective in the digital world—errors are your clues, and Go gives you the magnifying glass and notebook to solve every mystery!"
+> "Imagine you're a detective in the digital world—errors are your clues, and Go gives you the magnifying glass and notebook to solve every mystery!"
 
 ---
 
@@ -13,8 +13,8 @@ title: "Error Handling and Debugging: Concepts and Go Implementation"
 
 Networking is unpredictable: cables unplug, servers crash, packets vanish. Good error handling is your safety net—it keeps your app from crashing and helps you understand what went wrong.
 
-- **Analogy:** Errors are like traffic jams. You can’t avoid them, but you can reroute and keep moving!
-- **Go’s Philosophy:** Handle errors early, explicitly, and gracefully. No exceptions, just clear checks.
+- **Analogy:** Errors are like traffic jams. You can't avoid them, but you can reroute and keep moving!
+- **Go's Philosophy:** Handle errors early, explicitly, and gracefully. No exceptions, just clear checks.
 
 ---
 
@@ -30,7 +30,7 @@ Networking is unpredictable: cables unplug, servers crash, packets vanish. Good 
 
 **Fun Fact:**
 - The Go team considered exceptions, but after much debate, chose explicit errors for clarity and reliability.
-- The phrase "Don’t just check errors, handle them gracefully" is a Go mantra!
+- The phrase "Don't just check errors, handle them gracefully" is a Go mantra!
 
 ---
 
@@ -258,7 +258,7 @@ func main() {
 
 **Fun Fact:**
 - The Go Playground is a real Go program running in a sandboxed environment—great for quick tests!
-- Go’s error values are so lightweight, you can return them from thousands of goroutines without worry.
+- Go's error values are so lightweight, you can return them from thousands of goroutines without worry.
 
 ---
 
@@ -316,9 +316,9 @@ clients, message-queue consumers) do every time they connect.
 ## What Happens Under the Hood in Go?
 
 - Every error in Go is just a value of type `error` (an interface). You can create your own error types!
-- Go’s runtime does not hide errors—if you don’t check them, you might miss important clues.
+- Go's runtime does not hide errors—if you don't check them, you might miss important clues.
 - Network errors can be temporary (e.g., timeouts) or permanent (e.g., connection refused). Use `net.Error` to check for timeouts and temporary errors.
-- Go’s explicit error handling is designed for reliability in large, concurrent systems—no surprises, no hidden exceptions.
+- Go's explicit error handling is designed for reliability in large, concurrent systems—no surprises, no hidden exceptions.
 - Custom error types can implement `Unwrap() error` so `errors.Is`/
   `errors.As` see through them, just like `fmt.Errorf("...: %w", err)`
   does automatically.

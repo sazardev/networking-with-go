@@ -252,10 +252,11 @@ func main() {
    own words why removing the decimal point changed the inferred type.
 3. Add a `const boilingC float64 = 100` and print its Fahrenheit
    equivalent using the same formula.
-4. **Bonus:** rewrite the day-of-week `iota` example from this chapter,
-   add a `String() string` — skip the method itself if you haven't reached
-   the next chapter yet, and instead just print `int(Wednesday)` to confirm
-   it equals `3`.
+4. **Bonus:** rewrite the day-of-week `iota` example from this chapter and
+   print `int(Wednesday)` to confirm it equals `3`. If you've already read
+   the next chapter's methods material, go further and add a
+   `String() string` method so `fmt.Println(Wednesday)` prints `"Wednesday"`
+   instead of `3` — otherwise skip that part for now and come back to it later.
 
 <Axiom>A compiler that refuses to add an int to a float is not being pedantic — it is refusing to guess which one of you and the machine is wrong about the units.</Axiom>
 

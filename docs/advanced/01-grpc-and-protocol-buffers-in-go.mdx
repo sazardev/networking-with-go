@@ -5,11 +5,11 @@ title: "gRPC and Protocol Buffers in Go"
 
 # gRPC and Protocol Buffers in Go
 
-> Imagine two restaurants exchanging orders. One scribbles freeform notes on napkins and hopes the kitchen can guess what "the usual, but spicy" means. The other uses a printed order form with numbered fields: dish ID, quantity, spice level, table number. Every cook, in every branch, in every country, reads that form the same way. gRPC is the printed form. Protocol Buffers is the printer that produces it.
+> "Imagine two restaurants exchanging orders. One scribbles freeform notes on napkins and hopes the kitchen can guess what "the usual, but spicy" means. The other uses a printed order form with numbered fields: dish ID, quantity, spice level, table number. Every cook, in every branch, in every country, reads that form the same way. gRPC is the printed form. Protocol Buffers is the printer that produces it."
 
 Everything you have built so far in this book talks JSON over HTTP. That works well when a human might read the payload, or when the client is a browser. But once you are wiring together dozens of internal services that only ever talk to each other, JSON's flexibility becomes a tax: you pay for parsing text, guessing types, and hoping nobody typos a field name. gRPC and Protocol Buffers were built at Google specifically to remove that tax from service-to-service communication.
 
-### What Protocol Buffers Actually Are
+## What Protocol Buffers Actually Are
 
 Protocol Buffers (protobuf) is a schema-first serialization format. Instead of writing a Go struct and hoping the JSON on the wire matches it, you write a `.proto` file that describes your messages and services, and a code generator produces the matching Go types and client/server stubs for you. The schema is the source of truth, not the code.
 
@@ -38,7 +38,7 @@ Those trailing numbers (`= 1`) are not defaults or indexes into an array -- they
 
 <DeepDive title="Why the field numbers matter forever">Once a message ships to production, its field numbers are a contract. Renaming a Go struct field is free; renumbering a protobuf field is a breaking change, because the receiver decodes by tag number, not by name. Removing a field safely means marking its number `reserved`, never reusing it for something else.</DeepDive>
 
-### Generating Go Code
+## Generating Go Code
 
 You compile `.proto` files with `protoc` plus two plugins:
 
@@ -51,7 +51,7 @@ protoc --go_out=. --go-grpc_out=. greeter.proto
 
 This produces `greeter.pb.go` (the message types, with `Marshal`/`Unmarshal` methods generated for you) and `greeter_grpc.pb.go` (a `GreeterServer` interface you implement, and a `GreeterClient` you can call directly). You never hand-write serialization code -- that is the entire point of the schema-first approach.
 
-### The Four Shapes of an RPC
+## The Four Shapes of an RPC
 
 gRPC runs on top of HTTP/2, and it uses that transport's multiplexed streams to support four calling conventions, not just one:
 
@@ -62,7 +62,7 @@ gRPC runs on top of HTTP/2, and it uses that transport's multiplexed streams to 
 
 All four reuse the same generated client and server code; only the method signature changes, from a plain function call to one that hands you a stream object with `Send`/`Recv`.
 
-### Go Implementation
+## Go Implementation
 
 Here is a complete unary server. The `GreeterServer` interface and `HelloRequest`/`HelloReply` types come from the generated `pb` package:
 
@@ -146,7 +146,7 @@ The `context.Context` you pass in is not decoration -- gRPC uses it to propagate
 
 <Warning title="insecure.NewCredentials() is for development only">That call disables transport encryption entirely. Any production gRPC service should be configured with real TLS credentials (`credentials.NewTLS`), and most internal deployments layer mutual TLS on top so both sides authenticate each other, not just the server.</Warning>
 
-### Why Reach for gRPC Instead of REST
+## Why Reach for gRPC Instead of REST
 
 gRPC earns its complexity when you control both ends of a call, typically internal microservices: strongly typed contracts catch mismatches at compile time instead of in production logs, HTTP/2 multiplexing lets many calls share one connection without head-of-line blocking, and streaming is a first-class concept instead of something you bolt on with Server-Sent Events. It loses its advantage the moment a browser or an untrusted third party is the client -- for that audience, plain JSON over HTTP (covered in the API Fundamentals section) remains the more approachable, more cacheable, more universally supported choice.
 
@@ -168,3 +168,11 @@ No -- that call is flagged in this chapter specifically because it is easy to co
 Start with unary -- it is the RPC equivalent of a normal function call and covers the vast majority of request/response use cases, including the `SayHello` example built in this chapter. Reach for server streaming when a single request produces results incrementally, client streaming for chunked uploads that end in one acknowledgment, and bidirectional streaming only when both sides genuinely need to push independently, like chat or live telemetry -- it is the most powerful shape but also the one with the most moving parts to reason about.
 
 <Axiom>A schema you can compile is a contract you cannot silently break.</Axiom>
+
+## Key Takeaways
+
+- Protocol Buffers is a schema-first format: the `.proto` file, not a Go struct, is the source of truth, and field numbers are a permanent wire-format contract.
+- gRPC generates typed Go clients and servers from that schema, running on top of the same `net.Listen`/HTTP-2 machinery covered earlier in this book.
+- Four RPC shapes -- unary, server streaming, client streaming, bidirectional streaming -- all reuse the same generated code; only the method signature changes.
+- `context.Context` propagates deadlines and cancellation across an RPC exactly as it does for `net/http` requests.
+- `insecure.NewCredentials()` is for development only; production gRPC needs real (often mutual) TLS.

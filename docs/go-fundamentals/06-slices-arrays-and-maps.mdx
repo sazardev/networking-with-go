@@ -314,10 +314,12 @@ fmt.Println(slices.Max(nums))         // 8
 import "maps"
 
 ages := map[string]int{"alice": 30, "bob": 25}
-for k := range maps.Keys(ages) {
-	fmt.Println(k) // still unordered — Keys doesn't change that
+for k := range ages {
+	fmt.Println(k) // still unordered — range doesn't change that
 }
 ```
+
+<DeepDive title="maps.Keys and maps.Values need Go 1.23+">The `maps` package shipped in Go 1.21 with `Clone`, `Copy`, `DeleteFunc`, `Equal`, and `EqualFunc` — useful, but no `Keys` or `Values` yet. Go 1.23 added range-over-func and, alongside it, `maps.Keys(m)`/`maps.Values(m)` returning an `iter.Seq` you can drop straight into a `for ... range` loop: `for k := range maps.Keys(ages) { ... }`. If your toolchain is 1.23 or newer, that form works and reads slightly cleaner than the plain `for k := range ages` above — just don't reach for it on an older toolchain.</DeepDive>
 
 <DeepDive title="Why these packages matter beyond convenience">Before Go 1.21, every codebase either wrote its own `Contains`/`Sort`/`Equal` helpers per element type, or reached for `sort.Slice` with a hand-written comparison closure. `slices` and `maps` are the standard library finally providing one correct, well-tested, generic version of each — the same reasoning from Chapter 4's note that `slices`/`maps` are usually the first place to reach for generic behavior rather than writing it yourself.</DeepDive>
 

@@ -50,29 +50,25 @@ This is a real, working reverse proxy: `httputil.ReverseProxy` rewrites the requ
 
 ### Cross-cutting policies at the edge
 
-Because every request passes through the gateway, it is the natural place to enforce policies that would otherwise be duplicated across every service: authentication, request/response logging, and circuit breaking. For circuit breaking, don't write your own state machine — use a well-tested one like `sony/gobreaker`:
+Because every request passes through the gateway, it is the natural place to enforce policies that would otherwise be duplicated across every service: authentication, request/response logging, and circuit breaking. Chapter 6.18 already introduced `github.com/sony/gobreaker/v2` for protecting a single call to a downstream dependency; the gateway is simply the natural place to wire one up per backend service, since every request to that service already funnels through this one choke point:
 
 ```go
-import "github.com/sony/gobreaker"
+import "github.com/sony/gobreaker/v2"
 
-var cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+var ordersBreaker = gobreaker.NewCircuitBreaker[*http.Response](gobreaker.Settings{
 	Name:        "orders-service",
 	MaxRequests: 5,
 	Timeout:     10 * time.Second,
 })
 
 func callOrders(req *http.Request) (*http.Response, error) {
-	result, err := cb.Execute(func() (interface{}, error) {
+	return ordersBreaker.Execute(func() (*http.Response, error) {
 		return http.DefaultClient.Do(req)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return result.(*http.Response), nil
 }
 ```
 
-`gobreaker` trips open after enough consecutive failures, rejects calls immediately while open, and probes with a limited number of requests when it moves to half-open — exactly the behavior you want when a downstream service starts timing out, so the gateway stops piling more load onto an already struggling service.
+One breaker per backend, keyed by `Name`, means a struggling `orders-service` trips its own breaker and fails fast without affecting calls the gateway proxies to `users-service` or any other backend — exactly the isolation you want when only one downstream dependency is having a bad day.
 
 ## The mesh: every service gets a bodyguard
 

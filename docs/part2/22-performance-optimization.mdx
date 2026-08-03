@@ -47,6 +47,8 @@ func main() {
 }
 ```
 
+[Exercise: Performance Profiling](../../exercises/part2/22-perf-profiling/main.go)
+
 With that running, `go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30` captures a 30-second CPU profile, and `go tool pprof http://localhost:6060/debug/pprof/heap` captures a memory snapshot — both open into an interactive explorer that shows exactly which functions are consuming CPU or allocating memory.
 
 ### Beyond CPU and Heap

@@ -5,15 +5,15 @@ title: "MQTT, AMQP, and IoT Messaging Protocols"
 
 # MQTT, AMQP, and IoT Messaging Protocols
 
-> A radio station does not know or care who is listening. It just broadcasts on a frequency, and anyone with a receiver tuned to that frequency hears it. Compare that to a post office, which needs a specific address, sorts mail into specific bins, and guarantees a specific letter reaches a specific recipient. Both move information from one place to many, but they solve very different problems. MQTT is the radio station. AMQP is the post office.
+> "A radio station does not know or care who is listening. It just broadcasts on a frequency, and anyone with a receiver tuned to that frequency hears it. Compare that to a post office, which needs a specific address, sorts mail into specific bins, and guarantees a specific letter reaches a specific recipient. Both move information from one place to many, but they solve very different problems. MQTT is the radio station. AMQP is the post office."
 
 Everything you have built in this book so far has been point-to-point: a client talks to a server, gets a response, done. Messaging protocols exist for a different shape of problem -- one sender, many possible receivers, none of whom need to be online at the same time as the sender. That decoupling is exactly what a battery-powered sensor in a warehouse needs: it should not have to know or care which of your twelve backend services wants its temperature reading.
 
-### The Publish/Subscribe Model
+## The Publish/Subscribe Model
 
 Both MQTT and AMQP are built around a broker sitting between publishers and subscribers. A publisher sends a message tagged with a topic (MQTT) or routed through an exchange (AMQP); the broker decides who receives it based on subscriptions, not based on any address the publisher specified. Neither side needs to know the other exists.
 
-### MQTT: Built for Constrained Devices
+## MQTT: Built for Constrained Devices
 
 MQTT (Message Queuing Telemetry Transport) was designed in 1999 for monitoring oil pipelines over unreliable, low-bandwidth satellite links, and that heritage still shows: the fixed header of an MQTT packet can be as small as two bytes. It is the default choice for IoT because it assumes very little about the device sending it -- little memory, little CPU, an unreliable link.
 
@@ -24,13 +24,13 @@ Key mechanics worth knowing before you write code:
 - **Retained messages** let the broker remember the last message on a topic and deliver it immediately to any new subscriber -- useful so a dashboard that just connected does not have to wait for the next sensor reading to know the current state.
 - **Last Will and Testament (LWT)** is a message the broker sends on a device's behalf if that device disconnects ungracefully -- the closest thing MQTT has to a built-in "I went offline unexpectedly" signal.
 
-### AMQP: Built for Enterprise Messaging Guarantees
+## AMQP: Built for Enterprise Messaging Guarantees
 
 AMQP (Advanced Message Queuing Protocol) targets a different problem: reliable delivery between backend systems that need routing logic richer than a topic string. Instead of publishing directly to a topic, a publisher sends to an **exchange**, which routes the message to one or more **queues** based on **bindings** (rules that can match by exact routing key, pattern, or message headers). Consumers read from queues, and the broker (commonly RabbitMQ) can hold messages durably on disk until a consumer acknowledges them, even across broker restarts.
 
 Where MQTT optimizes for "many cheap devices, simple routing, minimal overhead," AMQP optimizes for "fewer, heavier services that need transactional guarantees and flexible routing." A payment processing pipeline is a more natural fit for AMQP; a fleet of ten thousand temperature sensors is a more natural fit for MQTT.
 
-### Go Implementation: MQTT
+## Go Implementation: MQTT
 
 The de facto standard Go client is [eclipse/paho.mqtt.golang](https://github.com/eclipse/paho.mqtt.golang). Connecting, subscribing, and publishing:
 
@@ -71,7 +71,7 @@ func main() {
 
 Two details matter here: `Subscribe`'s second argument is the QoS level for that subscription, and `Publish`'s third argument is the retained flag -- setting it `true` would make this the value new subscribers see immediately upon connecting, without waiting for the next tick.
 
-### Go Implementation: AMQP
+## Go Implementation: AMQP
 
 For AMQP, the maintained Go client is `github.com/rabbitmq/amqp091-go`. Declaring a queue and publishing a durable message:
 
@@ -123,11 +123,11 @@ func main() {
 
 <Warning title="QoS is not a magic reliability switch">MQTT QoS 2 guarantees exactly-once delivery of the message between client and broker, not exactly-once processing by your application. If your subscriber handler is not idempotent, a redelivered message after a reconnect can still cause a duplicate side effect.</Warning>
 
-### Brokers You Will Actually Run
+## Brokers You Will Actually Run
 
 MQTT needs a broker to route messages between publishers and subscribers -- Mosquitto and EMQX are the two most common choices, both easy to run in a container for local development. AMQP's most widely deployed broker is RabbitMQ, which also happens to be written in Erlang, chosen specifically for its strengths in managing large numbers of concurrent, lightweight processes -- the same kind of problem Go's goroutines solve, applied to message routing instead of application logic. Neither broker requires you to write any Go code to operate; your Go programs are purely clients connecting to infrastructure that already exists.
 
-### Connection Reliability in Practice
+## Connection Reliability in Practice
 
 Both client libraries shown above handle reconnection, but the details matter for IoT specifically: a sensor on an unreliable cellular link will disconnect often, and `paho.mqtt.golang`'s `ClientOptions` exposes `SetAutoReconnect` and `SetConnectRetry` precisely because dropped connections are the normal case, not the exception, for this class of device. Designing your topic structure and QoS choices around "this device will reconnect frequently" rather than "this device stays connected" is the difference between an IoT system that degrades gracefully and one that silently loses data during ordinary network hiccups.
 
@@ -147,3 +147,11 @@ Probably not. This chapter's closing point is that frequent disconnects are the 
 
 **Do I have to write a broker myself to use either protocol from Go?**
 No -- your Go programs are clients, not infrastructure. For MQTT you point `paho.mqtt.golang` at an already-running broker like Mosquitto or EMQX; for AMQP you dial into RabbitMQ with `amqp091-go`. Both brokers are easy to run in a container for local development, and neither requires you to implement any broker-side logic in Go.
+
+## Key Takeaways
+
+- MQTT and AMQP both decouple publishers from subscribers through a broker, but they optimize for different problems: many cheap, often-offline devices versus fewer services needing transactional guarantees.
+- MQTT's topic hierarchy, QoS levels, retained messages, and Last Will and Testament are built around constrained, unreliable links.
+- AMQP routes through exchanges and bindings to queues, and brokers like RabbitMQ can persist messages durably across restarts.
+- QoS 2 guarantees exactly-once delivery to the broker, not exactly-once processing -- subscriber handlers still need to be idempotent.
+- Frequent reconnects are the normal case for IoT devices, not an exception; design topic structure and QoS choices around that reality.
