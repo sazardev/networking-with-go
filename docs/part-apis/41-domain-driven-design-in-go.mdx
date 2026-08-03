@@ -200,6 +200,54 @@ reached any other way.
 
 <Warning title="Getters that return internal slices directly leak the invariant">`Lines()` returns a fresh copy, never the aggregate's own backing slice. If it returned `o.lines` directly, a caller could take that slice and append to it or write past its length, mutating the same underlying array `Order` uses internally — bypassing `AddLine` and its status check entirely, with no compiler error to catch it. Always copy a slice (or expose narrower, single-item accessors) before returning it from any method on an aggregate root.</Warning>
 
+### Reconstructing an Order From Storage
+
+Every field on `Order` is unexported, and `NewOrder` is the only exported
+constructor — but `NewOrder` always builds a brand-new order in
+`StatusPending` with no lines and no events. That's exactly right for
+handling a "place an order" request, and exactly wrong for a repository
+loading a row that's already `paid` with three line items attached: there is
+no way, using only what's been defined so far, for infrastructure code
+outside this package to rebuild an `Order` that reflects already-persisted
+state. `OrderRepository.FindByID` (declared later in this chapter) needs to
+do precisely that.
+
+The fix is a second exported constructor, deliberately named to signal it
+skips the invariant checks `NewOrder` enforces:
+
+```go
+// internal/domain/order.go (continued)
+
+// Rehydrate reconstructs an Order from already-persisted data. Unlike
+// NewOrder, it does not start a fresh order lifecycle — it trusts the
+// caller (a repository adapter) to supply state that was already valid
+// when it was saved. Application code placing a new order must still go
+// through NewOrder and AddLine.
+func Rehydrate(
+	id, customerID string,
+	status OrderStatus,
+	lines []OrderLine,
+	events []DomainEvent,
+) *Order {
+	return &Order{
+		id:         id,
+		customerID: customerID,
+		status:     status,
+		lines:      lines,
+		events:     events,
+	}
+}
+```
+
+`Rehydrate` still lives inside the `domain` package, so it can reach the
+unexported fields directly — nothing about it weakens the "only exported
+methods can change an `Order`" rule for code outside this package, since
+`Rehydrate` is only ever meant to be called once, at load time, by a
+repository adapter reassembling a row it already trusts. Chapter 6.42 shows
+the Postgres adapter that calls it.
+
+<DeepDive title="Why not just export the struct fields instead?">Exporting `ID`, `CustomerID`, `Status`, and so on would let a repository set them directly, but it would also let every other caller in the codebase set them directly — the exact hole the unexported-fields design in this chapter is trying to close. `Rehydrate` draws a narrower door: one function, with a name that says "this is reconstruction, not a new order," instead of an entire struct's fields left open for anyone to mutate.</DeepDive>
+
 ### Testing an Aggregate With Nothing but `go test`
 
 Because every rule above lives inside `Order` itself, with dependencies on
@@ -359,7 +407,7 @@ if err := repo.Save(ctx, order); err != nil {
 	return err
 }
 for _, event := range order.PullEvents() {
-	if err := publisher.Publish(ctx, event.EventName(), event); err != nil {
+	if err := publisher.Publish(ctx, event); err != nil {
 		return err
 	}
 }
@@ -405,6 +453,9 @@ Yes, mechanically identical — it's an interface the domain layer defines and s
 **Why do the aggregate tests in this chapter not need any of the in-memory adapters from Chapter 6.40?**
 Because `Order` has no collaborators at all — every rule it enforces (`ErrOrderNotPending`, `ErrOrderNotPaid`) lives inside its own methods, operating only on its own unexported fields. That's the whole point of pushing invariants down into the aggregate: the innermost layer of the testing pyramid this arc has been building needs nothing but `go test`, while use-case tests still need fakes for ports and adapter tests still need the real Postgres or HTTP machinery.
 
+**Why can't `OrderRepository.FindByID` just call `NewOrder` and then use the exported methods to restore the rest of the state?**
+Because the exported methods all enforce a status transition, not a direct assignment — `MarkPaid` only works from `StatusPending`, and there's no exported way to attach a batch of already-existing `OrderLine`s without walking through `AddLine`'s pending-only check one at a time, which is both awkward and wrong for the case of loading an order that's already `shipped` with lines that were valid the moment they were saved. `Rehydrate` exists precisely because reconstruction is a different operation from placing a new order, with different rules, and pretending otherwise by reusing `NewOrder` and the transition methods would either fail outright or silently re-run business rules against data that already passed them once.
+
 **What's actually wrong with having `Order`, `OrderEntity`, and `OrderResponse` all describing the same order in one codebase?**
 Nothing crashes, but every conversation about that order now needs a mental translation step between three names for one idea — and that translation step is exactly where bugs hide, as the ubiquitous-language deep dive above puts it. When a support ticket says "the order won't ship" and the code has a type called `Order` with a method called `Ship`, the distance between the report and the relevant code is nearly zero; three competing names widen that distance every time.
 
@@ -428,3 +479,7 @@ Nothing crashes, but every conversation about that order now needs a mental tran
 - A domain-terms repository interface (returning `*Order`, not `*sql.Rows`)
   keeps persistence details out of the type that support engineers, product
   managers, and other developers all need to read the same way.
+- `NewOrder` can't rebuild an already-persisted `Order` because its
+  invariant checks assume a fresh order — `Rehydrate` is a second, narrower
+  exported constructor that lets a repository adapter reconstruct state
+  from storage without re-running (or being blocked by) those checks.

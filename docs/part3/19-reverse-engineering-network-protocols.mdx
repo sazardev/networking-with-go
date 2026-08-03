@@ -7,11 +7,15 @@ title: "Reverse Engineering Network Protocols"
 
 > Imagine dropping into a foreign city with no dictionary, only a notebook. You can't read the signs, but you can watch what people do after each exchange - which words make the shopkeeper smile, which make the guard tense up. Given enough conversations, patterns emerge, and eventually you can hold your own. Reverse engineering an undocumented network protocol works the same way: no specification, just captured conversations to learn from.
 
+---
+
 ## Why Reverse Engineer a Protocol
 
 Legitimate reasons to reverse engineer a protocol come up constantly in network engineering and security work: interoperating with a legacy or proprietary system that has no public documentation, auditing a vendor's device to verify it does what it claims, building a compatible open-source client for a service you already have the right to use, or investigating suspicious traffic during an incident where the "protocol" in question is actually malware command-and-control.
 
 <Warning title="Mind the Legal Boundary">Reverse engineering sits in genuinely different legal territory depending on jurisdiction, the target's terms of service, and whether any anti-circumvention or DMCA-style protections apply to the specific system. Interoperability-motivated reverse engineering is treated more permissively in many places than reverse engineering to bypass licensing or DRM. When in doubt, this is a question for a lawyer familiar with your jurisdiction and the specific target, not a technical one.</Warning>
+
+---
 
 ## Passive Analysis First
 
@@ -22,6 +26,8 @@ The lowest-risk, highest-value first step is almost always passive: capture real
 - **What changes between a request and its matching response?** Correlating request/response pairs by timing and connection tells you which fields are echoed back, which are computed, and which are just noise (padding, checksums, sequence counters).
 - **Does the same message type always appear the same length, or does length vary with content?** This distinguishes fixed-record formats from length-prefixed variable formats.
 
+---
+
 ## From Passive Capture to a Working Model
 
 Once a rough field layout is hypothesized, the next step is usually building a small parser and testing it against every captured message: if the hypothesis is right, every message parses cleanly and the "meaning" fields (status codes, identifiers) make sense across samples. If it's wrong, some subset of messages fails to parse or produces garbage, which points at exactly which assumption needs revising.
@@ -29,6 +35,8 @@ Once a rough field layout is hypothesized, the next step is usually building a s
 **State machine reconstruction** is the natural next layer once individual message formats are understood: which message types are valid replies to which other message types, what triggers a session to open or close, and whether the protocol is strictly request/response or allows the server to push unsolicited messages. Sequence diagrams built from several captured sessions side by side make this pattern much easier to see than staring at a single flow.
 
 **Fuzzing** - sending intentionally malformed or boundary-value variants of a message to a live implementation and observing the response (or crash) - is a more active technique that fills in gaps passive capture can't: what does the server do with a length field that lies about the payload size, or a field value outside the range ever observed in real traffic? This moves from purely observational analysis into active testing, and needs the same authorization considerations as any other active technique in this book.
+
+---
 
 ## A Minimal Header Parser in Go
 
@@ -86,6 +94,8 @@ func main() {
 
 Running this hypothesis against every message in a capture - not just one - is the real validation step. If the declared length consistently matches the actual remaining bytes across dozens of samples, the header format is very likely correct. If it only works for some messages, that's a strong signal that message type changes the header shape, which is common in protocols with multiple message kinds sharing a connection.
 
+---
+
 ## Frequently Asked Questions
 
 **Is reverse engineering a protocol always legally risky?**
@@ -102,6 +112,8 @@ Parsing a single message tells you what one piece of the conversation looks like
 
 **How does this chapter's approach connect back to the malware chapter's network indicators?**
 When the "protocol" under investigation turns out to be malware command-and-control rather than a legitimate undocumented system, the same passive-capture-first discipline still applies - you're looking for the same fixed headers, length fields, and request/response patterns, just in service of understanding an adversary's channel well enough to detect and block it, rather than interoperating with it.
+
+---
 
 ## Summary
 

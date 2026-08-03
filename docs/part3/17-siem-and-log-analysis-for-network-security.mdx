@@ -7,6 +7,8 @@ title: "SIEM and Log Analysis for Network Security"
 
 > A single firewall log tells you one connection was blocked. A single server log tells you one login succeeded. Neither tells you a breach happened. Put both in the same room, correlate them by time and identity, and the story suddenly writes itself. That correlation room is what a SIEM is for.
 
+---
+
 ## What a SIEM Actually Does
 
 **SIEM** stands for Security Information and Event Management, and the name describes two jobs that used to be separate products. Security *Information* Management is the collection, normalization, and long-term storage of log data. Security *Event* Management is the real-time correlation and alerting layer on top of it. Modern platforms (Splunk, Elastic Security, Microsoft Sentinel, and open-source stacks built on the Elastic stack or Wazuh) merge both into a single pipeline:
@@ -17,6 +19,8 @@ title: "SIEM and Log Analysis for Network Security"
 4. **Alerting and response** - matches trigger notifications, tickets, or automated playbooks (which overlaps heavily with the automation techniques covered later in this part).
 5. **Retention and search** - logs are kept for a compliance-driven window (often 90 days to a year or more) so analysts can retroactively hunt once a new indicator of compromise becomes known.
 
+---
+
 ## Why Correlation Beats Single-Source Alerting
 
 Any individual security tool only sees its own slice of the environment. A firewall sees connections; it doesn't know which user account initiated them. An identity provider sees logins; it doesn't know what that session did on the network afterward. A SIEM's entire value proposition is stitching these fragments into a timeline for one entity - a user, a host, an IP - across every system that touched it.
@@ -24,6 +28,8 @@ Any individual security tool only sees its own slice of the environment. A firew
 This is also why log normalization matters so much in practice. If your firewall logs timestamps in UTC and your Windows event logs are in local time, or one source calls the field `src_ip` and another calls it `source_address`, correlation silently breaks. Most of the unglamorous engineering effort in running a SIEM goes into keeping every source mapped into the same schema.
 
 <DeepDive title="Log Sources Worth Prioritizing">If you can only onboard a handful of log sources first, authentication events (successful and failed logins, privilege escalation, new account creation), DNS query logs (malware and C2 channels rely heavily on DNS), firewall/flow logs (who talked to whom, how much data, how often), and endpoint process/command-line logs tend to give the highest signal-to-effort ratio. Network-layer visibility without identity context, or identity logs without network context, both leave dangerous blind spots.</DeepDive>
+
+---
 
 ## Correlation Rules and Use Cases
 
@@ -35,6 +41,8 @@ A useful way to think about SIEM rules is as codified analyst intuition. A few c
 - **Data staging**: a host that normally never touches large file shares suddenly reads a large volume of data shortly before an unusual outbound transfer.
 
 None of these individually proves compromise; each is a hypothesis worth investigating. Tuning a SIEM is largely the ongoing work of adjusting thresholds so these rules catch real incidents without burying analysts in false positives - the same alert-fatigue problem introduced in the IDS/IPS chapter, just at a larger scale spanning the whole environment.
+
+---
 
 ## A Minimal Normalization Pipeline in Go
 
@@ -101,6 +109,8 @@ not a log line we understand
 
 Each vendor's real log format is messier than this example, but the shape of the problem never changes: parse, extract the fields that matter, discard or quarantine what fails to parse, and emit a consistent structure downstream. Once every source speaks the same JSON schema, writing a correlation rule - "same `source_ip` blocked more than three times in sixty seconds" - becomes a straightforward query instead of a cross-format nightmare.
 
+---
+
 ## Frequently Asked Questions
 
 **We already have a firewall and an IDS with their own alerts. Why do we still need a SIEM on top of them?**
@@ -117,6 +127,8 @@ Because correlation only works once every source speaks the same schema. If the 
 
 **How does beaconing detection here connect to the malware chapter that follows?**
 A SIEM notices beaconing as a pattern - the same external address contacted at suspiciously regular intervals - without necessarily knowing what's causing it. The malware analysis chapter picks up exactly where that pattern leaves off, digging into what a piece of malware's command-and-control traffic actually looks like on the wire, so the indicator a SIEM flags becomes something you can positively identify rather than just suspect.
+
+---
 
 ## Summary
 

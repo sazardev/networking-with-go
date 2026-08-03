@@ -49,7 +49,8 @@ ordermgmt/
         router.go
       postgres/
         order_repository.go
-        refunder.go
+      paymentgateway/
+        stub_refunder.go
       webhook/
         publisher.go
     platform/
@@ -68,6 +69,55 @@ in the tree allowed to import all of them at once.
 
 ---
 
+## A Deliberate Stand-In: the Payment Gateway Adapter
+
+Chapter 6.41's `domain.Refunder` port exists specifically to keep a real
+payment gateway — Stripe, Adyen, or similar — out of the `domain` package,
+since calling out to one is exactly the kind of dependency an aggregate must
+never have. This project doesn't integrate a real gateway yet, and it
+shouldn't pretend to: `paymentgateway.StubRefunder` satisfies
+`domain.Refunder` with a fake confirmation ID and no network call at all,
+making the stand-in explicit instead of quietly wiring a database adapter in
+its place.
+
+```go
+// internal/adapter/paymentgateway/stub_refunder.go
+package paymentgateway
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
+
+// StubRefunder is a deliberate stand-in for a real payment gateway
+// client. It satisfies domain.Refunder without ever calling out to an
+// actual processor — swap it for a Stripe or Adyen client once this
+// project needs to process real refunds.
+type StubRefunder struct{}
+
+func NewStubRefunder() *StubRefunder {
+	return &StubRefunder{}
+}
+
+func (r *StubRefunder) Refund(
+	ctx context.Context, orderID string,
+) (string, error) {
+	return uuid.NewString(), nil
+}
+```
+
+Nothing here talks to a payment processor — `uuid.NewString()` invents a
+confirmation ID that looks like the real thing, which is enough to exercise
+`CancellationService.CancelShippedOrder` end to end without a Stripe API
+key, a sandbox account, or a network dependency in the test/dev loop. The
+package name (`paymentgateway`, not `postgres`) says what it abstracts;
+the type name (`StubRefunder`, not `Refunder`) says it isn't production-
+ready yet — both are intentional, so nobody mistakes this for the real
+integration by reading the wiring in `main.go` alone.
+
+---
+
 ## Wiring: main.go
 
 ```go
@@ -83,6 +133,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	adapterhttp "ordermgmt/internal/adapter/http"
+	"ordermgmt/internal/adapter/paymentgateway"
 	"ordermgmt/internal/adapter/postgres"
 	"ordermgmt/internal/adapter/webhook"
 	"ordermgmt/internal/domain"
@@ -99,7 +150,7 @@ func main() {
 	defer pool.Close()
 
 	orders := postgres.NewOrderRepository(pool)
-	refunder := postgres.NewRefunder(pool)
+	refunder := paymentgateway.NewStubRefunder()
 	publisher := webhook.NewPublisher(os.Getenv("WEBHOOK_ENDPOINT"))
 
 	cancelSvc := &domain.CancellationService{Refunder: refunder}
@@ -132,7 +183,7 @@ downstream of this function ever constructs its own dependencies — they all
 arrive through a constructor or a struct literal, which is the whole of Go's
 answer to dependency injection.
 
-<DeepDive title="Why no DI container here">A codebase this size has five use cases and three adapters — small enough that `main.go` wiring them by hand is a single, readable function, not a maintenance burden. Reach for `google/wire` (mentioned in Chapter 6.15) once wiring grows past what fits comfortably on one screen, or once the same adapters need to be assembled multiple ways (a test binary, a worker binary, the API binary) and copy-pasting the wiring code between them starts to hurt.</DeepDive>
+<DeepDive title="Why no DI container here">A codebase this size has four use cases (`PlaceOrder`, `MarkPaid`, `ShipOrder`, `CancelOrder`) and four adapters (`http`, `postgres`, `paymentgateway`, `webhook`) — small enough that `main.go` wiring them by hand is a single, readable function, not a maintenance burden. Reach for `google/wire` (mentioned in Chapter 6.15) once wiring grows past what fits comfortably on one screen, or once the same adapters need to be assembled multiple ways (a test binary, a worker binary, the API binary) and copy-pasting the wiring code between them starts to hurt.</DeepDive>
 
 ---
 
@@ -203,6 +254,67 @@ func (r *OrderRepository) Save(ctx context.Context, o *domain.Order) error {
 Chapter 6.36 covers connection pooling, prepared statements, and transaction
 patterns for `pgx` — this adapter is a direct application of that material,
 with no new query technique introduced here.
+
+Step 2 above calls `uc.Orders.FindByID` before any of this — the read side
+of the same adapter, and the piece Chapter 6.41 could only declare as a
+port, since reconstructing an `Order` from two database tables requires
+bypassing `domain.NewOrder`'s invariants entirely:
+
+```go
+// internal/adapter/postgres/order_repository.go (continued)
+func (r *OrderRepository) FindByID(
+	ctx context.Context, id string,
+) (*domain.Order, error) {
+	var customerID, status string
+	row := r.pool.QueryRow(ctx,
+		`SELECT customer_id, status FROM orders WHERE id = $1`, id)
+	if err := row.Scan(&customerID, &status); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT product_id, quantity, unit_price, currency
+		 FROM order_lines WHERE order_id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var lines []domain.OrderLine
+	for rows.Next() {
+		var productID, currency string
+		var qty int
+		var cents int64
+		if err := rows.Scan(&productID, &qty, &cents, &currency); err != nil {
+			return nil, err
+		}
+		price, err := domain.NewMoney(cents, currency)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, domain.OrderLine{
+			ProductID: productID, Quantity: qty, UnitPrice: price,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return domain.Rehydrate(
+		id, customerID, domain.OrderStatus(status), lines, nil,
+	), nil
+}
+```
+
+The `orders` row supplies `customerID` and `status`; the `order_lines` rows
+are reassembled into `domain.Money` via `domain.NewMoney(cents, currency)`
+one row at a time, exactly the translation the migration's schema comment
+above describes. The final argument to `Rehydrate` is `nil` rather than a
+list of events on purpose: a use case always calls `order.PullEvents()` and
+publishes the result immediately after a successful `Save` (step 2 above),
+so by the time any later `FindByID` reloads that same row, its pending
+events have already been drained and published — there are never any left
+to restore.
 
 **5. The webhook adapter turns the domain event into an outbound call**,
 using the retry and delivery patterns from Chapter 6.23:
@@ -332,7 +444,7 @@ exactly the shape those deployment targets expect.
 ## Frequently Asked Questions
 
 **Why does `main.go` construct `postgres.NewOrderRepository` and `webhook.NewPublisher` directly instead of going through some kind of container?**
-Because at five use cases and three adapters, a single readable function is the cheapest possible way to wire dependencies together, and adding a DI container here would be solving a problem this project doesn't have yet. The deep dive above is explicit about when that changes: reach for something like `google/wire` once wiring outgrows one screen, or once the same adapters need assembling multiple ways — a test binary, a worker binary, and the API binary all sharing the same `postgres.OrderRepository`, say.
+Because at four use cases and four adapters, a single readable function is the cheapest possible way to wire dependencies together, and adding a DI container here would be solving a problem this project doesn't have yet. The deep dive above is explicit about when that changes: reach for something like `google/wire` once wiring outgrows one screen, or once the same adapters need assembling multiple ways — a test binary, a worker binary, and the API binary all sharing the same `postgres.OrderRepository`, say.
 
 **In the ship-order trace, which of the six hops actually contains the business rule?**
 Exactly one: step 3, inside `order.Ship()` itself. Every other hop — the HTTP handler, the use case, the Postgres adapter, the webhook publisher — only reacts to whether that one call succeeded or returned `ErrOrderNotPaid`. That's the whole payoff this chapter is tracing: a request can pass through six layers of translation without the rule itself ever being duplicated or bypassable from any of them.
@@ -342,6 +454,12 @@ No, it's intentional, and the chapter calls it out directly: the database schema
 
 **Why does the chapter warn against checking `os.Getenv("K_SERVICE")` inside `internal/adapter` or `internal/domain`?**
 Because that one line would quietly reintroduce the exact violation Chapter 6.39 spent its whole opening on: an inner layer importing knowledge about an outer one, just with a cloud platform's name standing in for a database driver this time. Platform detection and environment parsing belong entirely inside `cmd/api/main.go` and `internal/platform` — the moment a deployment target's name leaks into `internal/domain`, the dependency arrow has started pointing the wrong way again.
+
+**Why does `FindByID` pass `nil` for the events argument to `domain.Rehydrate` instead of loading whatever events were last recorded?**
+Because there's nothing to load — a use case always calls `order.PullEvents()` and hands each event to the publisher immediately after a successful `Save`, so by the time a later `FindByID` call reloads that same row, its events have already been drained and published. Passing `nil` isn't a shortcut that drops data; it reflects that pending domain events are meant to be transient, published once and gone, not a durable column this query needs to fetch.
+
+**Why does `paymentgateway.StubRefunder` exist instead of just wiring a real Stripe or Adyen client in `main.go`?**
+Because this project never claimed to process real refunds, and pretending otherwise by wiring a half-finished real gateway client would be worse than being explicit about the gap. `StubRefunder` satisfies `domain.Refunder` completely — `CancellationService.CancelShippedOrder` can't tell the difference at compile time — while making it obvious to anyone reading `main.go` that swapping in a real processor is still a to-do, not an already-solved problem quietly wearing a `postgres` name.
 
 **This chapter mentions auth, rate limiting, and real webhook retries are all missing — why ship something so incomplete?**
 Because the point of the four-chapter arc was never to hand over a production-ready service, it was to prove the seams work: a new use case, a new adapter, or a new middleware layer should each have an obvious place to plug in. The "What to Build Next" list below is really a test of that claim — Chapter 6.10's auth middleware wraps the router with no changes to the handlers, and Chapter 6.11's rate limiter slots in the same way, which is only possible because HTTP concerns stayed in the adapter and never leaked into the domain.
@@ -407,3 +525,9 @@ obvious place to go.
 - This project is intentionally incomplete — auth, rate limiting, real
   webhook delivery, and a read model are the natural next additions, and
   each one has a seam already built for it.
+- `postgres.OrderRepository.FindByID` completes the persistence adapter by
+  calling `domain.Rehydrate` with `nil` events, since pending events are
+  always drained and published before a save, never carried across a reload.
+- `paymentgateway.StubRefunder` is a deliberate test-double adapter, not a
+  real payment integration — it satisfies `domain.Refunder` so the rest of
+  the system can be wired and run end-to-end before a real gateway exists.

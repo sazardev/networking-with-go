@@ -7,6 +7,8 @@ title: "Building a Custom Honeypot in Go"
 
 > A honeypot is a fake vault sitting next to the real one, wired with an alarm and a camera. Nobody with legitimate business ever has a reason to open it, so any interaction with it - by definition - is worth investigating. That single property is what makes honeypots such a high-signal, low-noise detection tool compared to almost anything else in this part of the book.
 
+---
+
 ## What a Honeypot Is For
 
 A honeypot is a decoy system deliberately exposed to attract and record unauthorized interaction. Because a properly deployed honeypot has no legitimate function, every connection to it is inherently suspicious - there's no "normal user" baseline to distinguish from noise, which is precisely the alert-fatigue problem that makes tuning IDS and SIEM rules (covered earlier in this part) genuinely hard. Honeypots sidestep that problem almost entirely.
@@ -16,6 +18,8 @@ A honeypot is a decoy system deliberately exposed to attract and record unauthor
 Honeypots also serve a distinct research purpose beyond detection: capturing the actual tools, credentials, and techniques attackers try against a given service type, which feeds directly into the malware analysis and threat intelligence practices covered earlier in this part.
 
 <Warning title="Isolation and Legal Care Are Not Optional">A honeypot must run in an isolated network segment with no route to production systems or sensitive data - treat it as hostile territory that will, by design, attract attackers. Logging attacker input can itself raise privacy and wiretap-style legal considerations depending on jurisdiction and what gets captured, so avoid logging anything beyond what's needed for detection and analysis, and get explicit sign-off before deploying a honeypot on any network you don't fully control. Never deploy a honeypot that could plausibly be mistaken for a real production system by a legitimate user - that's a liability, not a detection tool.</Warning>
+
+---
 
 ## Go Implementation: A Low-Interaction SSH Honeypot
 
@@ -91,15 +95,21 @@ func handleSession(conn net.Conn, logger *slog.Logger) {
 
 This deliberately does nothing else: it never authenticates a real session, never executes anything the client sends, and never exposes any actual filesystem or shell. The value is entirely in the log line it produces - a real source IP, a real timestamp, and the exact bytes an automated scanner or human attacker sent immediately after seeing what looks like a real SSH banner, which is often enough on its own to fingerprint known scanning tools or credential-stuffing scripts by their characteristic first message.
 
+---
+
 ## What to Do With the Data
 
 A honeypot only produces value once its output actually reaches something that acts on it. The structured JSON events above feed naturally into the same SIEM normalization pipeline described earlier in this part: source IPs seen hitting the honeypot are strong candidates for an automatic blocklist (an application of the security automation practices from the previous chapter), and unique input patterns worth comparing against known attack-tool signatures or threat intelligence feeds.
 
 Because nothing legitimate ever talks to a honeypot, even a single hit is worth an alert - a sharp contrast to production IDS tuning, where the entire challenge is separating rare true positives from a much larger volume of normal traffic.
 
+---
+
 ## Extending the Concept
 
 The same skeleton generalizes to any service worth decoying: a fake HTTP admin panel that logs every request path and credential attempt, a fake database listener that logs connection attempts and any query text sent before the connection is closed, or several fake services running simultaneously on a single host to widen the net. In every case, the design principle stays the same: convincing enough surface to attract interaction, zero real functionality behind it, and structured logging of everything that happens.
+
+---
 
 ## Frequently Asked Questions
 
@@ -117,6 +127,8 @@ Because a honeypot has no legitimate traffic baseline to protect against false p
 
 **How does this honeypot chapter connect to the security automation chapter right before it?**
 Very directly - the honeypot's structured JSON output is exactly the kind of pre-processed event stream the previous chapter's automation patterns are built to consume. A source IP seen hitting the honeypot is a strong, low-false-positive candidate for the kind of automated, reversible containment action (like a temporary firewall block) described there, since a honeypot hit already carries far more certainty than the typical automation trigger.
+
+---
 
 ## Summary
 

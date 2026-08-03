@@ -7,9 +7,13 @@ title: "Social Engineering in Networking"
 
 > You can harden every firewall rule, patch every server, and encrypt every packet, and an attacker can still walk through the front door simply by asking politely and sounding like they belong. The strongest technical controls in this book are irrelevant if a person can be convinced to hand over a password or click the wrong link.
 
+---
+
 ## The Human Firewall
 
 Social engineering is the manipulation of people, rather than systems, into taking an action that helps an attacker: revealing credentials, granting access, transferring funds, or installing something they shouldn't. It works because it exploits normal, healthy human behavior - trust, helpfulness, deference to authority, fear of consequences, urgency - rather than any software flaw. That's precisely why it remains effective against organizations with excellent technical security: no patch fixes a person's instinct to help a colleague who seems to be in a hurry.
+
+---
 
 ## Common Techniques
 
@@ -21,6 +25,8 @@ Social engineering is the manipulation of people, rather than systems, into taki
 - **Baiting**: leaving a malware-laden USB drive somewhere it's likely to be found and plugged in out of curiosity.
 - **Tailgating**: following an authorized person through a physical access-controlled door without badging in yourself, relying on politeness (nobody wants to be the person who slams a door on a coworker's face).
 - **Business Email Compromise (BEC)**: impersonating an executive or vendor, usually through a look-alike domain or a compromised real account, to convince finance staff to redirect a payment.
+
+---
 
 ## Where This Intersects the Network
 
@@ -73,11 +79,15 @@ func main() {
 
 This is exactly the kind of quick automated check a security team runs across its own domains, and sometimes across a partner or vendor's domain during due diligence, to spot an easy impersonation vector before an attacker does.
 
+---
+
 ## Defenses That Actually Move the Needle
 
 Awareness training has a mixed reputation, largely because badly run programs (an annual slideshow nobody remembers by lunch) accomplish little. Programs that work tend to share a few traits: frequent, low-stakes simulated phishing campaigns with immediate, blame-free feedback when someone clicks; clear, simple reporting paths so a suspicious email takes seconds to flag; and technical backstops (SPF/DKIM/DMARC enforcement, email gateway filtering, link rewriting/sandboxing, and multi-factor authentication so a stolen password alone isn't enough) that reduce how much damage a single successful social engineering attempt can do.
 
 <Warning title="Running Phishing Simulations Requires the Same Care as Any Other Test">An internal phishing simulation campaign should have explicit sign-off from leadership and HR, a clear non-punitive policy for anyone who clicks, and legal review if any simulated pretext resembles a sensitive real-world scenario (fake layoffs, fake medical information) closely enough to cause real distress. The goal is measuring and improving detection behavior, not creating a culture of fear.</Warning>
+
+---
 
 ## Frequently Asked Questions
 
@@ -92,6 +102,8 @@ Not necessarily. A low click rate on email-based phishing says little about how 
 
 **Is tailgating really a "networking" topic, or is that a stretch for this book?**
 It earns its place because the goal is almost always network access - a badge-in door is a physical-layer control protecting the same assets a firewall protects logically, and an attacker who tailgates their way to an empty conference room can often plug into a live network jack more easily than they could breach that same segment remotely.
+
+---
 
 ## Summary
 

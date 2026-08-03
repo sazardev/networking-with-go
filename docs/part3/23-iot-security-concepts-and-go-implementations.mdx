@@ -7,11 +7,15 @@ title: "IoT Security: Concepts and Go Implementations"
 
 > Give an intern full access to the building and no supervision, and you'd call it a management failure. Yet that's exactly how most IoT devices operate: network access, default credentials nobody rotates, firmware that rarely gets patched, and no one reviewing what they actually do all day. Unattended interns with root access - that's the IoT threat model in one sentence.
 
+---
+
 ## Why IoT Devices Are Different
 
 Traditional endpoint security assumes a device with enough compute to run an agent, receive regular patches, and support modern authentication. Most IoT devices violate every one of those assumptions: constrained CPU and memory that can't run a full security stack, firmware that may never be updated after shipping, default or hardcoded credentials that vendors expect (incorrectly) users to change, and lifespans measured in years or decades on networks that evolve much faster than the device's firmware does.
 
 The scale compounds the risk: a single compromised laptop is one incident, but the same default-credential vulnerability shipped across millions of identical devices is a botnet waiting to happen - a pattern the case-studies chapter later in this part examines through a specific, widely documented real-world incident.
+
+---
 
 ## Lightweight Protocols
 
@@ -22,6 +26,8 @@ Constrained devices favor protocols designed for low bandwidth, low power, and i
 
 Both protocols support security extensions (MQTT over TLS, CoAP with DTLS) but plenty of real deployments skip them for cost or power reasons, which is precisely the gap attackers exploit: unencrypted MQTT traffic on the wrong network segment leaks every device reading and command to anyone listening.
 
+---
+
 ## Securing IoT Deployments
 
 - **Unique device identity**, ideally via a per-device certificate rather than a shared password, so compromising one device doesn't hand over credentials valid for every device of the same model.
@@ -29,6 +35,8 @@ Both protocols support security extensions (MQTT over TLS, CoAP with DTLS) but p
 - **Disable unused services**: many devices ship with Telnet, UPnP, or debug interfaces enabled by default that the actual product functionality never needs.
 - **Firmware update capability**: a device with no secure update mechanism is a device that will eventually run known-vulnerable code forever, since nothing about IoT hardware failure is as common as "the vendor stopped supporting the model" while the device keeps running on the network regardless.
 - **Least-privilege network egress**: a smart thermostat has no legitimate reason to make outbound connections to arbitrary internet hosts; an allowlist of exactly the vendor's cloud endpoints, enforced at the firewall, limits what a compromised device can even attempt.
+
+---
 
 ## Go Implementation: Mutual TLS Device Authentication
 
@@ -130,6 +138,8 @@ func handleDevice(conn net.Conn, logger *slog.Logger) {
 
 The server refuses the TLS handshake entirely for any client that can't present a certificate signed by the trusted CA - the connection never reaches application-level code at all. Revoking a single compromised device becomes a matter of adding its certificate to a revocation list or simply not renewing it, without touching credentials for any other device on the fleet.
 
+---
+
 ## Frequently Asked Questions
 
 **If a device is too constrained to run a full TCP/TLS stack, how can it possibly do mutual TLS like the heartbeat example?**
@@ -143,6 +153,8 @@ Because a value inside the payload is just data the client asserts about itself,
 
 **What happens to a device if the vendor stops supporting it but it's still working fine?**
 It becomes exactly the risk this chapter describes: a device that will eventually run known-vulnerable firmware forever, since there's no update mechanism left to close new vulnerabilities as they're discovered. The practical mitigations at that point shift from "patch it" to containment - tighter network segmentation, stricter egress allowlisting, and treating the device as permanently untrusted on the network even though it still does its job.
+
+---
 
 ## Summary
 

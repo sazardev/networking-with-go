@@ -7,19 +7,27 @@ title: "Container and Kubernetes Network Security"
 
 > Containers are like apartments sharing one building's plumbing and electrical system: each unit feels self-contained, but a serious enough problem in the shared infrastructure below can affect every tenant at once. Understanding exactly where that shared infrastructure boundary sits is the whole game in container network security.
 
+---
+
 ## What Container Isolation Actually Provides
 
 Containers are not lightweight virtual machines - they are ordinary processes on a shared host kernel, isolated from each other using Linux namespaces (separate views of the network stack, process tree, and filesystem) and resource limits enforced by cgroups. This isolation is real and useful, but it is weaker than the hardware-enforced boundary a hypervisor provides between virtual machines: a sufficiently severe kernel vulnerability, or a container running with excessive privileges, can potentially affect the host or sibling containers in ways a properly configured VM boundary would prevent. Understanding this distinction shapes a lot of container security practice: run containers with the least privilege the workload actually needs, avoid running as root inside the container where avoidable, and treat the shared kernel as the actual trust boundary rather than the container abstraction.
 
+---
+
 ## Container Networking Basics
 
 By default, container runtimes typically create a private bridge network where each container gets an internal IP address and can reach other containers on the same host, with explicit port mapping required to expose a service beyond the host. Multi-host container networking layers an overlay network on top, tunneling traffic between hosts so containers can reach each other transparently regardless of which physical machine they're scheduled on - this is the same fundamental problem the **Container Network Interface (CNI)** specification standardizes for Kubernetes, letting different networking plugins (each with different performance, encryption, and policy capabilities) implement the same pod-networking contract.
+
+---
 
 ## The Kubernetes Networking Model
 
 Kubernetes imposes a specific and important networking rule: every pod gets its own IP address, and by default, every pod can reach every other pod across the entire cluster without network address translation - a flat network model that dramatically simplifies application development but means, absent additional controls, a compromised pod in one namespace can freely reach services in a completely unrelated namespace.
 
 **Services** provide a stable virtual IP and DNS name in front of a shifting set of pod replicas, so other workloads don't need to track individual pod IPs as pods are created and destroyed. **Ingress** resources expose HTTP/HTTPS routes from outside the cluster to internal services, typically through a controller that also handles TLS termination, similar in spirit to the reverse proxy patterns covered in Part 2 of this book.
+
+---
 
 ## NetworkPolicies: Kubernetes' Segmentation Tool
 
@@ -51,13 +59,19 @@ This policy allows only pods labeled `app: frontend` to reach the `api` pods on 
 
 <Warning title="No NetworkPolicy Means No Restriction">A cluster with zero NetworkPolicy resources defined has no pod-to-pod network segmentation at all, regardless of namespace boundaries. Namespaces organize resources logically; they do not restrict network traffic by themselves. Treating namespace separation as network isolation is one of the more common and dangerous Kubernetes security misconceptions.</Warning>
 
+---
+
 ## Service Mesh and mTLS
 
 A service mesh (Istio, Linkerd, and similar projects) injects a lightweight proxy sidecar alongside each application container, transparently intercepting all network traffic to and from it. This makes it possible to enforce mutual TLS between every service in the cluster automatically - encrypting and authenticating pod-to-pod traffic without any change to application code - along with fine-grained traffic policies, retries, and observability that would otherwise need to be built into every application individually.
 
+---
+
 ## Supply Chain and Runtime Security
 
-Container security extends past the network layer into the images themselves: scanning images for known-vulnerable dependencies before deployment, signing images cryptographically so a cluster can verify what it's running actually came from a trusted build pipeline (a practice explored further in the emerging-trends chapter closing this part), and runtime security tools (Falco is a widely used open-source example) that monitor for anomalous process behavior or unexpected network connections from a running container, applying the same behavioral detection philosophy from the IDS/IPS chapter directly to container workloads.
+Container security extends past the network layer into the images themselves: scanning images for known-vulnerable dependencies before deployment, signing images cryptographically so a cluster can verify what it's running actually came from a trusted build pipeline (a practice explored further in the emerging-threats chapter), and runtime security tools (Falco is a widely used open-source example) that monitor for anomalous process behavior or unexpected network connections from a running container, applying the same behavioral detection philosophy from the IDS/IPS chapter directly to container workloads.
+
+---
 
 ## Frequently Asked Questions
 
@@ -75,6 +89,8 @@ Check three things in order: whether your CNI plugin actually enforces NetworkPo
 
 **How does a service mesh's mTLS relate to the TLS chapter earlier in this part?**
 It is the same cryptographic idea applied at a different layer of the stack. Where an application developer might terminate TLS inside their own code using the patterns from the TLS/PKI chapter, a service mesh sidecar handles the handshake, certificate rotation, and encryption transparently outside the application entirely - which is powerful for consistency across a cluster, but it also means the mesh's control plane becomes a trust-critical component worth securing just as carefully as any certificate authority.
+
+---
 
 ## Summary
 
