@@ -35,6 +35,14 @@
   --line-soft: #333333;
   --card: #111111;
 }
+:root[data-theme="sepia"] {
+  --bg: #f6f0df;
+  --fg: #433422;
+  --muted: #7a6a4f;
+  --line: #433422;
+  --line-soft: #ddd0b4;
+  --card: #efe6cf;
+}
 
 /* Map go-pretty-pdf's theme variable contract onto the site's own palette so
    the book content participates in the same light/dark toggle. Fonts are
@@ -63,6 +71,63 @@ body {
   color: var(--fg);
   overflow-x: hidden;
 }
+
+/* Prism grayscale theme. Code renders as a varied gray ramp so token kinds
+   (keywords, functions, types, properties, variables, strings, numbers,
+   comments) are visually distinct without any hue — like monochrome Go code
+   in an editor. Shades are derived from the site's foreground/background
+   with color-mix, so the ramp stays correct in light, dark and sepia. */
+code[class*="language-"],
+pre[class*="language-"] {
+  color: color-mix(in srgb, var(--fg) 72%, var(--bg));
+  text-shadow: none;
+  background: none;
+  font-family: var(--mono);
+}
+.token.keyword, .token.boolean {
+  color: var(--fg);
+  font-weight: 600;
+}
+.token.function, .token.function-variable {
+  color: color-mix(in srgb, var(--fg) 90%, var(--bg));
+}
+.token.builtin, .token.class-name, .token.maybe-class-name {
+  color: color-mix(in srgb, var(--fg) 83%, var(--bg));
+}
+.token.property, .token.attribute {
+  color: color-mix(in srgb, var(--fg) 76%, var(--bg));
+}
+.token.string, .token.char, .token.attr-value, .token.regex {
+  color: color-mix(in srgb, var(--fg) 65%, var(--bg));
+}
+.token.number, .token.symbol, .token.constant {
+  color: color-mix(in srgb, var(--fg) 56%, var(--bg));
+}
+.token.operator, .token.punctuation {
+  color: color-mix(in srgb, var(--fg) 72%, var(--bg));
+}
+.token.comment, .token.prolog, .token.doctype, .token.cdata {
+  color: var(--muted);
+  font-style: italic;
+}
+pre[class*="language-"]::selection,
+code[class*="language-"]::selection,
+code[class*="language-"] .token::selection {
+  text-shadow: none;
+}
+
+/* Fixed reading-progress bar along the very top of the viewport. */
+.reading-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0;
+  z-index: 60;
+  background: var(--fg);
+  pointer-events: none;
+}
+
 img, table, video { max-width: 100%; height: auto; }
 table { display: block; overflow-x: auto; white-space: nowrap; }
 pre { overflow-x: auto; max-width: 100%; }
@@ -99,6 +164,7 @@ a { color: inherit; }
   text-decoration: none;
 }
 #search-open, #theme-toggle, #focus-toggle, #justify-toggle, #sidebar-toggle,
+#notes-toggle, #print-pdf,
 .font-size-control button {
   font-family: var(--mono);
   font-size: 12px;
@@ -122,10 +188,12 @@ a { color: inherit; }
   padding: 5px 9px;
 }
 #theme-toggle, #focus-toggle, #justify-toggle, #search-open, #sidebar-toggle,
+#notes-toggle, #print-pdf,
 .font-size-control button { transition: none; }
 #theme-toggle:hover, #focus-toggle:hover, #justify-toggle:hover, #search-open:hover, #sidebar-toggle:hover,
+#notes-toggle:hover, #print-pdf:hover,
 .font-size-control button:hover { opacity: 0.7; }
-#focus-toggle.active, #justify-toggle.active { background: var(--fg); color: var(--bg); }
+#focus-toggle.active, #justify-toggle.active, #notes-toggle.active { background: var(--fg); color: var(--bg); }
 
 .reader-layout {
   display: grid;
@@ -136,16 +204,12 @@ html.sidebar-collapsed .reader-layout { grid-template-columns: 1fr; }
 html.sidebar-collapsed .reader-sidebar { display: none; }
 html.sidebar-collapsed .reader-content { margin: 0 auto; }
 
+/* The sidebar grows to its full natural height (no inner scroll box on
+   desktop); the page scrolls as a whole. Only the mobile drawer keeps its
+   own scroll, since it is a fixed overlay. */
 .reader-sidebar {
   padding: 20px 16px;
-  overflow-y: auto;
-  max-height: calc(100vh - 56px);
-  position: sticky;
-  top: 56px;
-  align-self: start;
   font-family: var(--sans);
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-soft) transparent;
 }
 .reader-sidebar::-webkit-scrollbar {
   width: 6px;
@@ -161,11 +225,11 @@ html.sidebar-collapsed .reader-content { margin: 0 auto; }
   background: var(--muted);
 }
 
-/* Focus mode: hide the sidebar and narrow + center the reading column for
-   distraction-free reading, regardless of the sidebar-collapsed setting. */
+/* Focus mode: hide the sidebar, regardless of the sidebar-collapsed
+   setting. Content already expands full-width by default (see base
+   .reader-content), so focus mode only removes the drawer. */
 html.focus-mode .reader-layout { grid-template-columns: 1fr; }
 html.focus-mode .reader-sidebar { display: none; }
-html.focus-mode .reader-content { max-width: 720px; margin: 0 auto; }
 
 html.justify-text .reader-content { text-align: justify; hyphens: auto; }
 
@@ -179,6 +243,10 @@ html.justify-text .reader-content { text-align: justify; hyphens: auto; }
 html.sidebar-open .sidebar-scrim { display: block; }
 .toc-part { margin-bottom: 18px; }
 .toc-part-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.06em;
@@ -186,8 +254,55 @@ html.sidebar-open .sidebar-scrim { display: block; }
   color: var(--muted);
   margin-bottom: 6px;
 }
+.toc-part-title a { min-width: 0; }
+.toc-part-toggle,
+.toc-item-toggle,
+.toc-hidden-chip {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.toc-part-toggle:hover, .toc-item-toggle:hover, .toc-hidden-chip:hover {
+  color: var(--fg);
+}
+.toc-part-toggle:focus-visible,
+.toc-item-toggle:focus-visible,
+.toc-hidden-chip:focus-visible { outline: 1px solid var(--line); }
+.toc-part-toggle {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.toc-hidden-chip {
+  font-size: 10px;
+  line-height: 1;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 2px 7px;
+}
+.toc-hidden-chip:hover { border-color: var(--line); }
+.toc-part.collapsed > ul { display: none; }
 .toc-part ul { list-style: none; margin: 0; padding: 0; }
-.toc-part li { margin: 0; }
+.toc-part li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.toc-part li > a { flex: 1; min-width: 0; }
+.toc-part li.collapsed { display: none; }
+.toc-item-toggle {
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.toc-part li:hover .toc-item-toggle,
+.toc-item-toggle:focus-visible { opacity: 1; }
 .toc-part a {
   display: block;
   padding: 4px 6px;
@@ -212,6 +327,91 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
   text-decoration: none;
   opacity: 1;
 }
+
+/* "Browse by Topic" entry at the top of the sidebar. */
+.toc-topics-link { margin-bottom: 18px; }
+.toc-topics-link a {
+  display: block;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  color: var(--fg);
+}
+.toc-topics-link a:hover { border-color: var(--line); background: var(--card); }
+
+/* Topics index page. */
+.topic-block { margin-bottom: 28px; }
+.topic-block h2 { font-size: calc(13pt * var(--reader-font-scale)); }
+.topic-block > p { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.topic-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  font-family: var(--sans);
+}
+.topic-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.topic-part {
+  flex-shrink: 0;
+  width: 150px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.topic-list a { color: var(--fg); text-decoration: none; }
+.topic-list a:hover { text-decoration: underline; }
+
+.topics-card .part-idx { font-size: 16px; }
+
+/* Newsletter signup box (reader index). */
+.newsletter-box {
+  margin-top: 40px;
+  padding: 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  background: var(--card);
+  text-align: center;
+  font-family: var(--sans);
+}
+.newsletter-box h2 { font-size: 17px; margin: 0 0 8px; }
+.newsletter-box p { font-size: 13px; color: var(--muted); margin: 0 auto 16px; max-width: 520px; }
+.newsletter-box .subscribe-form { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.newsletter-box input[type="email"] {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 8px 12px;
+  min-width: 240px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.newsletter-box .subscribe-form button {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--fg);
+  color: var(--bg);
+  cursor: pointer;
+}
+.newsletter-box .subscribe-form button:disabled { opacity: 0.6; }
+.newsletter-box .subscribe-status { font-family: var(--mono); font-size: 12px; min-height: 16px; margin: 8px auto 0; }
+.newsletter-box .subscribe-alt { font-family: var(--mono); font-size: 11px; margin-top: 12px; }
+.newsletter-box .subscribe-alt a { color: var(--muted); }
 
 .continue-reading {
   display: flex;
@@ -245,8 +445,9 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 }
 
 .reader-content {
-  padding: 40px clamp(20px, 4vw, 72px);
-  max-width: 1080px;
+  padding: 40px clamp(16px, 2.5vw, 48px);
+  max-width: none;
+  width: 100%;
   font-size: calc(10.5pt * var(--reader-font-scale));
 }
 .reader-content :first-child { margin-top: 0; }
@@ -279,6 +480,10 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 }
 
 .breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   font-family: var(--sans);
   font-size: 12px;
   color: var(--muted);
@@ -288,6 +493,57 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 .breadcrumb a:hover { text-decoration: underline; }
 .crumb-sep { margin: 0 4px; }
 .crumb-current { color: var(--fg); }
+.reading-time {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Per-chapter share bar (social deep-links + copy). */
+.share-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.share-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.share-link {
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  color: var(--fg);
+  text-decoration: none;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.share-link:hover { border-color: var(--line); background: var(--card); }
+.share-copy { font-family: var(--mono); }
+
+/* Copy-link-to-heading glyph shown on hover over h2/h3. */
+.heading-link {
+  opacity: 0;
+  margin-left: 8px;
+  font-size: 0.75em;
+  color: var(--muted);
+  text-decoration: none;
+  font-family: var(--mono);
+}
+h2:hover > .heading-link, h3:hover > .heading-link,
+.heading-link:focus-visible { opacity: 1; }
+.heading-link:hover { color: var(--fg); }
 
 .chapter-nav {
   display: flex;
@@ -333,6 +589,68 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
   pointer-events: none;
 }
 .copy-toast.visible { opacity: 1; }
+
+/* Notes panel (per-page notes saved in localStorage). */
+.notes-panel {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 90vw);
+  z-index: 45;
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--sans);
+}
+.notes-panel[hidden] { display: none; }
+.notes-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+#notes-close {
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+#notes-text {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 16px;
+}
+.notes-panel-foot {
+  padding: 8px 16px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  min-height: 20px;
+}
+.notes-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
+}
+.notes-scrim[hidden] { display: none; }
 
 .chapter-list {
   list-style: none;
@@ -426,6 +744,7 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
   .reader-top-actions { gap: 6px; }
   .reader-top-actions a { font-size: 11px; }
   #search-open, #theme-toggle, #focus-toggle, #justify-toggle, #sidebar-toggle,
+  #notes-toggle, #print-pdf,
   .font-size-control button { font-size: 11px; padding: 4px 8px; }
   #sidebar-toggle { padding: 4px 6px; }
   #search-open kbd { display: none; }
@@ -438,12 +757,15 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
     bottom: 0;
     width: min(300px, 85vw);
     max-height: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     z-index: 30;
     background: var(--bg);
     padding: 16px 12px;
     scrollbar-width: thin;
     scrollbar-color: var(--line-soft) transparent;
   }
+  .notes-panel { top: 52px; width: min(320px, 92vw); }
   .reader-sidebar::-webkit-scrollbar {
     width: 6px;
   }
@@ -487,11 +809,13 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
   .reader-top-actions { gap: 4px; }
   .reader-top-actions a { font-size: 10px; }
   #search-open, #theme-toggle, #focus-toggle, #justify-toggle, #sidebar-toggle,
+  #notes-toggle, #print-pdf,
   .font-size-control button { font-size: 10px; padding: 3px 6px; }
   #sidebar-toggle { padding: 3px 5px; font-size: 14px; }
   #focus-toggle, #justify-toggle { display: none; }
 
   .reader-sidebar { top: 48px; width: min(280px, 88vw); padding: 12px 10px; }
+  .notes-panel { top: 48px; }
 
   .reader-content { padding: 20px 12px; font-size: calc(9.5pt * var(--reader-font-scale)); overflow-x: hidden; }
   .reader-content pre { overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: calc(8.5pt * var(--reader-font-scale)); }
@@ -536,9 +860,29 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 @media (max-width: 380px) {
   .reader-top { padding: 0 8px; }
   .reader-top-actions { gap: 3px; }
-  #search-open, #theme-toggle, #sidebar-toggle,
+  #search-open, #theme-toggle, #sidebar-toggle, #notes-toggle, #print-pdf,
   .font-size-control button { font-size: 9px; padding: 3px 5px; }
   .reader-content { padding: 16px 10px; overflow-x: hidden; }
   .reader-content pre { font-size: calc(8pt * var(--reader-font-scale)); }
   .continue-reading { padding: 8px 10px; }
+}
+
+/* Print: strip the app chrome so "Save as PDF" (or Ctrl+P) produces a
+   clean, single-chapter document. */
+@media print {
+  .reader-top, .reader-sidebar, .sidebar-scrim, .notes-panel, .notes-scrim,
+  .palette, .reading-progress, .share-bar, .chapter-nav, .breadcrumb,
+  .heading-link, #copy-toast, .read-sentinel { display: none !important; }
+  body { background: #ffffff; color: #000000; }
+  .reader-layout { display: block; }
+  .reader-content {
+    max-width: none;
+    width: 100%;
+    padding: 0;
+    font-size: 11pt;
+  }
+  .reader-content h1 { border-top: none; page-break-before: auto; }
+  .reader-content section h1 { page-break-before: auto; }
+  pre { white-space: pre-wrap; word-wrap: break-word; }
+  a { color: #000000; }
 }

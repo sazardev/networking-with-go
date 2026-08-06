@@ -21,6 +21,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,12 @@ import (
 const (
 	siteBase      = "https://sazardev.github.io/networking-with-go"
 	coverImageURL = "https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg"
+	// Branded 1200x630 social card served from GitHub Pages (website/assets).
+	// Every reader page uses it as the og:image / twitter:image so shared
+	// links always render the same recognizable card, with the correct
+	// dimensions declared for crawlers that need them.
+	ogCardURL = siteBase + "/assets/og-card.png"
+	bookName  = "Networking with Go, Made Easy"
 )
 
 type part struct {
@@ -51,6 +58,30 @@ var parts = []part{
 	{"cybersecurity-ethical-hacking", "Cybersecurity & Ethical Hacking", "Scanning, sniffing, vulnerability assessment, IDS/IPS, SIEM, malware analysis, red team vs blue team, honeypots, and PKI — for authorized, ethical use.", "docs/part3"},
 	{"production-apis-architecture", "Production APIs & Architecture", "REST and gRPC APIs with Gin and Fiber, PostgreSQL and SQLite, Docker and Google Cloud, Clean/Hexagonal Architecture, and Domain-Driven Design.", "docs/part-apis"},
 	{"back-matter", "A Final Word", "Parting thoughts, advice on where to go from here, and how to keep growing after the last chapter.", "docs/back-matter"},
+}
+
+// topic describes a curated "browse by topic" page. Chapters are matched
+// automatically against Keywords in their title, so the topic index stays
+// in sync with the book with no manual chapter list to maintain.
+type topic struct {
+	Slug      string
+	Title     string
+	Desc      string
+	Keywords  []string
+}
+
+var topics = []topic{
+	{"tcp-ip", "TCP/IP Networking", "Sockets, three-way handshake, reliable streams, and the foundations of the internet protocol suite.", []string{"TCP", "IP Addressing", "Subnetting", "OSI", "TCP/IP"}},
+	{"udp", "UDP", "Datagrams, connectionless communication, and when to trade reliability for speed.", []string{"UDP"}},
+	{"http", "HTTP & REST APIs", "Request/response protocols, HTTP/3, QUIC, routing, and building RESTful APIs.", []string{"HTTP", "REST", "QUIC"}},
+	{"websockets-realtime", "WebSockets & Real-Time", "Persistent connections, chat, push notifications, SSE, and real-time communication.", []string{"WebSocket", "Real-Time", "Chat", "SSE", "Notifications"}},
+	{"dns", "DNS", "The domain name system: resolution, records, and Go implementations.", []string{"DNS"}},
+	{"grpc-protocols", "gRPC & Distributed Protocols", "gRPC, Protocol Buffers, message queues, service discovery, and distributed systems.", []string{"gRPC", "Protocol Buffers", "Message Queues", "Service Discovery", "MQTT", "AMQP"}},
+	{"security", "Security & Encryption", "TLS, PKI, certificates, ethical hacking, and offensive/defensive security.", []string{"TLS", "Security", "Encryption", "Certificate", "Hacking", "Attack", "Honeypot", "IDS", "SIEM"}},
+	{"concurrency", "Concurrency & Go Fundamentals", "Goroutines, channels, context, and the Go language fundamentals that power networked apps.", []string{"Goroutines", "Concurrency", "Context", "Channels", "Go Language"}},
+	{"databases", "Databases & Persistence", "PostgreSQL, SQLite, caching, and Redis in Go APIs.", []string{"PostgreSQL", "SQLite", "Redis", "Database", "Caching"}},
+	{"containers-cloud", "Containers, Cloud & DevOps", "Docker, Kubernetes, Google Cloud, CI/CD, serverless, and deployment.", []string{"Docker", "Kubernetes", "Google Cloud", "Container", "Deploy", "Serverless", "CI/CD", "Observability", "Tracing"}},
+	{"blockchain-iot", "Blockchain, IoT & Emerging", "Blockchain, Web3 networking, IoT messaging, and wireless networks.", []string{"Blockchain", "WebRTC", "IoT", "Wireless", "P2P", "Mesh"}},
 }
 
 var (
@@ -197,8 +228,9 @@ func main() {
 		log.Printf("  -> %d chapters", len(chapters))
 	}
 
-	sidebarDepth0 := buildSidebar(results, ctxDepth0)
-	sidebarDepth1 := buildSidebar(results, ctxDepth1)
+	sidebarDepth0 := buildSidebar(results, ctxDepth0, "topics/index.html")
+	sidebarDepth1 := buildSidebar(results, ctxDepth1, "../topics/index.html")
+	sidebarTopics := buildSidebar(results, ctxDepth1, "index.html")
 
 	var flat []flatRef
 	for _, r := range results {
@@ -234,6 +266,12 @@ func main() {
 
 	writeFile(filepath.Join(outDir, "index.html"), renderIndexPage(results, sidebarDepth0, theme))
 
+	topicsDir := filepath.Join(outDir, "topics")
+	if err := os.MkdirAll(topicsDir, 0o755); err != nil {
+		log.Fatalf("create %s: %v", topicsDir, err)
+	}
+	writeFile(filepath.Join(topicsDir, "index.html"), renderTopicsPage(results, sidebarTopics, theme))
+
 	data, err := json.MarshalIndent(search, "", "  ")
 	if err != nil {
 		log.Fatalf("marshal search index: %v", err)
@@ -241,6 +279,8 @@ func main() {
 	writeFile(filepath.Join(outDir, "search-index.json"), string(data))
 
 	writeSitemap(results)
+	writeFeed(results)
+	writePrecache(results)
 
 	log.Printf("done: %d parts, %d chapters, %d search entries", len(results), totalChapters, len(search))
 }
@@ -368,9 +408,40 @@ func truncateRunes(s string, n int) string {
 	return strings.TrimSpace(string(r[:n])) + "…"
 }
 
-func buildSidebar(results []partResult, ctx linkCtx) string {
+// truncateWords cuts s to at most n runes, preferring a word boundary so a
+// truncated meta/OG description never ends mid-word.
+func truncateWords(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	cut := string(r[:n])
+	if i := strings.LastIndex(cut, " "); i > n/2 {
+		return strings.TrimSpace(cut[:i]) + "…"
+	}
+	return strings.TrimSpace(cut) + "…"
+}
+
+// chapterOGDescription builds a short, marketing-aware share description for
+// a chapter page: book pitch + part context + the chapter's own hook.
+func chapterOGDescription(p part, ch chapterEntry) string {
+	excerpt := truncateWords(ch.Excerpt, 150)
+	desc := fmt.Sprintf("\"%s\" is a free chapter from \"Networking with Go, Made Easy\", the open-source book on networking in Go — TCP/IP, HTTP, WebSockets, gRPC, security, and production APIs. From %s. %s",
+		ch.Title, p.Title, excerpt)
+	return truncateWords(desc, 300)
+}
+
+// partOGDescription builds the share description for a part index page.
+func partOGDescription(p part, chapterCount int) string {
+	desc := fmt.Sprintf("%s This part of the free, open-source book \"Networking with Go, Made Easy\" holds %d chapters on networking and Go — from TCP/IP, UDP, HTTP and WebSockets to DNS, gRPC, security, and production APIs.",
+		p.Desc, chapterCount)
+	return truncateWords(desc, 300)
+}
+
+func buildSidebar(results []partResult, ctx linkCtx, topicsHref string) string {
 	var b strings.Builder
 	b.WriteString(`<nav class="reader-sidebar" aria-label="Table of contents">`)
+	fmt.Fprintf(&b, `<div class="toc-topics-link"><a href="%s">Browse by Topic</a></div>`, topicsHref)
 	for _, r := range results {
 		fmt.Fprintf(&b, `<div class="toc-part" data-part="%s"><div class="toc-part-title"><a href="%s%s/index.html">%s</a></div><ul>`,
 			r.meta.Slug, ctx.toRead, r.meta.Slug, html.EscapeString(r.meta.Title))
@@ -467,14 +538,26 @@ func partIndexJSONLD(p part, chapters []chapterEntry) string {
 }
 
 type pageMeta struct {
-	Title       string
-	Description string
-	Canonical   string
-	OGType      string
-	JSONLD      string
+	Title          string // <title> and og:title when OGTitle is empty
+	Description    string // <meta name="description"> and og:description fallback
+	OGTitle        string // og:title / twitter:title (short, marketing-aware)
+	OGDescription  string // og:description / twitter:description (marketing-aware)
+	Canonical      string
+	OGType         string
+	ArticleSection string // article:section (part name) on chapter pages
+	JSONLD         string
 }
 
 func pageHead(m pageMeta, ctx linkCtx, theme string) string {
+	ogTitle := m.OGTitle
+	if ogTitle == "" {
+		ogTitle = m.Title
+	}
+	ogDesc := m.OGDescription
+	if ogDesc == "" {
+		ogDesc = m.Description
+	}
+
 	var b strings.Builder
 	b.WriteString("<!doctype html>\n<html lang=\"en\">\n<head>\n")
 	b.WriteString(`<meta charset="utf-8">` + "\n")
@@ -485,14 +568,35 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 	b.WriteString(`<meta name="robots" content="index, follow, max-image-preview:large">` + "\n")
 	fmt.Fprintf(&b, `<link rel="canonical" href="%s">`+"\n", m.Canonical)
 	fmt.Fprintf(&b, `<link rel="icon" type="image/svg+xml" href="%s">`+"\n", favicon)
+	fmt.Fprintf(&b, `<link rel="manifest" href="%smanifest.webmanifest">`+"\n", ctx.toSite)
+	fmt.Fprintf(&b, `<link rel="alternate" type="application/atom+xml" title="%s — New Chapters" href="%sfeed.xml">`+"\n", html.EscapeString(bookName), ctx.toSite)
+	fmt.Fprintf(&b, `<link rel="preload" as="image" href="%sassets/og-card.png">`+"\n", ctx.toSite)
+	b.WriteString(`<meta name="theme-color" content="#0a0a0a">` + "\n")
 
+	// Open Graph — complete set so Facebook, WhatsApp, Telegram, Slack and
+	// LinkedIn all render a rich card from the branded og-card image.
 	fmt.Fprintf(&b, `<meta property="og:type" content="%s">`+"\n", m.OGType)
 	b.WriteString(`<meta property="og:site_name" content="Networking with Go, Made Easy">` + "\n")
-	fmt.Fprintf(&b, `<meta property="og:title" content="%s">`+"\n", html.EscapeString(m.Title))
-	fmt.Fprintf(&b, `<meta property="og:description" content="%s">`+"\n", html.EscapeString(m.Description))
+	b.WriteString(`<meta property="og:locale" content="en_US">` + "\n")
+	fmt.Fprintf(&b, `<meta property="og:title" content="%s">`+"\n", html.EscapeString(ogTitle))
+	fmt.Fprintf(&b, `<meta property="og:description" content="%s">`+"\n", html.EscapeString(ogDesc))
 	fmt.Fprintf(&b, `<meta property="og:url" content="%s">`+"\n", m.Canonical)
-	fmt.Fprintf(&b, `<meta property="og:image" content="%s">`+"\n", coverImageURL)
+	fmt.Fprintf(&b, `<meta property="og:image" content="%s">`+"\n", ogCardURL)
+	b.WriteString(`<meta property="og:image:width" content="1200">` + "\n")
+	b.WriteString(`<meta property="og:image:height" content="630">` + "\n")
+	b.WriteString(`<meta property="og:image:type" content="image/png">` + "\n")
+	b.WriteString(`<meta property="og:image:alt" content="Networking with Go, Made Easy — free, open-source book on networking in Go">` + "\n")
+
+	// Twitter/X Card — explicit so X never has to fall back to og:.
 	b.WriteString(`<meta name="twitter:card" content="summary_large_image">` + "\n")
+	fmt.Fprintf(&b, `<meta name="twitter:title" content="%s">`+"\n", html.EscapeString(ogTitle))
+	fmt.Fprintf(&b, `<meta name="twitter:description" content="%s">`+"\n", html.EscapeString(ogDesc))
+	fmt.Fprintf(&b, `<meta name="twitter:image" content="%s">`+"\n", ogCardURL)
+	b.WriteString(`<meta name="twitter:image:alt" content="Networking with Go, Made Easy — free, open-source book on networking in Go">` + "\n")
+
+	if m.ArticleSection != "" {
+		fmt.Fprintf(&b, `<meta property="article:section" content="%s">`+"\n", html.EscapeString(m.ArticleSection))
+	}
 
 	if m.JSONLD != "" {
 		b.WriteString(m.JSONLD)
@@ -502,12 +606,28 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 	fmt.Fprintf(&b, `<link rel="stylesheet" href="%sreader.css">`+"\n", ctx.toRead)
 	b.WriteString(`<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>` + "\n")
 	b.WriteString(`<script>mermaid.initialize({startOnLoad:false});addEventListener('DOMContentLoaded',function(){document.querySelectorAll('code.language-mermaid').forEach(function(c){var p=c.closest('pre');p.className='mermaid';p.textContent=c.textContent});mermaid.run()})</script>` + "\n")
+	// Syntax highlighting for the book's code blocks. The autoloader fetches
+	// the grammar for whatever language-* class a block has (go, bash, json,
+	// sql, ...) on demand. Runs on DOMContentLoaded, i.e. after the mermaid
+	// blocks above have been converted, so the two never fight.
+	b.WriteString(`<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>` + "\n")
+	// Load the Go grammar eagerly so the extension below can enrich it before
+	// highlighting (the autoloader would otherwise fetch it asynchronously).
+	b.WriteString(`<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-go.min.js"></script>` + "\n")
+	// Richer Go tokens for a more visible grayscale: exported identifiers
+	// (types, struct fields, exported funcs/consts) become class-name, map /
+	// literal keys become property, and the package name gets its own token.
+	b.WriteString(`<script>if(window.Prism&&Prism.languages.go){var g=Prism.languages.go;g.exported={pattern:/\b[A-Z][\w]*\b/,alias:'class-name'};g.mapKey={pattern:/\b[a-zA-Z_][\w]*(?=\s*:)/,alias:'property'};Prism.languages.insertBefore(g,'keyword',{packageStmt:{pattern:/\bpackage\s+[a-z_][\w]*/,inside:{keyword:/\bpackage\b/,'class-name':/\b[a-z_][\w]*$/}}})}</script>` + "\n")
+	b.WriteString(`<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>` + "\n")
+	b.WriteString(`<script>if(window.Prism){Prism.plugins.autoloader.languages_path='https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/';document.addEventListener('DOMContentLoaded',function(){Prism.highlightAll()})}</script>` + "\n")
+	fmt.Fprintf(&b, `<script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('%ssw.js').catch(function(e){console.warn('SW registration failed',e)})})}</script>`+"\n", ctx.toSite)
 	b.WriteString("</head>\n")
 	return b.String()
 }
 
 func pageHeader(ctx linkCtx) string {
-	return fmt.Sprintf(`<header class="reader-top">
+	return fmt.Sprintf(`<div class="reading-progress" id="reading-progress"></div>
+<header class="reader-top">
   <div class="reader-top-left">
     <button id="sidebar-toggle" type="button" aria-label="Toggle contents">&#9776;</button>
     <a class="brand" href="%sindex.html">net<span>/</span>go<span>.</span>book</a>
@@ -521,10 +641,21 @@ func pageHeader(ctx linkCtx) string {
     <button id="justify-toggle" type="button">Justify</button>
     <button id="focus-toggle" type="button">Focus</button>
     <button id="search-open" type="button">Search <kbd>Ctrl K</kbd></button>
+    <button id="notes-toggle" type="button">Notes</button>
+    <button id="print-pdf" type="button">PDF</button>
     <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
   </div>
 </header>
 <div class="sidebar-scrim"></div>
+<div id="notes-panel" class="notes-panel" hidden>
+  <div class="notes-panel-head">
+    <span>Notes</span>
+    <button id="notes-close" type="button" aria-label="Close notes">&times;</button>
+  </div>
+  <textarea id="notes-text" placeholder="Write your notes for this page... they are saved in your browser."></textarea>
+  <div class="notes-panel-foot"><span id="notes-status"></span></div>
+</div>
+<div class="notes-scrim" id="notes-scrim" hidden></div>
 `, ctx.toSite, ctx.toRead)
 }
 
@@ -537,9 +668,27 @@ func breadcrumbHTML(ctx linkCtx, p part, ch *chapterEntry) string {
 	if ch != nil {
 		b.WriteString(` <span class="crumb-sep">&rsaquo;</span> `)
 		fmt.Fprintf(&b, `<span class="crumb-current">%s</span>`, html.EscapeString(ch.Title))
+		b.WriteString(` <span class="reading-time" id="reading-time"></span>`)
 	}
 	b.WriteString(`</nav>` + "\n")
 	return b.String()
+}
+
+// shareBarHTML builds the per-chapter share buttons. They deep-link into the
+// canonical URL, which is what the (already rich) og:/twitter: metadata
+// resolves to, so every shared chapter renders the branded card.
+func shareBarHTML(canonical, title string) string {
+	u := url.QueryEscape(canonical)
+	t := url.QueryEscape(fmt.Sprintf("%q — %s", title, bookName))
+	return fmt.Sprintf(`<div class="share-bar" aria-label="Share this chapter">
+  <span class="share-label">Share</span>
+  <a class="share-link" rel="noopener" target="_blank" href="https://twitter.com/intent/tweet?text=%[1]s&url=%[2]s">X</a>
+  <a class="share-link" rel="noopener" target="_blank" href="https://www.linkedin.com/sharing/share-offsite/?url=%[2]s">LinkedIn</a>
+  <a class="share-link" rel="noopener" target="_blank" href="https://wa.me/?text=%[1]s%%20%[2]s">WhatsApp</a>
+  <a class="share-link" rel="noopener" target="_blank" href="https://t.me/share/url?url=%[2]s&text=%[1]s">Telegram</a>
+  <button class="share-link share-copy" id="share-copy" type="button">Copy link</button>
+</div>
+`, t, u)
 }
 
 func chapterNavHTML(ctx linkCtx, prev, next *flatRef) string {
@@ -574,11 +723,14 @@ func paletteMarkup(ctx linkCtx) string {
 func renderChapterPage(ch chapterEntry, p part, prev, next *flatRef, globalPos int, sidebar, theme string) string {
 	canonical := fmt.Sprintf("%s/read/%s/%s.html", siteBase, p.Slug, ch.Slug)
 	meta := pageMeta{
-		Title:       ch.Title,
-		Description: truncateRunes(ch.Excerpt, 155),
-		Canonical:   canonical,
-		OGType:      "article",
-		JSONLD:      chapterJSONLD(ch, p, globalPos, canonical),
+		Title:          ch.Title,
+		Description:    truncateWords(ch.Excerpt, 160),
+		OGTitle:        ch.Title,
+		OGDescription:  chapterOGDescription(p, ch),
+		Canonical:      canonical,
+		OGType:         "article",
+		ArticleSection: p.Title,
+		JSONLD:         chapterJSONLD(ch, p, globalPos, canonical),
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth1, theme))
@@ -588,6 +740,7 @@ func renderChapterPage(ch chapterEntry, p part, prev, next *flatRef, globalPos i
 	b.WriteString(sidebar)
 	b.WriteString(`<main class="reader-content">` + "\n")
 	b.WriteString(breadcrumbHTML(ctxDepth1, p, &ch))
+	b.WriteString(shareBarHTML(canonical, ch.Title))
 	b.WriteString(ch.BodyHTML)
 	b.WriteString(`<div class="read-sentinel" aria-hidden="true"></div>` + "\n")
 	b.WriteString("\n" + chapterNavHTML(ctxDepth1, prev, next) + "\n")
@@ -600,11 +753,13 @@ func renderChapterPage(ch chapterEntry, p part, prev, next *flatRef, globalPos i
 func renderPartIndexPage(r partResult, sidebar, theme string) string {
 	canonical := fmt.Sprintf("%s/read/%s/index.html", siteBase, r.meta.Slug)
 	meta := pageMeta{
-		Title:       r.meta.Title,
-		Description: r.meta.Desc,
-		Canonical:   canonical,
-		OGType:      "website",
-		JSONLD:      partIndexJSONLD(r.meta, r.chapters),
+		Title:         r.meta.Title,
+		Description:   truncateWords(r.meta.Desc, 160),
+		OGTitle:       r.meta.Title + " — Networking with Go, Made Easy",
+		OGDescription: partOGDescription(r.meta, len(r.chapters)),
+		Canonical:     canonical,
+		OGType:        "website",
+		JSONLD:        partIndexJSONLD(r.meta, r.chapters),
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth1, theme))
@@ -628,10 +783,12 @@ func renderPartIndexPage(r partResult, sidebar, theme string) string {
 
 func renderIndexPage(results []partResult, sidebar, theme string) string {
 	meta := pageMeta{
-		Title:       "Read Online",
-		Description: "Read all 150 chapters of Networking with Go, Made Easy free in your browser — same content as the PDF, same fonts, with full-text search.",
-		Canonical:   siteBase + "/read/index.html",
-		OGType:      "website",
+		Title:         "Read Online",
+		Description:   "Read all 150 chapters of Networking with Go, Made Easy free in your browser — same content as the PDF, same fonts, with full-text search.",
+		OGTitle:       "Read Online — Networking with Go, Made Easy",
+		OGDescription: "Read all 150 chapters of Networking with Go, Made Easy free in your browser — the open-source book on networking in Go: TCP/IP, UDP, HTTP, WebSockets, DNS, gRPC, TLS, ethical hacking, and production APIs. Same content as the PDF, with full-text search.",
+		Canonical:     siteBase + "/read/index.html",
+		OGType:        "website",
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth0, theme))
@@ -643,14 +800,34 @@ func renderIndexPage(results []partResult, sidebar, theme string) string {
 	b.WriteString(`<h1>Read Networking with Go, Made Easy — online</h1>` + "\n")
 	b.WriteString(`<p>All 150 chapters, eight parts, right in the browser — same content as the PDF, same fonts, always in sync with the latest edit.</p>` + "\n")
 	b.WriteString(`<div class="part-grid">` + "\n")
+	fmt.Fprintf(&b, `<a class="part-card topics-card" href="topics/index.html"><span class="part-idx">&#9673;</span><h2>Browse by Topic</h2><p>Jump straight to the chapters that matter to you — TCP/IP, HTTP, WebSockets, gRPC, security, databases, containers, and more.</p><span class="part-count">%d topics</span></a>`+"\n", len(topics))
 	for i, r := range results {
 		fmt.Fprintf(&b, `<a class="part-card" href="%s/index.html"><span class="part-idx">%02d</span><h2>%s</h2><p>%s</p><span class="part-count">%d chapters</span></a>`+"\n",
 			r.meta.Slug, i+1, html.EscapeString(r.meta.Title), html.EscapeString(r.meta.Desc), len(r.chapters))
 	}
-	b.WriteString("</div>\n</main>\n</div>\n")
+	b.WriteString("</div>\n")
+	b.WriteString(newsletterBox())
+	b.WriteString("</main>\n</div>\n")
 	b.WriteString(paletteMarkup(ctxDepth0))
 	b.WriteString("</body>\n</html>\n")
 	return b.String()
+}
+
+// newsletterBox is the signup block shown on the reader index. Submissions go
+// through reader.js to window.SUBSCRIBE_ENDPOINT (set per-site); until a
+// provider endpoint is configured the form points readers to the RSS feed.
+func newsletterBox() string {
+	return `<div class="newsletter-box">
+  <h2>New chapters, straight to your inbox</h2>
+  <p>The book grows over time. Leave your email and get notified whenever a new part or chapter is published — no spam, ever.</p>
+  <form id="subscribe-form" class="subscribe-form" novalidate>
+    <input id="subscribe-email" type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+    <button type="submit">Subscribe</button>
+  </form>
+  <p class="subscribe-status" id="subscribe-status" hidden></p>
+  <p class="subscribe-alt">Prefer RSS? <a href="feed.xml">Subscribe to the chapter feed</a>.</p>
+</div>
+`
 }
 
 func writeSitemap(results []partResult) {
@@ -676,4 +853,124 @@ func writeSitemap(results []partResult) {
 
 	writeFile("website/sitemap.xml", b.String())
 	log.Printf("sitemap: %d URLs", len(urls))
+}
+
+// topicChapters matches a topic's keywords against chapter titles so the
+// "browse by topic" page stays auto-generated. Returns the flat chapter refs.
+type topicRef struct {
+	PartSlug string
+	Slug     string
+	Title    string
+	PartTitle string
+}
+
+func topicChapterRefs(results []partResult, t topic) []topicRef {
+	var refs []topicRef
+	for _, r := range results {
+		for _, ch := range r.chapters {
+			lower := strings.ToLower(ch.Title)
+			for _, kw := range t.Keywords {
+				if strings.Contains(lower, strings.ToLower(kw)) {
+					refs = append(refs, topicRef{r.meta.Slug, ch.Slug, ch.Title, r.meta.Title})
+					break
+				}
+			}
+		}
+	}
+	return refs
+}
+
+func renderTopicsPage(results []partResult, sidebar, theme string) string {
+	canonical := siteBase + "/read/topics/index.html"
+	meta := pageMeta{
+		Title:         "Browse by Topic",
+		Description:   "Find chapters of Networking with Go, Made Easy by topic — TCP/IP, UDP, HTTP, WebSockets, gRPC, DNS, security, concurrency, databases, containers, and more.",
+		OGTitle:       "Browse by Topic — Networking with Go, Made Easy",
+		OGDescription: "Browse all chapters of the free, open-source book \"Networking with Go, Made Easy\" by topic: TCP/IP, UDP, HTTP, WebSockets, gRPC, DNS, TLS/security, concurrency, databases, and containers.",
+		Canonical:     canonical,
+		OGType:        "website",
+	}
+	var b strings.Builder
+	b.WriteString(pageHead(meta, ctxDepth1, theme))
+	b.WriteString("<body data-page-type=\"topics\">\n")
+	b.WriteString(pageHeader(ctxDepth1))
+	b.WriteString(`<div class="reader-layout">` + "\n")
+	b.WriteString(sidebar)
+	b.WriteString(`<main class="reader-content">` + "\n")
+	b.WriteString(`<h1>Browse by Topic</h1>` + "\n")
+	b.WriteString(`<p>Each topic below is generated from the chapters that cover it — click one to jump straight to the list of matching chapters.</p>` + "\n")
+	for _, t := range topics {
+		refs := topicChapterRefs(results, t)
+		if len(refs) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, `<div class="topic-block" id="topic-%s"><h2>%s</h2><p>%s</p>`+"\n", t.Slug, html.EscapeString(t.Title), html.EscapeString(t.Desc))
+		b.WriteString(`<ul class="topic-list">` + "\n")
+		for _, ref := range refs {
+			fmt.Fprintf(&b, `<li><span class="topic-part">%s</span><a href="../%s/%s.html">%s</a></li>`+"\n",
+				html.EscapeString(ref.PartTitle), ref.PartSlug, ref.Slug, html.EscapeString(ref.Title))
+		}
+		b.WriteString(`</ul></div>` + "\n")
+	}
+	b.WriteString("</main>\n</div>\n")
+	b.WriteString(paletteMarkup(ctxDepth1))
+	b.WriteString("</body>\n</html>\n")
+	return b.String()
+}
+
+// writeFeed emits an Atom feed of every chapter, so readers can subscribe and
+// get notified when the book gains chapters. Entries are ordered oldest part
+// first; all use the build time as their updated stamp (chapters have no
+// per-chapter timestamps in the repo).
+func writeFeed(results []partResult) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	fmt.Fprintf(&b, `<feed xmlns="http://www.w3.org/2005/Atom"><title>%s</title><id>%s/feed.xml</id><link rel="self" href="%s/feed.xml"/><link href="%s/"/><updated>%s</updated><author><name>Omar Flores Salazar</name></author>`+"\n",
+		html.EscapeString(bookName+" — New Chapters"), siteBase, siteBase, siteBase, now)
+
+	pos := 0
+	for _, r := range results {
+		for _, ch := range r.chapters {
+			pos++
+			url := fmt.Sprintf("%s/read/%s/%s.html", siteBase, r.meta.Slug, ch.Slug)
+			fmt.Fprintf(&b, "<entry><title>%s</title><link href=\"%s\"/><id>%s</id><updated>%s</updated><published>%s</published><summary type=\"html\">%s</summary><category term=\"%s\"/></entry>\n",
+				html.EscapeString(ch.Title), url, url, now, now, html.EscapeString(truncateWords(ch.Excerpt, 300)), html.EscapeString(r.meta.Title))
+		}
+	}
+	b.WriteString("</feed>\n")
+	writeFile("website/feed.xml", b.String())
+	log.Printf("feed: %d entries", pos)
+}
+
+// writePrecache emits the service-worker precache list (paths relative to the
+// site scope). Chapters themselves are runtime-cached by sw.js; only the app
+// shell, the landing/part index pages and the shared assets are precached so
+// the initial offline install stays small.
+func writePrecache(results []partResult) {
+	paths := []string{
+		"index.html",
+		"read/index.html",
+		"read/reader.css",
+		"read/reader.js",
+		"read/search-index.json",
+		"read/topics/index.html",
+		"assets/og-card.png",
+		"manifest.webmanifest",
+		"feed.xml",
+	}
+	for _, r := range results {
+		paths = append(paths, "read/"+r.meta.Slug+"/index.html")
+	}
+
+	var b strings.Builder
+	b.WriteString("// Generated by website/tools/buildreader — do not edit by hand.\n")
+	b.WriteString("self.PRECACHE_URLS = [\n")
+	for _, p := range paths {
+		fmt.Fprintf(&b, "  %q,\n", p)
+	}
+	b.WriteString("];\n")
+	writeFile("website/sw-precache.js", b.String())
+	log.Printf("precache: %d assets", len(paths))
 }

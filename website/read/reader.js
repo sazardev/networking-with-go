@@ -2,6 +2,10 @@
   var root = document.documentElement;
   var toggle = document.getElementById('theme-toggle');
 
+  var LABELS = { light: 'Light mode', sepia: 'Sepia mode', dark: 'Dark mode' };
+  var ORDER = { light: 'sepia', sepia: 'dark', dark: 'light' };
+  var MODES = ['light', 'sepia', 'dark'];
+
   function effectiveTheme() {
     var attr = root.getAttribute('data-theme');
     if (attr) return attr;
@@ -10,18 +14,18 @@
 
   function render() {
     var eff = effectiveTheme();
-    toggle.textContent = eff === 'dark' ? 'Light mode' : 'Dark mode';
+    toggle.textContent = LABELS[eff] || 'Theme';
     toggle.setAttribute('aria-pressed', String(eff === 'dark'));
   }
 
   var saved = localStorage.getItem('theme');
-  if (saved === 'light' || saved === 'dark') {
+  if (MODES.indexOf(saved) !== -1) {
     root.setAttribute('data-theme', saved);
   }
   render();
 
   toggle.addEventListener('click', function () {
-    var next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+    var next = ORDER[effectiveTheme()];
     root.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
     render();
@@ -196,6 +200,119 @@
   if (scrim) {
     scrim.addEventListener('click', function () { root.classList.remove('sidebar-open'); });
   }
+})();
+
+/* Collapsible TOC: every section (part) can be collapsed/expanded from its
+   title, and every topic (chapter row) can be hidden with its own toggle.
+   Hidden topics are restored with the "+N" chip that appears in the part
+   title. Both states persist per part/topic id in localStorage. */
+(function () {
+  var PARTS_KEY = 'tocPartsCollapsed';
+  var CHAPTERS_KEY = 'tocChaptersCollapsed';
+
+  function loadMap(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function saveMap(key, map) {
+    try { localStorage.setItem(key, JSON.stringify(map)); } catch (e) {}
+  }
+
+  var partsMap = loadMap(PARTS_KEY);
+  var chaptersMap = loadMap(CHAPTERS_KEY);
+  var refreshers = [];
+
+  document.querySelectorAll('.toc-part').forEach(function (part) {
+    var title = part.querySelector(':scope > .toc-part-title');
+    var list = part.querySelector(':scope > ul');
+    if (!title || !list) return;
+    var id = part.getAttribute('data-part') || '';
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toc-part-toggle';
+    btn.textContent = '\u25BE';
+    btn.setAttribute('aria-label', 'Toggle section');
+    title.appendChild(btn);
+
+    var chip = null;
+
+    function refresh() {
+      var collapsed = part.classList.contains('collapsed');
+      btn.textContent = collapsed ? '\u25B8' : '\u25BE';
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      var hidden = list.querySelectorAll('li.collapsed').length;
+      if (hidden > 0) {
+        if (!chip) {
+          chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'toc-hidden-chip';
+          chip.title = 'Show hidden topics';
+          title.appendChild(chip);
+          chip.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            list.querySelectorAll('li.collapsed').forEach(function (li) {
+              var a = li.querySelector('a');
+              var cid = a && a.getAttribute('data-chapter-id');
+              if (cid) delete chaptersMap[cid];
+              li.classList.remove('collapsed');
+            });
+            saveMap(CHAPTERS_KEY, chaptersMap);
+            refresh();
+          });
+        }
+        chip.textContent = '+' + hidden;
+      } else if (chip) {
+        chip.remove();
+        chip = null;
+      }
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      part.classList.toggle('collapsed');
+      partsMap[id] = part.classList.contains('collapsed');
+      saveMap(PARTS_KEY, partsMap);
+      refresh();
+    });
+
+    part.classList.toggle('collapsed', !!partsMap[id]);
+    part._tocRefresh = refresh;
+    refreshers.push(refresh);
+  });
+
+  document.querySelectorAll('.toc-part li').forEach(function (li) {
+    var a = li.querySelector('a');
+    if (!a) return;
+    var id = a.getAttribute('data-chapter-id');
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toc-item-toggle';
+    btn.textContent = '\u2212';
+    btn.setAttribute('aria-label', 'Toggle topic');
+    btn.title = 'Collapse topic';
+    li.appendChild(btn);
+
+    if (id && chaptersMap[id]) li.classList.add('collapsed');
+
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var hidden = !li.classList.contains('collapsed');
+      li.classList.toggle('collapsed', hidden);
+      if (id) {
+        if (hidden) chaptersMap[id] = true;
+        else delete chaptersMap[id];
+        saveMap(CHAPTERS_KEY, chaptersMap);
+      }
+      var part = li.closest('.toc-part');
+      if (part && part._tocRefresh) part._tocRefresh();
+    });
+  });
+
+  refreshers.forEach(function (fn) { fn(); });
 })();
 
 (function () {
@@ -423,5 +540,219 @@
     toast.classList.add('visible');
     clearTimeout(toast._hide);
     toast._hide = setTimeout(function () { toast.classList.remove('visible'); }, 2000);
+  });
+})();
+
+/* Fixed reading-progress bar along the top edge of the page. */
+(function () {
+  var bar = document.getElementById('reading-progress');
+  if (!bar) return;
+  function update() {
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    bar.style.width = (max > 0 ? (window.scrollY / max) * 100 : 0) + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  update();
+})();
+
+/* Keyboard navigation: [ previous chapter, ] next chapter. */
+(function () {
+  function isTyping(e) {
+    var t = e.target;
+    if (!t) return false;
+    return /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e)) return;
+    var k = e.key;
+    if (k === '[') {
+      var prev = document.querySelector('.chapter-nav-prev');
+      if (prev) { e.preventDefault(); prev.click(); }
+    } else if (k === ']') {
+      var next = document.querySelector('.chapter-nav-next');
+      if (next) { e.preventDefault(); next.click(); }
+    }
+  });
+})();
+
+/* "Copy link to section" button appended to every h2/h3. */
+(function () {
+  var content = document.querySelector('.reader-content');
+  if (!content) return;
+
+  function toast(msg) {
+    var t = document.getElementById('copy-toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'copy-toast';
+      t.className = 'copy-toast';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('visible');
+    clearTimeout(t._hide);
+    t._hide = setTimeout(function () { t.classList.remove('visible'); }, 1600);
+  }
+
+  content.querySelectorAll('h2, h3').forEach(function (h) {
+    if (!h.id) return;
+    var a = document.createElement('a');
+    a.className = 'heading-link';
+    a.href = '#' + h.id;
+    a.setAttribute('aria-label', 'Link to ' + h.textContent.trim());
+    a.title = 'Copy link to section';
+    a.textContent = '\u00B6';
+    h.appendChild(a);
+  });
+
+  content.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('.heading-link') : null;
+    if (!a) return;
+    e.preventDefault();
+    var url = window.location.href.split('#')[0] + a.getAttribute('href');
+    function done() {
+      toast('Section link copied');
+      window.location.hash = a.getAttribute('href');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, function () { done(); });
+    } else {
+      done();
+    }
+  });
+})();
+
+/* Estimated reading time for chapter pages (~200 wpm). */
+(function () {
+  var el = document.getElementById('reading-time');
+  if (!el) return;
+  var content = document.querySelector('.reader-content');
+  if (!content) return;
+  var clone = content.cloneNode(true);
+  clone.querySelectorAll('pre, code, script, style, .breadcrumb, .share-bar, .chapter-nav, .continue-reading, .heading-link').forEach(function (n) {
+    if (n.parentNode) n.parentNode.removeChild(n);
+  });
+  var words = (clone.textContent || '').trim().split(/\s+/).filter(Boolean).length;
+  el.textContent = '\u00b7 ' + Math.max(1, Math.round(words / 200)) + ' min read';
+})();
+
+/* Per-page notes panel, autosaved to localStorage. */
+(function () {
+  var panel = document.getElementById('notes-panel');
+  var scrim = document.getElementById('notes-scrim');
+  var toggle = document.getElementById('notes-toggle');
+  var closeBtn = document.getElementById('notes-close');
+  var text = document.getElementById('notes-text');
+  var status = document.getElementById('notes-status');
+  if (!panel || !text) return;
+
+  var pageKey = document.body.getAttribute('data-chapter-id') ||
+                document.body.getAttribute('data-page-type') ||
+                'page';
+  var KEY = 'nwgNotes';
+
+  function loadAll() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function save() {
+    var all = loadAll();
+    all[pageKey] = text.value;
+    localStorage.setItem(KEY, JSON.stringify(all));
+    if (status) {
+      status.textContent = 'Saved';
+      clearTimeout(save._t);
+      save._t = setTimeout(function () { status.textContent = ''; }, 1500);
+    }
+  }
+
+  text.value = loadAll()[pageKey] || '';
+  text.addEventListener('input', save);
+
+  function open() {
+    panel.hidden = false;
+    scrim.hidden = false;
+    toggle.classList.add('active');
+    text.focus();
+  }
+  function closePanel() {
+    panel.hidden = true;
+    scrim.hidden = true;
+    toggle.classList.remove('active');
+  }
+  if (toggle) toggle.addEventListener('click', function () { panel.hidden ? open() : closePanel(); });
+  if (closeBtn) closeBtn.addEventListener('click', closePanel);
+  if (scrim) scrim.addEventListener('click', closePanel);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !panel.hidden) closePanel();
+  });
+})();
+
+/* Save-current-chapter-as-PDF (browser print). */
+(function () {
+  var btn = document.getElementById('print-pdf');
+  if (btn) btn.addEventListener('click', function () { window.print(); });
+})();
+
+/* Copy canonical link from the chapter share bar. */
+(function () {
+  var btn = document.getElementById('share-copy');
+  if (!btn) return;
+  var canonical = document.querySelector('link[rel="canonical"]');
+  var url = canonical ? canonical.getAttribute('href') : window.location.href;
+  btn.addEventListener('click', function () {
+    function done() {
+      btn.textContent = 'Copied!';
+      setTimeout(function () { btn.textContent = 'Copy link'; }, 1500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, function () { done(); });
+    } else {
+      done();
+    }
+  });
+})();
+
+/* Newsletter signup (reader index). Endpoint is configured per-site via
+   window.SUBSCRIBE_ENDPOINT; until then the form directs to the RSS feed. */
+(function () {
+  var form = document.getElementById('subscribe-form');
+  var status = document.getElementById('subscribe-status');
+  var ENDPOINT = window.SUBSCRIBE_ENDPOINT || '';
+  if (!form || !status) return;
+
+  function show(msg, ok) {
+    status.textContent = msg;
+    status.hidden = false;
+    status.style.color = ok ? '' : '#c0392b';
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = document.getElementById('subscribe-email').value.trim();
+    if (!email) { show('Please enter your email.', false); return; }
+    if (!ENDPOINT) {
+      show('Newsletter coming soon — subscribe to the RSS feed for updates.', false);
+      return;
+    }
+    var btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = '...';
+    fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('bad status');
+      show('You are subscribed! Check your inbox to confirm.', true);
+      form.reset();
+    }).catch(function () {
+      show('Could not subscribe right now — please try again or use the RSS feed.', false);
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = 'Subscribe';
+    });
   });
 })();

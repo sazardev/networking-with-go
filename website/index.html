@@ -12,21 +12,32 @@
 <meta name="theme-color" content="#000000">
 <link rel="canonical" href="https://sazardev.github.io/networking-with-go/">
 <link rel="alternate" type="application/rss+xml" title="Networking with Go — Releases" href="https://github.com/sazardev/networking-with-go/releases.atom">
+<link rel="alternate" type="application/atom+xml" title="Networking with Go, Made Easy — New Chapters" href="https://sazardev.github.io/networking-with-go/feed.xml">
+<link rel="manifest" href="https://sazardev.github.io/networking-with-go/manifest.webmanifest">
+<link rel="preload" as="image" href="https://sazardev.github.io/networking-with-go/assets/og-card.png">
+<link rel="preconnect" href="https://raw.githubusercontent.com">
+<link rel="dns-prefetch" href="https://raw.githubusercontent.com">
+<script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(e){console.warn('SW registration failed',e)})})}</script>
 
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000'/%3E%3Ccircle cx='16' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='48' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='32' cy='16' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='19' y1='43' x2='29' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='45' y1='43' x2='35' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='21' y1='46' x2='43' y2='46' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
 
 <meta property="og:type" content="book">
 <meta property="og:site_name" content="Networking with Go, Made Easy">
+<meta property="og:locale" content="en_US">
 <meta property="og:title" content="Networking with Go, Made Easy — Free, Open-Source Book">
 <meta property="og:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — free PDF and EPUB.">
 <meta property="og:url" content="https://sazardev.github.io/networking-with-go/">
-<meta property="og:image" content="https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg">
-<meta property="og:image:alt" content="Networking with Go, Made Easy — book cover">
+<meta property="og:image" content="https://sazardev.github.io/networking-with-go/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="Networking with Go, Made Easy — free, open-source book on networking in Go">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Networking with Go, Made Easy — Free, Open-Source Book">
 <meta name="twitter:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — free PDF and EPUB.">
-<meta name="twitter:image" content="https://raw.githubusercontent.com/sazardev/networking-with-go/master/assets/cover.jpg">
+<meta name="twitter:image" content="https://sazardev.github.io/networking-with-go/assets/og-card.png">
+<meta name="twitter:image:alt" content="Networking with Go, Made Easy — free, open-source book on networking in Go">
 
 <script type="application/ld+json">
 {
@@ -156,6 +167,54 @@
           }
         }
       ]
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Networking with Go, Made Easy really free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The book text is licensed CC BY-NC 4.0 and the code MIT — you can read every chapter free online, and download the PDF and EPUB free from the GitHub Releases page."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to know Go before reading it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. A dedicated Go Fundamentals section teaches the language from scratch, including a flagship chapter on goroutines, channels, and concurrency, before any networking code starts."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to know networking first?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Part 1 explains networking concepts — TCP/IP, IP addressing, ports, protocols, NAT, VPNs — with history, analogies, and diagrams, with zero code required."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What topics does the book cover?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The full journey from TCP/IP and UDP to HTTP, WebSockets, DNS, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, SQLite, Docker, and Google Cloud — 150+ chapters."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I use the code in my own projects?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. All the code in the book and exercises/ is MIT licensed — use it freely, with or without attribution. The book text itself is CC BY-NC 4.0."
+      }
     }
   ]
 }
@@ -556,6 +615,45 @@
     color: var(--muted);
   }
   footer a { text-decoration: underline; }
+
+  .newsletter {
+    border-top: 1px solid var(--line-soft);
+    background: var(--card);
+    padding: 48px 0;
+    text-align: center;
+  }
+  .newsletter h2 { font-family: var(--mono); font-size: 20px; margin: 0 0 8px; }
+  .newsletter p { color: var(--muted); max-width: 560px; margin: 0 auto 20px; font-size: 14px; }
+  .subscribe-form {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .subscribe-form input[type="email"] {
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 10px 14px;
+    min-width: 260px;
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    background: var(--bg);
+    color: var(--fg);
+  }
+  .subscribe-form button {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 18px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--fg);
+    color: var(--bg);
+    cursor: pointer;
+  }
+  .subscribe-form button:disabled { opacity: 0.6; cursor: default; }
+  .subscribe-status { font-family: var(--mono); font-size: 13px; min-height: 18px; }
+  .subscribe-alt { font-family: var(--mono); font-size: 12px; }
+  .subscribe-alt a { text-decoration: underline; }
 
   @media (max-width: 720px) {
     .hero-grid { grid-template-columns: 1fr; gap: 32px; }
@@ -1040,7 +1138,20 @@
   </div>
 </section>
 
-</main>
+ </main>
+
+<section class="newsletter" id="newsletter">
+  <div class="wrap">
+    <h2>Get notified when new chapters land</h2>
+    <p>The book is updated continuously. Leave your email and you will only hear from us when a new part or chapter is published — no spam, ever.</p>
+    <form id="subscribe-form" class="subscribe-form" novalidate>
+      <input id="subscribe-email" type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+      <button type="submit">Subscribe</button>
+    </form>
+    <p class="subscribe-status" id="subscribe-status" hidden></p>
+    <p class="subscribe-alt">Prefer RSS? <a href="https://sazardev.github.io/networking-with-go/feed.xml">Subscribe to the chapter feed</a>.</p>
+  </div>
+</section>
 
 <footer>
   <div class="wrap">
@@ -1190,6 +1301,53 @@
       .catch(function (err) {
         console.warn('Could not load star count.', err);
       });
+  })();
+
+  /* Newsletter signup. Set SUBSCRIBE_ENDPOINT to your provider's subscribe
+     URL (e.g. Buttondown: https://buttondown.email/<user>/api/subscribe, or
+     the action URL of a Mailchimp/ConvertKit form). Until then the form
+     points readers to the RSS feed instead. */
+  var SUBSCRIBE_ENDPOINT = '';
+  (function () {
+    var form = document.getElementById('subscribe-form');
+    var status = document.getElementById('subscribe-status');
+    if (!form || !status) return;
+
+    function show(msg, ok) {
+      status.textContent = msg;
+      status.hidden = false;
+      status.style.color = ok ? 'inherit' : '#c0392b';
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = document.getElementById('subscribe-email').value.trim();
+      if (!email) { show('Please enter your email.', false); return; }
+
+      if (!SUBSCRIBE_ENDPOINT) {
+        show('Newsletter coming soon — subscribe to the RSS feed for updates.', false);
+        return;
+      }
+
+      var btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      btn.textContent = '...';
+
+      fetch(SUBSCRIBE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      }).then(function (res) {
+        if (!res.ok) throw new Error('bad status');
+        show('You are subscribed! Check your inbox to confirm.', true);
+        form.reset();
+      }).catch(function () {
+        show('Could not subscribe right now — please try again or use the RSS feed.', false);
+      }).then(function () {
+        btn.disabled = false;
+        btn.textContent = 'Subscribe';
+      });
+    });
   })();
 </script>
 

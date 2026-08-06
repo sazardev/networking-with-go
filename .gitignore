@@ -34,3 +34,5 @@ Thumbs.db
 /website/read/*/*.html
 /website/read/search-index.json
 /website/sitemap.xml
+/website/feed.xml
+/website/sw-precache.js
