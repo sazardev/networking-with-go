@@ -164,6 +164,20 @@
     if (e.target === palette) close();
   });
 
+  /* Sitelinks search box: when Google (or anyone) lands on /read/?q=terms,
+     pre-open the palette with that query so the results are immediately
+     visible — wired to the WebSite SearchAction JSON-LD. */
+  var q = new URLSearchParams(window.location.search).get('q');
+  if (q) {
+    open();
+    loadIndex().then(function () {
+      input.value = q;
+      renderResults(q);
+      activeIndex = 0;
+      input.focus();
+    });
+  }
+
   renderResults('');
 })();
 

@@ -90,7 +90,27 @@ var (
 	headingRe    = regexp.MustCompile(`(?s)<h([1-3]) id="([^"]+)">(.*?)</h[1-3]>`)
 	tagStripRe   = regexp.MustCompile(`<[^>]+>`)
 	slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+	wordTokenRe  = regexp.MustCompile(`[A-Za-z][A-Za-z0-9\-.]{2,}`)
 )
+
+// buildTimeRFC3339 stamps every page with the render time — an honest
+// last-modified signal for article meta and structured data (chapters get
+// re-rendered whenever the docs change, so this is genuinely their mtime).
+var buildTimeRFC3339 = time.Now().UTC().Format(time.RFC3339)
+
+// commonWords are ignored when deriving per-page keyword tags.
+var commonWords = map[string]bool{
+	"the": true, "and": true, "for": true, "are": true, "but": true, "not": true,
+	"you": true, "with": true, "from": true, "that": true, "this": true, "have": true,
+	"your": true, "into": true, "about": true, "what": true, "more": true, "than": true,
+	"over": true, "them": true, "then": true, "some": true, "these": true, "would": true,
+	"their": true, "also": true, "when": true, "which": true, "part": true, "chapter": true,
+	"using": true, "how": true, "why": true, "its": true, "they": true, "there": true,
+	"will": true, "make": true, "each": true, "other": true, "such": true, "should": true,
+	"through": true, "between": true, "only": true, "because": true, "those": true,
+	"many": true, "while": true, "where": true, "whose": true, "after": true, "before": true,
+	"during": true, "without": true, "first": true, "been": true,
+}
 
 // linkCtx carries the relative-path prefixes needed at a given page depth.
 // Only two depths exist: read/ itself (depth0) and read/<part>/ (depth1).
@@ -281,6 +301,7 @@ func main() {
 	writeSitemap(results)
 	writeFeed(results)
 	writePrecache(results)
+	writeLLMS(results)
 
 	log.Printf("done: %d parts, %d chapters, %d search entries", len(results), totalChapters, len(search))
 }
@@ -422,6 +443,51 @@ func truncateWords(s string, n int) string {
 	return strings.TrimSpace(cut) + "…"
 }
 
+// deriveKeywords extracts a deduplicated, ordered set of significant words
+// from the given texts — used to emit per-page <meta name="keywords"> and
+// JSON-LD "keywords" (super tags) without any manual tagging.
+func deriveKeywords(texts ...string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range texts {
+		for _, w := range wordTokenRe.FindAllString(t, -1) {
+			lw := strings.ToLower(w)
+			if commonWords[lw] || len(lw) < 3 || seen[lw] {
+				continue
+			}
+			seen[lw] = true
+			out = append(out, lw)
+		}
+	}
+	if len(out) > 12 {
+		out = out[:12]
+	}
+	return out
+}
+
+// keywordsString builds the comma-joined keyword list for a page, always
+// leading with the book's core terms for brand/query consistency.
+func keywordsString(extra ...[]string) string {
+	base := []string{"networking", "golang", "go"}
+	var kws []string
+	seen := map[string]bool{}
+	for _, b := range base {
+		if !seen[b] {
+			seen[b] = true
+			kws = append(kws, b)
+		}
+	}
+	for _, group := range extra {
+		for _, w := range group {
+			if !seen[w] {
+				seen[w] = true
+				kws = append(kws, w)
+			}
+		}
+	}
+	return strings.Join(kws, ", ")
+}
+
 // chapterOGDescription builds a short, marketing-aware share description for
 // a chapter page: book pitch + part context + the chapter's own hook.
 func chapterOGDescription(p part, ch chapterEntry) string {
@@ -480,23 +546,29 @@ func marshalLD(graph []ldNode) string {
 	return "<script type=\"application/ld+json\">\n" + safe + "\n</script>\n"
 }
 
-func chapterJSONLD(ch chapterEntry, p part, position int, canonicalURL string) string {
+func chapterJSONLD(ch chapterEntry, p part, position int, canonicalURL string, keywords string, about []string) string {
 	graph := []ldNode{
 		{
-			"@type": "Chapter",
-			"name":  ch.Title,
+			"@type":              "Chapter",
+			"name":               ch.Title,
+			"headline":           ch.Title,
+			"keywords":           keywords,
+			"genre":              p.Title,
 			"isPartOf": ldNode{
 				"@type": "Book",
-				"name":  "Networking with Go, Made Easy",
+				"name":  bookName,
 				"url":   siteBase + "/",
 			},
 			"position":            position,
 			"url":                 canonicalURL,
 			"author":              ldNode{"@type": "Person", "name": "Omar Flores Salazar", "url": "https://github.com/sazardev"},
+			"publisher":           ldNode{"@type": "Person", "name": "Omar Flores Salazar", "url": "https://github.com/sazardev"},
 			"license":             "https://creativecommons.org/licenses/by-nc/4.0/",
 			"isAccessibleForFree": true,
 			"description":         ch.Excerpt,
 			"inLanguage":          "en",
+			"dateModified":        buildTimeRFC3339,
+			"mainEntityOfPage":    ldNode{"@type": "WebPage", "@id": canonicalURL},
 		},
 		{
 			"@type": "BreadcrumbList",
@@ -507,7 +579,52 @@ func chapterJSONLD(ch chapterEntry, p part, position int, canonicalURL string) s
 			},
 		},
 	}
+	if len(about) > 0 {
+		things := make([]ldNode, len(about))
+		for i, t := range about {
+			things[i] = ldNode{"@type": "Thing", "name": t}
+		}
+		graph[0]["about"] = things
+	}
 	return marshalLD(graph)
+}
+
+// websiteJSONLD advertises the site-wide search action so search engines can
+// show a sitelinks search box pointing at the reader's full-text search.
+func websiteJSONLD() string {
+	graph := []ldNode{
+		{
+			"@type": "WebSite",
+			"@id":   siteBase + "/#website",
+			"name":  bookName,
+			"url":   siteBase + "/",
+			"potentialAction": ldNode{
+				"@type": "SearchAction",
+				"target": ldNode{
+					"@type":      "EntryPoint",
+					"urlTemplate": siteBase + "/read/index.html?q={search_term_string}",
+				},
+				"query-input": "required name=search_term_string",
+			},
+		},
+	}
+	return marshalLD(graph)
+}
+
+// matchingTopicTitles returns the curated topics whose keywords appear in a
+// chapter title, used to link chapters to topics in structured data.
+func matchingTopicTitles(title string) []string {
+	var names []string
+	lower := strings.ToLower(title)
+	for _, t := range topics {
+		for _, kw := range t.Keywords {
+			if strings.Contains(lower, strings.ToLower(kw)) {
+				names = append(names, t.Title)
+				break
+			}
+		}
+	}
+	return names
 }
 
 func partIndexJSONLD(p part, chapters []chapterEntry) string {
@@ -542,6 +659,7 @@ type pageMeta struct {
 	Description    string // <meta name="description"> and og:description fallback
 	OGTitle        string // og:title / twitter:title (short, marketing-aware)
 	OGDescription  string // og:description / twitter:description (marketing-aware)
+	Keywords       string // <meta name="keywords"> / JSON-LD keywords (per-page super tags)
 	Canonical      string
 	OGType         string
 	ArticleSection string // article:section (part name) on chapter pages
@@ -565,13 +683,20 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 	fullTitle := m.Title + " — Networking with Go, Made Easy"
 	fmt.Fprintf(&b, "<title>%s</title>\n", html.EscapeString(fullTitle))
 	fmt.Fprintf(&b, `<meta name="description" content="%s">`+"\n", html.EscapeString(m.Description))
-	b.WriteString(`<meta name="robots" content="index, follow, max-image-preview:large">` + "\n")
+	b.WriteString(`<meta name="author" content="Omar Flores Salazar">` + "\n")
+	b.WriteString(`<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">` + "\n")
+	b.WriteString(`<meta name="bingbot" content="index, follow, max-image-preview:large">` + "\n")
+	if m.Keywords != "" {
+		fmt.Fprintf(&b, `<meta name="keywords" content="%s">`+"\n", html.EscapeString(m.Keywords))
+	}
 	fmt.Fprintf(&b, `<link rel="canonical" href="%s">`+"\n", m.Canonical)
 	fmt.Fprintf(&b, `<link rel="icon" type="image/svg+xml" href="%s">`+"\n", favicon)
 	fmt.Fprintf(&b, `<link rel="manifest" href="%smanifest.webmanifest">`+"\n", ctx.toSite)
 	fmt.Fprintf(&b, `<link rel="alternate" type="application/atom+xml" title="%s — New Chapters" href="%sfeed.xml">`+"\n", html.EscapeString(bookName), ctx.toSite)
 	fmt.Fprintf(&b, `<link rel="preload" as="image" href="%sassets/og-card.png">`+"\n", ctx.toSite)
 	b.WriteString(`<meta name="theme-color" content="#0a0a0a">` + "\n")
+	b.WriteString(`<link rel="preconnect" href="https://cdn.jsdelivr.net">` + "\n")
+	b.WriteString(`<link rel="dns-prefetch" href="https://cdn.jsdelivr.net">` + "\n")
 
 	// Open Graph — complete set so Facebook, WhatsApp, Telegram, Slack and
 	// LinkedIn all render a rich card from the branded og-card image.
@@ -596,6 +721,9 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 
 	if m.ArticleSection != "" {
 		fmt.Fprintf(&b, `<meta property="article:section" content="%s">`+"\n", html.EscapeString(m.ArticleSection))
+		fmt.Fprintf(&b, `<meta property="article:author" content="Omar Flores Salazar">`+"\n")
+		fmt.Fprintf(&b, `<meta property="article:published_time" content="%s">`+"\n", buildTimeRFC3339)
+		fmt.Fprintf(&b, `<meta property="article:modified_time" content="%s">`+"\n", buildTimeRFC3339)
 	}
 
 	if m.JSONLD != "" {
@@ -722,15 +850,17 @@ func paletteMarkup(ctx linkCtx) string {
 
 func renderChapterPage(ch chapterEntry, p part, prev, next *flatRef, globalPos int, sidebar, theme string) string {
 	canonical := fmt.Sprintf("%s/read/%s/%s.html", siteBase, p.Slug, ch.Slug)
+	keywords := keywordsString(deriveKeywords(ch.Title, p.Title, ch.Excerpt))
 	meta := pageMeta{
 		Title:          ch.Title,
 		Description:    truncateWords(ch.Excerpt, 160),
 		OGTitle:        ch.Title,
 		OGDescription:  chapterOGDescription(p, ch),
+		Keywords:       keywords,
 		Canonical:      canonical,
 		OGType:         "article",
 		ArticleSection: p.Title,
-		JSONLD:         chapterJSONLD(ch, p, globalPos, canonical),
+		JSONLD:         chapterJSONLD(ch, p, globalPos, canonical, keywords, matchingTopicTitles(ch.Title)),
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth1, theme))
@@ -757,6 +887,7 @@ func renderPartIndexPage(r partResult, sidebar, theme string) string {
 		Description:   truncateWords(r.meta.Desc, 160),
 		OGTitle:       r.meta.Title + " — Networking with Go, Made Easy",
 		OGDescription: partOGDescription(r.meta, len(r.chapters)),
+		Keywords:      keywordsString(deriveKeywords(r.meta.Title, r.meta.Desc)),
 		Canonical:     canonical,
 		OGType:        "website",
 		JSONLD:        partIndexJSONLD(r.meta, r.chapters),
@@ -787,8 +918,10 @@ func renderIndexPage(results []partResult, sidebar, theme string) string {
 		Description:   "Read all 150 chapters of Networking with Go, Made Easy free in your browser — same content as the PDF, same fonts, with full-text search.",
 		OGTitle:       "Read Online — Networking with Go, Made Easy",
 		OGDescription: "Read all 150 chapters of Networking with Go, Made Easy free in your browser — the open-source book on networking in Go: TCP/IP, UDP, HTTP, WebSockets, DNS, gRPC, TLS, ethical hacking, and production APIs. Same content as the PDF, with full-text search.",
+		Keywords:      keywordsString(deriveKeywords("Networking with Go book TCP IP UDP HTTP WebSockets DNS gRPC TLS security API programming")),
 		Canonical:     siteBase + "/read/index.html",
 		OGType:        "website",
+		JSONLD:        websiteJSONLD(),
 	}
 	var b strings.Builder
 	b.WriteString(pageHead(meta, ctxDepth0, theme))
@@ -831,28 +964,73 @@ func newsletterBox() string {
 }
 
 func writeSitemap(results []partResult) {
-	type urlEntry struct{ Loc, ChangeFreq, Priority string }
+	type urlEntry struct{ Loc, Lastmod, ChangeFreq, Priority string }
 
+	now := time.Now().UTC().Format("2006-01-02")
 	var urls []urlEntry
-	urls = append(urls, urlEntry{siteBase + "/", "weekly", "1.0"})
-	urls = append(urls, urlEntry{siteBase + "/read/index.html", "weekly", "0.9"})
+	urls = append(urls, urlEntry{siteBase + "/", now, "weekly", "1.0"})
+	urls = append(urls, urlEntry{siteBase + "/read/index.html", now, "weekly", "0.9"})
+	urls = append(urls, urlEntry{siteBase + "/read/topics/index.html", now, "monthly", "0.8"})
 	for _, r := range results {
-		urls = append(urls, urlEntry{siteBase + "/read/" + r.meta.Slug + "/index.html", "monthly", "0.8"})
+		urls = append(urls, urlEntry{siteBase + "/read/" + r.meta.Slug + "/index.html", now, "monthly", "0.8"})
 		for _, ch := range r.chapters {
-			urls = append(urls, urlEntry{siteBase + "/read/" + r.meta.Slug + "/" + ch.Slug + ".html", "monthly", "0.7"})
+			urls = append(urls, urlEntry{siteBase + "/read/" + r.meta.Slug + "/" + ch.Slug + ".html", now, "monthly", "0.7"})
 		}
 	}
 
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
-	for _, u := range urls {
-		fmt.Fprintf(&b, "  <url>\n    <loc>%s</loc>\n    <changefreq>%s</changefreq>\n    <priority>%s</priority>\n  </url>\n", u.Loc, u.ChangeFreq, u.Priority)
+	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">` + "\n")
+	for i, u := range urls {
+		fmt.Fprintf(&b, "  <url>\n    <loc>%s</loc>\n    <lastmod>%s</lastmod>\n    <changefreq>%s</changefreq>\n    <priority>%s</priority>\n",
+			u.Loc, u.Lastmod, u.ChangeFreq, u.Priority)
+		if i == 0 || i == 1 {
+			fmt.Fprintf(&b, "    <image:image><image:loc>%s</image:loc></image:image>\n", ogCardURL)
+		}
+		b.WriteString("  </url>\n")
 	}
 	b.WriteString(`</urlset>` + "\n")
 
 	writeFile("website/sitemap.xml", b.String())
 	log.Printf("sitemap: %d URLs", len(urls))
+}
+
+// writeLLMS regenerates website/llms.txt with the full, current chapter
+// index so AI crawlers and assistants can discover and ground on every
+// chapter by URL without crawling the whole site first.
+func writeLLMS(results []partResult) {
+	chapterCount := 0
+	for _, r := range results {
+		chapterCount += len(r.chapters)
+	}
+	var b strings.Builder
+	b.WriteString("# " + bookName + "\n\n")
+	b.WriteString("> A free, open-source book that teaches computer networking and network programming in Go (Golang) from first principles through production APIs and ethical hacking/cybersecurity. Author: Omar Flores Salazar. Book text license: CC BY-NC 4.0 (attribution required, non-commercial use only — do not reproduce or retrain on this text for commercial purposes without permission). Example code license: MIT. " + strconv.Itoa(chapterCount) + " chapters across 8 parts. Written for complete beginners and experienced engineers at the same time.\n\n")
+	b.WriteString("## Key facts\n")
+	b.WriteString("- Free forever, no paywall, no signup, no ads.\n")
+	fmt.Fprintf(&b, "- Read online (every chapter on its own page, full-text search): %s/read/index.html\n", siteBase)
+	fmt.Fprintf(&b, "- Latest release and PDF download: %s/releases/latest\n", "https://github.com/sazardev/networking-with-go")
+	fmt.Fprintf(&b, "- Source and full table of contents: %s\n", "https://github.com/sazardev/networking-with-go")
+	fmt.Fprintf(&b, "- Full sitemap of all chapter pages: %s/sitemap.xml\n\n", siteBase)
+	b.WriteString("## Chapters\n")
+	for _, r := range results {
+		fmt.Fprintf(&b, "### %s\n", r.meta.Title)
+		for _, ch := range r.chapters {
+			fmt.Fprintf(&b, "- [%s](%s/read/%s/%s.html): %s\n",
+				ch.Title, siteBase, r.meta.Slug, ch.Slug, truncateWords(ch.Excerpt, 200))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("## More\n")
+	fmt.Fprintf(&b, "- Browse by topic: %s/read/topics/index.html\n", siteBase)
+	fmt.Fprintf(&b, "- Chapter feed (Atom): %s/feed.xml\n", siteBase)
+	fmt.Fprintf(&b, "- FAQ: %s/#faq\n", siteBase)
+	fmt.Fprintf(&b, "- Contributing: %s\n", "https://github.com/sazardev/networking-with-go/blob/master/.github/CONTRIBUTING.md")
+	b.WriteString("- Book text license (CC BY-NC 4.0): https://github.com/sazardev/networking-with-go/blob/master/LICENSE-CONTENT\n")
+	b.WriteString("- Code license (MIT): https://github.com/sazardev/networking-with-go/blob/master/LICENSE\n")
+
+	writeFile("website/llms.txt", b.String())
+	log.Printf("llms.txt: %d chapters listed", chapterCount)
 }
 
 // topicChapters matches a topic's keywords against chapter titles so the
