@@ -47,6 +47,8 @@ func main() {
 }
 ```
 
+**Try It Yourself:** wire `net/http/pprof` into one of your own TCP or HTTP servers from earlier chapters, generate some artificial load against it, and capture both a CPU and a heap profile to see which functions actually show up. There's no bundled exercise file for this chapter yet — the snippet above is everything you need to start.
+
 With that running, `go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30` captures a 30-second CPU profile, and `go tool pprof http://localhost:6060/debug/pprof/heap` captures a memory snapshot — both open into an interactive explorer that shows exactly which functions are consuming CPU or allocating memory.
 
 ### Beyond CPU and Heap

@@ -1,0 +1,163 @@
+---
+id: "[5.13.0]"
+title: "Secure Coding Practices in Go"
+---
+
+# Secure Coding Practices in Go
+
+> "Most break-ins in a building happen through a door that was left unlocked, not a wall someone tunneled through. Most exploited software bugs are the same: an ordinary mistake, not an exotic attack."
+
+---
+
+## Security Is Mostly Ordinary Code, Written Carefully
+
+Everything covered earlier in Part 3 — scanning, sniffing, assessing, testing — is about finding weaknesses from the outside. This chapter is about not creating them in the first place. The encouraging news for Go developers: the language's design already eliminates entire classes of memory-safety bugs (buffer overflows, use-after-free) that plague C and C++ codebases. What's left is a smaller, very learnable set of habits around input handling, secrets, and trust boundaries.
+
+---
+
+## Validate Input at the Trust Boundary
+
+Chapter 5.2 introduced trust boundaries — the points where data crosses from untrusted to trusted. Every one of those crossings deserves explicit validation, not an assumption that the data looks like what you expect:
+
+```go
+func parseAge(input string) (int, error) {
+	age, err := strconv.Atoi(input)
+	if err != nil {
+		return 0, fmt.Errorf("invalid age: %w", err)
+	}
+	if age < 0 || age > 150 {
+		return 0, fmt.Errorf("age out of range: %d", age)
+	}
+	return age, nil
+}
+```
+
+This looks almost too simple to mention, but the vast majority of injection-style vulnerabilities exist precisely because a boundary like this was skipped somewhere upstream, and unvalidated data eventually reached something that trusted it.
+
+---
+
+## Avoid SQL Injection: Always Parameterize
+
+Never build a SQL query by concatenating untrusted input into a string. Go's `database/sql` package supports parameterized queries directly, and there's essentially no reason to do otherwise:
+
+```go
+// WRONG — string concatenation lets an attacker's input change the
+// meaning of the query itself.
+// query := "SELECT * FROM users WHERE name = '" + name + "'"
+
+// RIGHT — the driver sends the value separately from the query
+// structure, so it can never be interpreted as SQL syntax.
+rows, err := db.Query("SELECT * FROM users WHERE name = ?", name)
+if err != nil {
+	return fmt.Errorf("query: %w", err)
+}
+defer rows.Close()
+```
+
+The placeholder syntax (`?` for most drivers, `$1` for `lib/pq`/`pgx`) varies by driver, but the principle is universal: the query's structure and the untrusted value travel to the database separately, so the value can never be reinterpreted as part of the query.
+
+---
+
+## Avoid Command Injection: Don't Build Shell Strings
+
+`os/exec` is safe by default *if* you use it correctly — pass arguments as separate slice elements, never as one interpolated string handed to a shell:
+
+```go
+// WRONG — if userInput contains ";" or "&&", it can inject arbitrary
+// additional commands when run through a shell.
+// cmd := exec.Command("sh", "-c", "ping "+userInput)
+
+// RIGHT — arguments are passed directly to the program, never
+// through a shell that could reinterpret special characters.
+cmd := exec.Command("ping", "-c", "1", userInput)
+output, err := cmd.Output()
+if err != nil {
+	return fmt.Errorf("ping failed: %w", err)
+}
+```
+
+Even the "right" version above still deserves validating `userInput` looks like a plausible hostname before use — `exec.Command` won't let it inject shell syntax, but it will happily hand a malformed or unexpected value straight to the `ping` binary.
+
+---
+
+## Prevent Path Traversal
+
+Any code that builds a file path from user input needs to guard against `../` sequences that escape an intended directory:
+
+```go
+func safeOpen(baseDir, requestedName string) (*os.File, error) {
+	cleaned := filepath.Clean("/" + requestedName) // collapses "../" traversal
+	full := filepath.Join(baseDir, cleaned)
+	base := filepath.Clean(baseDir) + string(os.PathSeparator)
+	if !strings.HasPrefix(full, base) {
+		return nil, fmt.Errorf("invalid path: %s", requestedName)
+	}
+	return os.Open(full)
+}
+```
+
+Prepending `/` before `filepath.Clean` forces any leading `../` segments to collapse against the root rather than escape upward, and the prefix check afterward is a second, independent guard against anything that still slipped through.
+
+---
+
+## Use `crypto/rand`, Never `math/rand`, for Security-Sensitive Values
+
+`math/rand` is a fast, deterministic pseudo-random generator meant for simulations and non-adversarial use — its output is predictable if an attacker can observe enough of it or knows the seed. Anything security-sensitive (tokens, session IDs, keys) must use `crypto/rand`:
+
+```go
+func generateToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil { // crypto/rand.Read
+		return "", fmt.Errorf("generate token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+```
+
+<Warning title="math/rand vs crypto/rand">Using `math/rand` (or its top-level `rand.Int`/`rand.Intn` functions) to generate a session token, password reset code, or API key is a common, serious mistake — its output can be predicted by an attacker who observes enough samples. Import `crypto/rand` instead for anything where unpredictability is a security property, not just a usability one.</Warning>
+
+---
+
+## Handle Secrets Deliberately
+
+- **Never hardcode credentials or keys** in source code — they end up in version control history permanently, even if removed later.
+- **Load secrets from the environment or a dedicated secrets manager**, not from a config file checked into the repository.
+- **Don't log secrets** — a debug log line that includes a full request, including an `Authorization` header, is a very common accidental leak.
+- **Zero sensitive byte slices after use where practical** — Go's garbage collector doesn't guarantee memory is scrubbed, but overwriting a slice that held a key reduces the window it's recoverable in memory.
+
+---
+
+## Don't Leak Information Through Errors
+
+An error message returned to a client should be useful to the client, not to an attacker probing for internals:
+
+```go
+if err != nil {
+	log.Printf("db query failed: %v", err) // detail goes to your own logs
+	// generic message to the caller; no internal details leaked
+	http.Error(w, "internal server error", http.StatusInternalServerError)
+	return
+}
+```
+
+A raw database error returned directly to an HTTP response can reveal schema details, file paths, or library versions — small pieces of reconnaissance (Chapter 5.4) that an attacker didn't have to work for.
+
+---
+
+## Frequently Asked Questions
+
+**Go doesn't have buffer overflows like C, so is it basically immune to the vulnerabilities covered elsewhere in Part 3?**
+No — Go's memory safety removes an entire historical category of bugs, but every vulnerability class in this chapter (injection, path traversal, predictable randomness, leaked secrets) is a logic mistake, not a memory-safety one, and Go offers no automatic protection against any of them. The language closing one door doesn't close the others; it just means the remaining set of habits to learn is smaller and more learnable than in C or C++.
+
+**My `os/exec` call passes user input as a separate argument instead of a shell string, so is it fully safe now?**
+Safer, but not automatically finished — `exec.Command` with separate slice elements prevents shell metacharacters like `;` or `&&` from being reinterpreted as additional commands, which closes the command-injection door. It doesn't validate that the input is a sane value in the first place, so a malformed or unexpected argument can still reach the underlying program unchecked; the chapter's own example still recommends validating that a hostname looks like a hostname before use.
+
+**Why does it matter whether I use `math/rand` or `crypto/rand` if both just produce random-looking numbers?**
+Because "random-looking" and "unpredictable to an attacker" are different properties. `math/rand` is a deterministic pseudo-random generator designed for simulations, and its future output can be predicted by anyone who observes enough samples or knows its seed. Anything security-sensitive — a session token, a password reset code, an API key — needs `crypto/rand`, whose output is designed specifically to resist that kind of prediction.
+
+**A raw database error message seems harmless to return to a client — why treat it as a security issue?**
+Because "harmless" from the developer's chair looks very different from an attacker's chair — a raw database error can quietly reveal schema details, internal file paths, or library versions, which is exactly the kind of reconnaissance detail covered in Chapter 5.4 that an attacker would otherwise have to work to discover. Logging the detail for yourself while returning a generic message to the caller keeps that information on your side of the trust boundary.
+
+## A Habit, Not a Checklist
+
+None of the above is exotic. Every item is a normal Go idiom applied with one extra question asked: *where did this value come from, and what happens if it's hostile?* That question, asked consistently at every trust boundary, prevents far more real-world incidents than any single clever defensive technique.

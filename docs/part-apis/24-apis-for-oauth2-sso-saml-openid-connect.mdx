@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"os"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -42,23 +43,26 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state mismatch", http.StatusBadRequest)
 		return
 	}
+	clearStateCookie(w) // one-time use: never valid for a second callback
 
 	code := r.URL.Query().Get("code")
-	token, err := oauthConfig.Exchange(context.Background(), code)
+	token, err := oauthConfig.Exchange(r.Context(), code)
 	if err != nil {
 		http.Error(w, "token exchange failed", http.StatusBadGateway)
 		return
 	}
 
-	client := oauthConfig.Client(context.Background(), token)
+	client := oauthConfig.Client(r.Context(), token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
 	// ... read the profile, create or find a local user, set your own session
 }
 ```
 
-The `state` parameter is not optional decoration — it's what prevents a cross-site request forgery attack where an attacker tricks a victim into completing an OAuth flow the attacker initiated. Always generate it randomly per login attempt, store it (a short-lived cookie is fine), and reject the callback if it doesn't match.
+The `state` parameter is not optional decoration — it's what prevents a cross-site request forgery attack where an attacker tricks a victim into completing an OAuth flow the attacker initiated. Always generate it randomly per login attempt, store it (a short-lived cookie is fine), reject the callback if it doesn't match, and clear it immediately after a successful match so the same state value can never be replayed against a second callback.
 
 <Warning title="An access token is not proof of identity">OAuth2 on its own only proves the app was granted some scope of access — the userinfo endpoint call above is what tells you who the user is, and it's a convention some providers support, not part of the OAuth2 spec itself. If identity matters (and it usually does for login), reach for OpenID Connect instead of trying to bolt identity onto plain OAuth2 yourself.</Warning>
+
+<Warning title="Public clients need PKCE, not just a client secret">A server-side app can keep `ClientSecret` genuinely secret, but a mobile app or single-page app cannot — anything shipped to a user's device can be decompiled or inspected. For those "public" clients, add PKCE (Proof Key for Code Exchange, RFC 7636): generate a random `code_verifier`, send its SHA-256 hash as `code_challenge` in the authorization request, and present the original `code_verifier` during the token exchange so the provider can confirm the app completing the exchange is the same one that started it — even without a client secret. Go's `golang.org/x/oauth2` package supports this via `oauth2.S256ChallengeOption` and `oauth2.VerifierOption`.</Warning>
 
 ## OpenID Connect: identity, formally
 

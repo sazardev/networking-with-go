@@ -108,6 +108,10 @@ func parseToken(tokenString string) (*Claims, error) {
 ## Middleware to Require a Valid Token
 
 ```go
+type contextKey string
+
+const userContextKey contextKey = "user"
+
 func requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")

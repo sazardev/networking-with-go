@@ -19,7 +19,7 @@ With 3 replicas behind a load balancer, and a per-client limit of 5 requests/sec
 
 Redis is the standard shared store for this, since it's fast enough to check on every request and supports atomic operations needed to avoid race conditions between instances checking and incrementing a counter concurrently.
 
-A sliding-window counter using `INCR` and `EXPIRE`, via `github.com/redis/go-redis/v9`:
+A fixed-window counter using `INCR` and `EXPIRE`, via `github.com/redis/go-redis/v9`:
 
 ```go
 import (
@@ -157,6 +157,8 @@ Exposing `X-RateLimit-Limit` and `X-RateLimit-Remaining` (a de facto standard, t
 ---
 
 ## Putting It Together
+
+A production-grade rate limiter combines every piece from this chapter: a Redis-backed counter so all replicas share one view of a client's usage, tier-aware limits so a paying customer and a free-tier client aren't held to the same ceiling, `X-RateLimit-*` response headers so well-behaved clients can throttle themselves before hitting a `429`, and an explicit, deliberate answer to what happens when Redis itself is unreachable. None of these pieces is optional in a multi-instance deployment — drop the shared counter and you're back to the per-instance undercounting this chapter opened with; drop the fail-open/fail-closed decision and a Redis blip quietly becomes either an outage or a wide-open API.
 
 ## Frequently Asked Questions
 

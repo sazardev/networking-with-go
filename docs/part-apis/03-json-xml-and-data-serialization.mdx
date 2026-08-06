@@ -7,6 +7,8 @@ title: "JSON, XML, and Data Serialization"
 
 Every API eventually boils down to one question: how do we turn a Go struct into bytes on the wire, and back again? That process is serialization, and Go's standard library gives you two solid, built-in answers — `encoding/json` and `encoding/xml` — without needing a single third-party dependency. This chapter covers both, how struct tags shape the output, and how to negotiate which format a client actually wants.
 
+You've already met struct tags, `DisallowUnknownFields`, and `MaxBytesReader` in Part 2, Chapter 3.11 — this chapter goes further into API-specific concerns: content negotiation and the pitfalls unique to REST payloads.
+
 ---
 
 ## Why Serialization Matters
@@ -64,10 +66,10 @@ When writing HTTP handlers, prefer streaming over a `[]byte` round trip: `json.N
 
 ```go
 type Order struct {
-	XMLName xml.Name `xml:"order"`
-	ID      int      `xml:"id,attr"`
-	Item    string   `xml:"item"`
-	Price   float64  `xml:"price"`
+	XMLName xml.Name `xml:"order" json:"-"`
+	ID      int      `xml:"id,attr" json:"id"`
+	Item    string   `xml:"item" json:"item"`
+	Price   float64  `xml:"price" json:"price"`
 }
 ```
 

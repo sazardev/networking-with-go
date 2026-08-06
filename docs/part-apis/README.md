@@ -1,10 +1,10 @@
 # Part APIs: Building Modern APIs & Backends with Go
 
-Esta sección cubre el diseño, implementación y despliegue de APIs modernas y backends en Go, incluyendo REST, WebSockets, caching, seguridad, patrones avanzados y más. Cada capítulo incluye teoría, ejemplos y soluciones prácticas.
+This section covers the design, implementation, and deployment of modern APIs and backends in Go, including REST, WebSockets, caching, security, advanced patterns, and more. Each chapter includes theory, examples, and practical solutions.
 
 ---
 
-## Tabla de Contenidos
+## Table of Contents
 
 1. [API Fundamentals: REST, HTTP, and the Web](01-api-fundamentals-rest-http-and-the-web.mdx)
 2. [Designing Clean URLs, Query Params, and Routing](02-designing-clean-urls-query-params-and-routing.mdx)
@@ -40,8 +40,8 @@ Esta sección cubre el diseño, implementación y despliegue de APIs modernas y 
 30. [APIs for Serverless and FaaS](30-apis-for-serverless-and-faas.mdx)
 31. [APIs for Edge Computing and CDN](31-apis-for-edge-computing-and-cdn.mdx)
 32. [APIs for Advanced Security](32-apis-for-advanced-security.mdx)
-33. [APIs for Advanced Observability: Metrics and Logging](33-apis-for-advanced-observability.mdx)
-34. [APIs for Advanced Observability: Distributed Tracing](34-apis-for-advanced-observability.mdx)
+33. [APIs for Advanced Observability: Metrics and Logging](33-apis-for-advanced-observability-metrics-logging.mdx)
+34. [APIs for Advanced Observability: Distributed Tracing](34-apis-for-advanced-observability-distributed-tracing.mdx)
 
 ### Production Backend Track: One Project, Start to Finish
 Chapters 35-42 build a single coherent order-management API across all of them (RPC layer, real database, container, architecture, capstone); 43-45 cover deploying, operating, and attacking it.
@@ -60,4 +60,4 @@ Chapters 35-42 build a single coherent order-management API across all of them (
 
 ---
 
-> Cada archivo contiene teoría, ejemplos y enlaces a ejercicios prácticos.
+> Each file contains theory, examples, and links to practical exercises.

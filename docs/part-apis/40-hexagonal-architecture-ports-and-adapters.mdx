@@ -79,10 +79,21 @@ type OrderRepository interface {
 	Save(ctx context.Context, o *Order) error
 }
 
+type DomainEvent interface {
+	EventName() string
+}
+
 type EventPublisher interface {
-	Publish(ctx context.Context, eventName string, payload any) error
+	Publish(ctx context.Context, event DomainEvent) error
 }
 ```
+
+`Order`, `NewOrder`, and `ErrOrderNotPaid` (used throughout this chapter's
+code) are the same `domain/order.go` types from Chapter 6.39, folded here
+into the `core` package along with the use case — this chapter reuses that
+file rather than redefining it. `DomainEvent` here is a small preview of a
+concept Chapter 6.41 develops much further; the only requirement it places
+on an event is that it can name itself.
 
 `OrderRepository` is a driven port — the core calls out through it.
 `EventPublisher` is also driven — publishing an `OrderShipped` event (the
@@ -96,6 +107,12 @@ interfaces:
 package core
 
 import "context"
+
+type OrderShipped struct {
+	OrderID string
+}
+
+func (OrderShipped) EventName() string { return "OrderShipped" }
 
 type ShipOrder struct {
 	Orders     OrderRepository
@@ -113,7 +130,7 @@ func (uc *ShipOrder) Execute(ctx context.Context, orderID string) error {
 	if err := uc.Orders.Save(ctx, order); err != nil {
 		return err
 	}
-	return uc.Publisher.Publish(ctx, "OrderShipped", order)
+	return uc.Publisher.Publish(ctx, OrderShipped{OrderID: order.ID})
 }
 ```
 
@@ -127,6 +144,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"ordermgmt/internal/core"
@@ -143,7 +161,7 @@ func (h *OrderHandler) Ship(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusOK)
-	case err == core.ErrOrderNotPaid:
+	case errors.Is(err, core.ErrOrderNotPaid):
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	default:
@@ -315,9 +333,9 @@ type recordingPublisher struct {
 }
 
 func (p *recordingPublisher) Publish(
-	ctx context.Context, name string, payload any,
+	ctx context.Context, event core.DomainEvent,
 ) error {
-	p.events = append(p.events, name)
+	p.events = append(p.events, event.EventName())
 	return nil
 }
 

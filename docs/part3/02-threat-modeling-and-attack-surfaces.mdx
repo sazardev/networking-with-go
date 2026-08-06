@@ -66,9 +66,9 @@ import "fmt"
 
 // EntryPoint represents one way into the system from the network.
 type EntryPoint struct {
-	Name           string
-	Protocol       string
-	RequiresAuth   bool
+	Name         string
+	Protocol     string
+	RequiresAuth bool
 	// InternalOnly is true when only reachable from the internal
 	// network, not the public internet.
 	InternalOnly bool

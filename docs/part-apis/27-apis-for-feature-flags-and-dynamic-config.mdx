@@ -15,13 +15,16 @@ At its core, a feature flag is a named boolean (or, more usefully, a named boole
 package main
 
 import (
+	"database/sql"
+	"log"
 	"sync"
 	"time"
 )
 
 type FlagStore struct {
-	mu    sync.RWMutex
-	flags map[string]bool
+	mu     sync.RWMutex
+	flags  map[string]bool
+	config RuntimeConfig
 }
 
 func (s *FlagStore) IsEnabled(name string) bool {
@@ -41,8 +44,15 @@ func (s *FlagStore) refresh(db *sql.DB) {
 	for rows.Next() {
 		var name string
 		var enabled bool
-		rows.Scan(&name, &enabled)
+		if err := rows.Scan(&name, &enabled); err != nil {
+			log.Printf("scan feature flag row: %v", err)
+			return
+		}
 		next[name] = enabled
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("iterate feature flag rows: %v", err)
+		return
 	}
 
 	s.mu.Lock()
@@ -52,7 +62,9 @@ func (s *FlagStore) refresh(db *sql.DB) {
 
 func (s *FlagStore) startPolling(db *sql.DB, interval time.Duration) {
 	go func() {
-		for range time.Tick(interval) {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
 			s.refresh(db)
 		}
 	}()
@@ -125,8 +137,25 @@ The same infrastructure that flips features on and off is a natural home for oth
 
 ```go
 type RuntimeConfig struct {
-	MaxPageSize     int
+	MaxPageSize       int
 	DownstreamTimeout time.Duration
+}
+
+// refreshConfig loads the current config row on the same polling cadence as
+// refresh above, and populates the config field added to FlagStore's struct
+// definition earlier in this chapter.
+func (s *FlagStore) refreshConfig(db *sql.DB) {
+	var cfg RuntimeConfig
+	var timeoutMs int
+	row := db.QueryRow(`SELECT max_page_size, downstream_timeout_ms FROM runtime_config WHERE id = 1`)
+	if err := row.Scan(&cfg.MaxPageSize, &timeoutMs); err != nil {
+		return
+	}
+	cfg.DownstreamTimeout = time.Duration(timeoutMs) * time.Millisecond
+
+	s.mu.Lock()
+	s.config = cfg
+	s.mu.Unlock()
 }
 
 func (s *FlagStore) Config() RuntimeConfig {
@@ -135,6 +164,8 @@ func (s *FlagStore) Config() RuntimeConfig {
 	return s.config
 }
 ```
+
+Call `refreshConfig` from `startPolling` alongside `refresh` so both the flags and the config stay current on the same interval.
 
 ## Exposing flag state through your own API
 

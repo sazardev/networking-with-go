@@ -15,10 +15,9 @@ Go's goroutines and channels make it a genuinely good language for writing your 
 package main
 
 import (
-	"fmt"
+	"io"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -53,6 +52,7 @@ func loadTest(url string, concurrency int, totalRequests int) []result {
 					}
 					continue
 				}
+				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 				results <- result{
 					status:   resp.StatusCode,
@@ -83,6 +83,7 @@ For anything beyond a quick sanity check, `tsenart/vegeta` is a mature, widely u
 
 ```go
 import (
+	"fmt"
 	"time"
 
 	vegeta "github.com/tsenart/vegeta/v12/lib"

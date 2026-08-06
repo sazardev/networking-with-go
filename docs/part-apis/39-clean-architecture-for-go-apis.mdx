@@ -252,7 +252,7 @@ func main() {
 	repo := postgres.NewOrderRepository(pool)
 	shipOrder := usecase.NewShipOrder(repo)
 
-	_ = shipOrder // wired into an HTTP handler in Chapter 6.42
+	_ = shipOrder // wired into an HTTP handler starting next chapter, 6.40
 }
 ```
 

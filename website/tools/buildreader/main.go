@@ -500,6 +500,8 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 
 	b.WriteString("<style>\n" + theme + "\n</style>\n")
 	fmt.Fprintf(&b, `<link rel="stylesheet" href="%sreader.css">`+"\n", ctx.toRead)
+	b.WriteString(`<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>` + "\n")
+	b.WriteString(`<script>mermaid.initialize({startOnLoad:false});addEventListener('DOMContentLoaded',function(){document.querySelectorAll('code.language-mermaid').forEach(function(c){var p=c.closest('pre');p.className='mermaid';p.textContent=c.textContent});mermaid.run()})</script>` + "\n")
 	b.WriteString("</head>\n")
 	return b.String()
 }

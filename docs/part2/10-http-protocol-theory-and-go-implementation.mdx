@@ -12,7 +12,7 @@ title: "HTTP: Protocol Theory and Go Implementation"
 ## What is HTTP?
 - **HTTP (Hypertext Transfer Protocol)** is the foundation of data communication on the web.
 - **Request/Response Model:** Clients (like browsers or Go programs) send requests; servers respond with data.
-- **Stateless:** Each request is independent—servers don’t remember previous requests by default.
+- **Stateless:** Each request is independent—servers don't remember previous requests by default.
 - **Analogy:** Like sending a letter and getting a reply—each letter stands alone.
 
 <Axiom>HTTP is just text over a connection: everything net/http does is convenience on top of that.</Axiom>
@@ -75,7 +75,7 @@ sequenceDiagram
 
 ## Go in Action: Basic HTTP Server
 
-Let’s build a simple HTTP server in Go that responds with a greeting.
+Let's build a simple HTTP server in Go that responds with a greeting.
 
 ```go
 package main
@@ -139,7 +139,7 @@ func main() {
 
 ## Go in Action: Basic HTTP Client
 
-Let’s write a Go program that fetches a web page.
+Let's write a Go program that fetches a web page.
 
 ```go
 package main
@@ -204,7 +204,7 @@ func main() {
 ## Go in Action: Routing and Concurrent Servers
 
 - **Routing:** Direct different URLs to different handlers.
-- **Concurrency:** Go’s HTTP server handles each request in its own goroutine.
+- **Concurrency:** Go's HTTP server handles each request in its own goroutine.
 
 **Example: Custom Routes**
 
@@ -310,6 +310,7 @@ context to expire) before returning.
 package main
 import (
     "context"
+    "errors"
     "fmt"
     "net/http"
     "os"
@@ -339,7 +340,7 @@ func main() {
     go func() {
         fmt.Println("Server listening at http://localhost:8084 ...")
         err := server.ListenAndServe()
-        if err != nil && err != http.ErrServerClosed {
+        if err != nil && !errors.Is(err, http.ErrServerClosed) {
             fmt.Println("Server error:", err)
         }
     }()
@@ -404,7 +405,7 @@ No — `Shutdown` only tracks ordinary HTTP handlers; hijacked connections such 
 
 ## Key Takeaways
 - HTTP is the backbone of web communication: request/response, stateless, text-based.
-- Go’s `net/http` package makes building servers and clients easy and concurrent.
+- Go's `net/http` package makes building servers and clients easy and concurrent.
 - Use handlers for routing, and context for cancellation.
 - Each request is handled in its own goroutine—scalable by default!
 - Always set explicit `Server` timeouts (`ReadTimeout`, `WriteTimeout`,

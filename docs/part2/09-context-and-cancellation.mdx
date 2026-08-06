@@ -5,14 +5,14 @@ title: "Context and Cancellation: Concepts and Go Implementation"
 
 # Context and Cancellation: Concepts and Go Implementation
 
-> "Imagine you’re in a busy airport. You’re waiting for your flight, but you need to be ready to leave at a moment’s notice if your gate changes, your flight is canceled, or you get a call from home. In Go, `context.Context` is your boarding pass: it carries deadlines, cancellation signals, and extra info everywhere you go!"
+> "Imagine you're in a busy airport. You're waiting for your flight, but you need to be ready to leave at a moment's notice if your gate changes, your flight is canceled, or you get a call from home. In Go, `context.Context` is your boarding pass: it carries deadlines, cancellation signals, and extra info everywhere you go!"
 
 ---
 
 ## Why Context Matters in Networking
 
 - **Networking is unpredictable:** Clients disconnect, timeouts happen, and requests may need to be canceled.
-- **Go’s solution:** The `context` package lets you control cancellation, timeouts, and pass request-scoped data across API boundaries and goroutines.
+- **Go's solution:** The `context` package lets you control cancellation, timeouts, and pass request-scoped data across API boundaries and goroutines.
 - **Analogy:** Context is like a walkie-talkie for your goroutines—when the boss says "stop!", everyone hears it and can clean up.
 
 <Axiom>Context does not do work — it tells work when to stop.</Axiom>
@@ -42,7 +42,7 @@ never `context` (that shadows the package import).
 
 ## Context in Action: Basic Cancellation
 
-Let’s see how to cancel a goroutine using context.
+Let's see how to cancel a goroutine using context.
 
 ```go
 package main
@@ -150,7 +150,7 @@ func main() {
 }
 ```
 
-- **¿Qué hace cada parte?**
+- **What does each part do?**
   - `net.Dialer.DialContext`: abandons the connection attempt the
     moment `ctx` is done, instead of waiting on the OS's own
     (often much longer) connect timeout.
@@ -166,7 +166,7 @@ func main() {
 ## Passing Values with Context
 
 - **Use sparingly:** Only for request-scoped data (e.g., auth tokens, trace IDs).
-- **Not for everything:** Don’t use context for passing optional parameters or configs.
+- **Not for everything:** Don't use context for passing optional parameters or configs.
 
 ```go
 ctx := context.WithValue(context.Background(), "userID", 42)
@@ -174,7 +174,7 @@ userID := ctx.Value("userID")
 fmt.Println("UserID:", userID)
 ```
 
-<Warning title="Plain string keys collide">The snippet above uses the bare string `"userID"` as a key. It works in isolation, but `context.Value` is looked up across the *entire* dependency tree — if any other package also happens to use the string `"userID"`, the two collide silently and one overwrites the other. `go vet` flags this pattern (SA1029) because it has caused real production bugs. The fix is an unexported key type, which no other package can ever construct a colliding value of: ```go package main import ( "context" "fmt" ) type ctxKey int const userIDKey ctxKey = iota func main() { ctx := context.WithValue(context.Background(), userIDKey, 42) userID := ctx.Value(userIDKey) fmt.Println("UserID:", userID) } ``` Because `ctxKey` is unexported, no other package can construct a value of that type — so no other package's key can ever collide with `userIDKey`, even one using the same underlying string or int.</Warning>
+<Warning title="Plain string keys collide">The snippet above uses the bare string `"userID"` as a key. It works in isolation, but `context.Value` is looked up across the *entire* dependency tree — if any other package also happens to use the string `"userID"`, the two collide silently and one overwrites the other. `staticcheck` flags this pattern (SA1029) because it has caused real production bugs. The fix is an unexported key type, which no other package can ever construct a colliding value of: ```go package main import ( "context" "fmt" ) type ctxKey int const userIDKey ctxKey = iota func main() { ctx := context.WithValue(context.Background(), userIDKey, 42) userID := ctx.Value(userIDKey) fmt.Println("UserID:", userID) } ``` Because `ctxKey` is unexported, no other package can construct a value of that type — so no other package's key can ever collide with `userIDKey`, even one using the same underlying string or int.</Warning>
 
 [Exercise: Context Values](../../exercises/part2/09-context-values/main.go)
 
@@ -182,7 +182,7 @@ fmt.Println("UserID:", userID)
 
 ## Go in Action: Context in a TCP Server
 
-Let’s build a TCP server that can cancel client handlers using context.
+Let's build a TCP server that can cancel client handlers using context.
 
 ```go
 package main
@@ -303,7 +303,7 @@ closes, but the handler simply never looks.
 
 ---
 
-## Deep Dive: How Go’s Context Works Internally
+## Deep Dive: How Go's Context Works Internally
 
 - **Context is an interface:**
   - `Deadline()`, `Done()`, `Err()`, `Value(key)`
@@ -343,7 +343,7 @@ flowchart TD
 - Always pass context as the first argument (`ctx context.Context`).
 - Cancel contexts to clean up goroutines and resources.
 - Contexts propagate signals down the call chain—great for complex systems!
-- Don’t use context for everything—only for data that must travel with a request.
+- Don't use context for everything—only for data that must travel with a request.
 - Pair every `With*` call with a `defer cancel()` on the very next line.
 - Check `ctx.Err()` (`context.Canceled` vs `context.DeadlineExceeded`)
   to tell *why* work stopped, not just *that* it stopped.

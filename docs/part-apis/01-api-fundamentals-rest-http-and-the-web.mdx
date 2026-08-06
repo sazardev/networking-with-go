@@ -5,305 +5,202 @@ title: "API Fundamentals: REST, HTTP, and the Web"
 
 # API Fundamentals: REST, HTTP, and the Web
 
-Welcome to **Part APIs: Building Modern APIs & Backends with Go**!
+Welcome to **Part APIs**. This section builds production-ready HTTP APIs and backends in Go — from `net/http` fundamentals through frameworks, databases, Docker, cloud deployment, and production architecture. Every chapter pairs concepts with working Go code.
 
-APIs (Application Programming Interfaces) are the bridges and highways of the digital world. Imagine a city where every building is a different app or service—APIs are the roads, traffic lights, and intersections that let them communicate, share, and collaborate. In this section, we’ll demystify APIs, REST, and HTTP, using fun analogies, clear theory, and visual diagrams to make these concepts easy and memorable.
+By now you already understand HTTP at the protocol level (Part 2, Chapter 10), you have written TCP and UDP servers in Go, and you are comfortable with goroutines and channels. This chapter is the bridge: a concise refresher on APIs and REST, followed immediately by Go code.
 
 ---
 
 ## What is an API?
 
-Think of an API as a restaurant menu. When you visit a restaurant, you don’t go into the kitchen and cook your own food. Instead, you look at the menu (the API), choose what you want, and the kitchen (the server) prepares it for you. You don’t need to know how the food is made—you just need to know what you can order and how to ask for it.
+An API (Application Programming Interface) is a contract between two programs: a defined set of endpoints, request shapes, and response shapes that one program exposes and another consumes. It abstracts implementation so the client does not need to know how the server stores data, which database it uses, or what language it is written in — only the contract matters.
 
-- **API = Menu**: Lists what you can ask for.
-- **Request = Your Order**: You tell the waiter what you want.
-- **Response = Your Meal**: The kitchen prepares and delivers your food.
+- **Endpoint**: A specific URL and method combination (e.g. `GET /users/42`).
+- **Request**: The client's structured call — method, headers, and optionally a body.
+- **Response**: The server's structured reply — status code, headers, and optionally a body.
+- **Contract**: The rules for what can be asked and what will be returned. Good contracts are documented, versioned, and backwards-compatible.
 
-APIs let programs talk to each other in a standardized way, just like menus let customers order food without chaos.
-
----
-
-### More Fun Analogies
-- **Remote Control:** An API is like a TV remote—you don’t need to know how the TV works inside, just which buttons to press to get what you want.
-- **Power Outlet:** Plug in any device (app) and as long as it fits the socket (API contract), it works—no need to know how the electricity is generated.
-- **Vending Machine:** You press a button (make a request), and the machine (API) gives you a snack (response)—no need to see the inner workings!
+<Axiom>An API is a promise. The server promises to understand a specific set of requests and the client promises to send only what the contract allows.</Axiom>
 
 ---
 
-### Key API Concepts
-- **Endpoints:** Think of these as the different items on the menu, each with its own address (URL). For example, `/weather` or `/users/42`.
-- **Data Formats:** APIs usually speak in common languages like JSON or XML—like agreeing to use English or Spanish to communicate.
-- **API Contract:** The rules for what you can ask for and what you’ll get back. Like a menu that says “No substitutions!”
+## REST Principles
+
+REST (Representational State Transfer) is an architectural style for designing APIs around **resources**, each identified by a URL, manipulated through standard HTTP methods.
+
+- **Statelessness**: Each request carries all the information the server needs to process it. The server does not remember previous requests — every call is self-contained.
+- **Resource Representation**: Data is modeled as resources (`/users`, `/orders`, `/products/42`). The URL identifies *what* you want; the HTTP method identifies *what to do with it*.
+- **Uniform Interface**: Standard HTTP methods (GET, POST, PUT, DELETE, PATCH) mean any HTTP client can interact with any REST API without learning a custom protocol.
+- **Client-Server Separation**: The client and server evolve independently as long as the contract holds.
+
+### HTTP Methods to CRUD
+
+| Method | CRUD | Meaning | Safe? | Idempotent? |
+|--------|------|---------|-------|-------------|
+| GET | Read | Retrieve a resource | Yes | Yes |
+| POST | Create | Create a new resource | No | No |
+| PUT | Update | Replace a resource entirely | No | Yes |
+| PATCH | Update | Partially update a resource | No | No |
+| DELETE | Delete | Remove a resource | Yes | No |
+
+**Safe** means the request does not modify server state. **Idempotent** means calling it N times has the same effect as calling it once.
+
+### Example: E-Commerce API
+
+- `GET /products` — list products
+- `GET /products/42` — retrieve product 42
+- `POST /cart` — add an item to the cart
+- `PUT /cart/42` — replace cart item 42 entirely
+- `PATCH /cart/42` — update the quantity of cart item 42
+- `DELETE /cart/42` — remove cart item 42
 
 ---
 
-### Real-World API Examples
-- **Weather Apps:** Use APIs to fetch the latest forecast from a weather service.
-- **Maps & Navigation:** Apps like Google Maps use APIs to get directions, traffic, and places.
-- **Payments:** Online stores use payment APIs (like Stripe or PayPal) to process transactions securely.
-- **Social Media:** Apps use APIs to post tweets, upload photos, or fetch your friends list.
+## HTTP Status Codes
+
+Every response carries a three-digit status code. Learn the ranges, not individual codes:
+
+| Range | Meaning | Examples |
+|-------|---------|----------|
+| 2xx | Success | 200 OK, 201 Created, 204 No Content |
+| 3xx | Redirection | 301 Moved Permanently, 304 Not Modified |
+| 4xx | Client error | 400 Bad Request, 401 Unauthorized, 404 Not Found |
+| 5xx | Server error | 500 Internal Server Error, 503 Service Unavailable |
+
+<Warning title="4xx vs 5xx — who is at fault">Codes in the 4xx range mean the client sent something invalid or asked for something that does not exist — the server understood the request and correctly refused it. Codes in the 5xx range mean the server itself failed while handling an otherwise valid request. Learning to read the first digit of a status code before reading the body saves debugging time.</Warning>
 
 ---
 
-### APIs Are Everywhere!
-- **Smart Homes:** Your phone talks to your smart lights or thermostat via APIs.
-- **IoT Devices:** Sensors, cameras, and gadgets all use APIs to send and receive data.
-- **Automation:** Businesses connect different tools (like Slack, email, and databases) using APIs to automate workflows.
+## Go in Action: A Minimal REST API
 
----
+Enough review. Here is a complete, runnable Go program — an HTTP server that exposes two endpoints (`GET /health` and `GET /users/{id}`) and returns JSON. This is the starting shape every API in this section builds on.
 
-### Visual: API as a Bridge
-> _Imagine a bridge connecting two islands (apps). The bridge (API) has clear rules: who can cross, what they can carry, and how to get to the other side._
+```go
+package main
 
-```mermaid
-flowchart LR
-    A[App 1] -- Request --> B(API Bridge)
-    B -- Response --> A
-    B -- Talks to --> C[App 2 / Server]
-```
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"strconv"
+)
 
-APIs are the bridges that make the digital world work together!
+type User struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
 
----
+var users = map[int]User{
+	1: {ID: 1, Name: "Alice"},
+	2: {ID: 2, Name: "Bob"},
+}
 
-## REST: The Waiter Who Follows the Rules
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", healthHandler)
+	mux.HandleFunc("GET /users/{id}", userHandler)
 
-Imagine REST as the most professional waiter in a high-end restaurant. This waiter follows strict rules to ensure every order is handled perfectly:
-- **Consistency**: Every customer gets the same level of service.
-- **Efficiency**: Orders are taken, processed, and delivered quickly.
-- **Clarity**: The menu (API documentation) is easy to understand.
+	log.Println("Listening on :8080")
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}
 
----
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
 
-### REST Principles
+func userHandler(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid user ID",
+		})
+		return
+	}
 
-REST (Representational State Transfer) is built on a few key principles:
-- **Statelessness**: Each request is independent. The waiter doesn’t remember your previous orders; you must specify everything each time.
-- **Resource Representation**: Data is represented as resources (e.g., `/users`, `/orders`). Each resource has a unique URL.
-- **Uniform Interface**: The waiter uses standard methods (GET, POST, PUT, DELETE) to interact with resources.
-- **Client-Server Architecture**: The client (you) and server (kitchen) are separate, allowing scalability.
+	user, ok := users[id]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "user not found",
+		})
+		return
+	}
 
----
+	writeJSON(w, http.StatusOK, user)
+}
 
-### Mapping HTTP Methods to CRUD
-
-RESTful APIs use HTTP methods to perform actions on resources:
-- **GET**: Retrieve data ("Can I see the dessert menu?").
-- **POST**: Create new data ("I’d like to order a pizza.").
-- **PUT**: Update existing data ("Change my order to a salad.").
-- **DELETE**: Remove data ("Cancel my order.").
-
-These methods map directly to CRUD operations:
-- **Create**: POST
-- **Read**: GET
-- **Update**: PUT
-- **Delete**: DELETE
-
----
-
-### Real-World Examples
-
-1. **E-commerce**:
-   - **GET** `/products`: Fetch a list of products.
-   - **POST** `/cart`: Add an item to the shopping cart.
-   - **PUT** `/cart/42`: Update the quantity of an item.
-   - **DELETE** `/cart/42`: Remove an item from the cart.
-
-2. **Social Media**:
-   - **GET** `/posts`: Fetch recent posts.
-   - **POST** `/posts`: Create a new post.
-   - **PUT** `/posts/123`: Edit a post.
-   - **DELETE** `/posts/123`: Delete a post.
-
----
-
-### Sample RESTful API Request
-
-Here’s an example of ordering pizza using REST:
-
-**Request:**
-```http
-POST /order HTTP/1.1
-Host: pizzashop.com
-Content-Type: application/json
-
-{
-  "topping": "pepperoni",
-  "size": "large"
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
 }
 ```
 
-**Response:**
-```http
-HTTP/1.1 201 Created
-Content-Type: application/json
+Key points:
 
-{
-  "orderId": 123,
-  "status": "baking"
-}
+- `http.NewServeMux()` with method-pattern routing (`GET /users/{id}`) — available since Go 1.22, no third-party router needed.
+- `r.PathValue("id")` extracts the path parameter.
+- `writeJSON` sets the content type, writes the status code, and encodes to JSON — a helper you will reuse across every API in this section.
+- `json.NewEncoder(w).Encode(v)` streams directly to the response writer instead of building a full `[]byte` buffer in memory.
+- The in-memory `users` map is fine for this example; later chapters replace it with SQL databases, mutex-guarded stores, and real persistence.
+
+### Testing It
+
+Run the server:
+
+```sh
+go run main.go
 ```
 
----
+In another terminal:
 
-### Visualizing RESTful APIs
+```sh
+curl localhost:8080/health
+# {"status":"ok"}
 
-```mermaid
-sequenceDiagram
-    participant Client as Client (You)
-    participant API as API (Waiter)
-    participant Server as Server (Kitchen)
-    Client->>API: POST /order {pizza}
-    API->>Server: Place order
-    Server-->>API: Order confirmation
-    API-->>Client: Order status
+curl localhost:8080/users/1
+# {"id":1,"name":"Alice"}
+
+curl localhost:8080/users/99
+# {"error":"user not found"}
 ```
 
----
+### What Makes This RESTful
 
-### Why REST Matters
+- Resources are identified by URLs (`/users/1`).
+- Standard HTTP methods express intent (GET retrieves, Chapter 4 adds POST/PUT/DELETE).
+- Responses include appropriate status codes (200, 404, 400).
+- The `Content-Type: application/json` header tells the client how to parse the body.
+- Each request is stateless — the server remembers nothing between calls.
 
-RESTful APIs are popular because they:
-- **Simplify Development**: Standard methods make APIs easy to design and use.
-- **Enhance Scalability**: Statelessness allows servers to handle more requests.
-- **Improve Interoperability**: Uniform interfaces work across different platforms.
-
-By mastering REST, you’ll be able to design APIs that are efficient, scalable, and easy to use. Let’s keep building!
-
----
-
-## HTTP: The Language of the Web
-
-HTTP (HyperText Transfer Protocol) is the backbone of the web, enabling communication between clients (like browsers or apps) and servers. It’s the universal language that ensures data flows smoothly across the internet. Let’s dive deeper into its components and why it’s so essential.
+<DeepDive title="Go 1.22 routing vs third-party routers">Before Go 1.22, `http.ServeMux` only supported exact path matching and prefix-based routing — method filtering and path parameters required a third-party library like `gorilla/mux`, `gin`, or `chi`. The 1.22 release added `HandleFunc("METHOD /path/{param}", handler)` natively. This section covers both: Chapter 4 uses `net/http` directly, Chapters 5 and 6 cover Gin and Fiber for readers who prefer a framework. Learning `net/http` first means every framework reads as sugar on top of primitives you already understand.</DeepDive>
 
 ---
-
-### What is HTTP?
-
-Imagine HTTP as the postal service of the internet. It delivers messages (requests and responses) between clients and servers, ensuring they follow a standardized format. Here’s how it works:
-
-- **Client**: The sender (e.g., your browser or app).
-- **Server**: The receiver (e.g., a website or API).
-- **Request**: The message sent by the client (e.g., “I want the homepage!”).
-- **Response**: The reply from the server (e.g., “Here’s the homepage!”).
-
----
-
-### Key Components of HTTP
-
-1. **URLs (Uniform Resource Locators)**:
-   - Think of URLs as addresses on the web. They tell the client where to send the request.
-   - Example: `https://example.com/users/42`.
-
-2. **Headers**:
-   - Headers are like instructions attached to a package. They provide metadata about the request or response.
-   - Example: `Content-Type: application/json` tells the server the data format.
-
-3. **Body**:
-   - The body contains the main content of the request or response.
-   - Example: A JSON object with user data.
-
-4. **Methods**:
-   - HTTP methods define the action to be performed:
-     - **GET**: Retrieve data.
-     - **POST**: Create new data.
-     - **PUT**: Update existing data.
-     - **DELETE**: Remove data.
-
----
-
-### How HTTP Works
-
-1. **Request**:
-   - The client sends an HTTP request to the server.
-   - Example:
-     ```http
-     GET /users HTTP/1.1
-     Host: example.com
-     Content-Type: application/json
-     ```
-
-2. **Response**:
-   - The server processes the request and sends back an HTTP response.
-   - Example:
-     ```http
-     HTTP/1.1 200 OK
-     Content-Type: application/json
-
-     {
-       "id": 42,
-       "name": "John Doe"
-     }
-     ```
-
----
-
-### HTTP Status Codes
-
-HTTP responses include status codes to indicate the result of the request:
-
-- **200 OK**: Success!
-- **404 Not Found**: The requested resource doesn’t exist.
-- **500 Internal Server Error**: Something went wrong on the server.
-- **301 Moved Permanently**: The resource has a new URL.
-
----
-
-### HTTP Versions
-
-1. **HTTP/1.1**:
-   - The most widely used version.
-   - Supports persistent connections and chunked transfers.
-
-2. **HTTP/2**:
-   - Faster and more efficient.
-   - Uses multiplexing to send multiple requests over a single connection.
-
-3. **HTTP/3**:
-   - The latest version.
-   - Built on QUIC, a protocol designed for speed and reliability.
-
----
-
-### Why HTTP Matters
-
-HTTP is the foundation of the web. Without it, browsers couldn’t fetch websites, apps couldn’t call APIs, and the internet as we know it wouldn’t exist. It’s simple, powerful, and universally understood.
-
----
-
-### Fun Analogies
-
-- **Postal Service**: HTTP is like sending letters—each request is a letter, and the response is the reply.
-- **Waiter**: The client places an order (request), and the server delivers the dish (response).
-- **Bridge**: HTTP connects clients and servers, ensuring data flows smoothly.
-
----
-
-### Visualizing HTTP: A Sequence Diagram
-
-```mermaid
-sequenceDiagram
-    participant Client as Client (Browser/App)
-    participant Server as Server (Website/API)
-    Client->>Server: GET /users
-    Server-->>Client: 200 OK + User Data
-```
 
 ## Frequently Asked Questions
 
 **Is REST the same thing as an API, or the same thing as JSON?**
-No to both, and mixing them up is one of the most common beginner confusions. API is the general concept of a menu-and-order contract between two programs; REST is one popular style of designing that contract around resources, URLs, and HTTP methods; JSON is just one of the data formats a REST API happens to speak most often. You could build an API that isn't RESTful, or a RESTful API that returns XML instead of JSON, and both would still be "an API."
+
+No. API is the general concept of a contract between two programs. REST is one architectural style for designing that contract. JSON is one data format a REST API commonly speaks. You can build an API that is not RESTful, and a RESTful API that returns XML instead of JSON — both are still "an API."
 
 **If REST is stateless, how does a site keep me logged in between requests?**
-The waiter genuinely doesn't remember your last order - statelessness means the server itself doesn't rely on remembering anything about you between requests. What actually happens is that the client resends proof of who it is with every single request, usually a token in a header, so from the server's point of view each request is still self-contained even though the experience feels continuous to you.
 
-**Why do PUT and DELETE even need to exist when POST could just include an "action" field saying what to do?**
-Because the whole value of the uniform interface is that the method itself already tells you the action, before anyone has to read the request body or documentation. A GET is safe to retry and cache by default, a DELETE is unambiguous from a server log line alone, and any generic HTTP tool (a proxy, a browser, a load balancer) can make reasonable decisions just by reading the method - none of that works if every action is disguised as an identical POST.
+The server does not remember your previous request — statelessness means each request is self-contained. What happens is the client resends proof of identity with every request, typically a token in the `Authorization` header. From the server's perspective, every request is independent even though the experience feels continuous to you.
 
-**I got a 500 error calling an API - is that my fault or the server's fault?**
-Almost always the server's, and that's exactly why the status code ranges exist: codes starting with 4 (like 404) mean the client asked for something in a way that was invalid or didn't exist, while codes starting with 5 (like 500) mean the server itself failed while trying to handle an otherwise valid request. Learning to read the first digit of a status code before digging further will save you a lot of debugging time.
+**Why use PUT and DELETE when POST could include an action field?**
 
-**Do I need to pick HTTP/2 or HTTP/3 myself when building an API?**
-Rarely as an explicit choice - which version is used is typically negotiated automatically between the client and server, and Go's standard library handles this for you in most setups. What matters more for you as an API builder is understanding what each version buys you (HTTP/2's multiplexing, HTTP/3's QUIC-based transport) so you know why a client might behave differently across environments, not manually selecting a version yourself.
+Because the method itself communicates intent before anyone reads the body or documentation. A GET is safe to retry and cache by default. A DELETE is unambiguous from a server log line. Proxies, browsers, and load balancers can make decisions based on the method alone — none of that works if every action is disguised as an identical POST.
 
-HTTP is the universal translator of the web, ensuring clients and servers can communicate seamlessly. Let’s explore how Go makes working with HTTP even easier!
+**Do I need to pick HTTP/2 or HTTP/3 myself?**
+
+Rarely. Which version is used is negotiated automatically between client and server. Go's standard library handles this transparently — the same `http.ListenAndServe` call works with HTTP/1.1 and HTTP/2. What matters is understanding what each version provides (HTTP/2's multiplexing, HTTP/3's QUIC-based transport) so you know why a client might behave differently across environments.
+
+**Is the `users` map in the example safe for concurrent access when multiple requests arrive at once?**
+
+No — this example is deliberately single-threaded to keep the code focused on HTTP fundamentals. A real server handling concurrent requests needs synchronization: a `sync.RWMutex` guarding the map, a `sync.Map`, or a database-backed store. Chapter 4 covers mutex-guarded in-memory stores; Chapters 36-37 cover SQL databases with built-in concurrency.
+
+---
+
+### Where This Goes From Here
+
+Chapter 2 dives into URL design, query parameters, and routing patterns. Chapter 3 covers JSON, XML, and serialization in depth. Chapter 4 builds the full CRUD API you will extend across this entire section — with proper error handling, middleware, and tests. The minimal server above is the seed: by the end of Part APIs you will have built, containerized, deployed, and secured a production-grade backend in Go.

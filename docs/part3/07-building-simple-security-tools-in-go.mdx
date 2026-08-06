@@ -116,7 +116,7 @@ Points worth understanding:
 - **Reading `resp.Header.Get(...)`** is all it takes to check a header's presence; the tool never needs to touch the response body to do this particular job.
 - The tool is **read-only** — a single `GET` — so it's safe to run against your own services routinely, even in CI, without any risk of side effects.
 
-This same skeleton — fetch, inspect, report — extends naturally: check for cookies missing the `Secure` or `HttpOnly` attributes, verify a redirect chain always ends on HTTPS, or confirm a certificate's expiry date is comfortably in the future (which ties directly into Chapter 5.13's certificate management material).
+This same skeleton — fetch, inspect, report — extends naturally: check for cookies missing the `Secure` or `HttpOnly` attributes, verify a redirect chain always ends on HTTPS, or confirm a certificate's expiry date is comfortably in the future (which ties directly into Chapter 5.12's certificate management material).
 
 ---
 

@@ -226,6 +226,8 @@ func requireRole(
 }
 ```
 
+**Try It Yourself:** extend the middleware above into a complete auth server — a `/login` handler that checks a password and issues a JWT, this `requireAuth` middleware guarding a protected route, and a `requireRole` check on top of it for an admin-only endpoint. There's no bundled exercise file for this chapter yet, so build it from the pieces above.
+
 Attaching the authenticated user ID to the request's `context.Context` — the same context type used for cancellation earlier in the book — lets downstream handlers retrieve "who is making this request" without re-parsing the token, using `r.Context().Value(userIDKey)`.
 
 Note the distinct status codes: `401 Unauthorized` means "I don't know who you are," while `403 Forbidden` means "I know who you are, and the answer is no" — a direct reflection of the authn/authz split at the HTTP level.

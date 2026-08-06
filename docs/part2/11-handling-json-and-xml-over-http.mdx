@@ -5,7 +5,7 @@ title: "Handling JSON and XML over HTTP: Concepts and Go Implementation"
 
 # Handling JSON and XML over HTTP: Concepts and Go Implementation
 
-> "Imagine you’re sending a package (data) through the mail (HTTP). JSON and XML are like the forms you fill out to describe what’s inside—structured, standardized, and understood by everyone."
+> "Imagine you're sending a package (data) through the mail (HTTP). JSON and XML are like the forms you fill out to describe what's inside—structured, standardized, and understood by everyone."
 
 ---
 
@@ -13,7 +13,7 @@ title: "Handling JSON and XML over HTTP: Concepts and Go Implementation"
 - **Data Interchange:** JSON and XML are the most common formats for exchanging data between clients and servers.
 - **Human-Readable:** Both formats are text-based and easy to debug.
 - **Widely Supported:** Every major programming language can read and write JSON and XML.
-- **Analogy:** Like using a customs form—everyone knows how to read it, no matter where it’s from.
+- **Analogy:** Like using a customs form—everyone knows how to read it, no matter where it's from.
 
 <DeepDive title="When Would You Actually Pick XML Today?">Most new HTTP APIs default to JSON: it's smaller on the wire, maps cleanly onto JavaScript objects, and Go's `encoding/json` is fast and ergonomic. XML still shows up constantly at the edges of a system, though — SOAP services, many banking and government integrations, configuration formats, and document-oriented data (think RSS feeds or anything with mixed text and markup) rely on XML's richer structure: attributes vs. elements, namespaces, and schemas (XSD) for strict validation. If you're integrating with an older enterprise system, don't be surprised if XML is the only option on the table.</DeepDive>
 
@@ -34,25 +34,97 @@ title: "Handling JSON and XML over HTTP: Concepts and Go Implementation"
 
 ## Go in Action: Serving and Consuming JSON (with Nested Data)
 
-Let’s build a server that returns a list of users (with nested fields) as JSON, and a client that fetches and posts users.
+Let's build a server that returns a list of users (with nested fields) as JSON, and a client that fetches and posts users.
 
 ### Server Example: Serve and Accept JSON
 
-See: [`json_server.go`](../../exercises/part2/11-json-xml-examples/json_server.go)
+The handler pair below serves the in-memory `users` slice as JSON and accepts new
+users posted to the same route, guarding the slice with a `sync.Mutex` since both
+handlers can run concurrently on different goroutines:
 
 ```go
-// ...see exercises/part2/11-json-xml-examples/json_server.go
-// for full code and comments...
+type User struct {
+    ID    int    `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+var (
+    users = []User{
+        {ID: 1, Name: "Alice", Email: "alice@example.com"},
+        {ID: 2, Name: "Bob", Email: "bob@example.com"},
+    }
+    mu sync.Mutex
+)
+
+func getUsers(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    mu.Lock()
+    defer mu.Unlock()
+    json.NewEncoder(w).Encode(users)
+}
+
+func addUser(w http.ResponseWriter, r *http.Request) {
+    var u User
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "Invalid body", http.StatusBadRequest)
+        return
+    }
+    if err := json.Unmarshal(body, &u); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    mu.Lock()
+    defer mu.Unlock()
+    u.ID = len(users) + 1
+    users = append(users, u)
+    w.WriteHeader(http.StatusCreated)
+    json.NewEncoder(w).Encode(u)
+}
 ```
+
+The full file (imports, the `/users` method-routing `main`) is
+[`json_server.go`](../../exercises/part2/11-json-xml-examples/json_server/main.go).
 
 ### Client Example: Fetch and Post JSON
 
-See: [`json_client.go`](../../exercises/part2/11-json-xml-examples/json_client.go)
+The matching client fetches the list with `http.Get`, decodes it straight from the
+response body, then encodes and posts a new `User`:
 
 ```go
-// ...see exercises/part2/11-json-xml-examples/json_client.go
-// for full code and comments...
+func main() {
+    resp, err := http.Get("http://localhost:8080/users")
+    if err != nil {
+        panic(err)
+    }
+    defer resp.Body.Close()
+    var users []User
+    if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+        panic(err)
+    }
+    for _, u := range users {
+        fmt.Printf("- ID: %d, Name: %s, Email: %s\n", u.ID, u.Name, u.Email)
+    }
+
+    newUser := User{Name: "Charlie", Email: "charlie@example.com"}
+    data, _ := json.Marshal(newUser)
+    resp2, err := http.Post(
+        "http://localhost:8080/users", "application/json",
+        bytes.NewBuffer(data),
+    )
+    if err != nil {
+        panic(err)
+    }
+    defer resp2.Body.Close()
+    var created User
+    body, _ := io.ReadAll(resp2.Body)
+    json.Unmarshal(body, &created)
+    fmt.Println("Created user:", created)
+}
 ```
+
+Full file: [`json_client.go`](../../exercises/part2/11-json-xml-examples/json_client/main.go).
 
 **Key Details:**
 - Use `json.NewEncoder(w).Encode(data)` to send JSON from a handler.
@@ -161,25 +233,98 @@ func createUserHandler(w http.ResponseWriter, r *http.Request) {
 
 ## Go in Action: Serving and Consuming XML (with Nested Elements)
 
-Let’s build a server that returns a list of products (with nested tags) as XML, and a client that fetches and posts products.
+Let's build a server that returns a list of products (with nested tags) as XML, and a client that fetches and posts products.
 
 ### Server Example: Serve and Accept XML
 
-See: [`xml_server.go`](../../exercises/part2/11-json-xml-examples/xml_server.go)
+The `Tags []string \`xml:"tags>tag"\`` tag is the nested-element part: it tells
+`encoding/xml` to wrap each tag in a `<tags>` element, one `<tag>` child per entry.
 
 ```go
-// ...see exercises/part2/11-json-xml-examples/xml_server.go
-// for full code and comments...
+type Product struct {
+    XMLName xml.Name `xml:"product"`
+    ID      int      `xml:"id"`
+    Name    string   `xml:"name"`
+    Tags    []string `xml:"tags>tag"`
+}
+
+type ProductList struct {
+    XMLName  xml.Name  `xml:"products"`
+    Products []Product `xml:"product"`
+}
+
+var (
+    products = []Product{
+        {ID: 1, Name: "Widget", Tags: []string{"gadget", "tool"}},
+        {ID: 2, Name: "Gizmo", Tags: []string{"device"}},
+    }
+    mu sync.Mutex
+)
+
+func getProducts(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/xml")
+    mu.Lock()
+    defer mu.Unlock()
+    xml.NewEncoder(w).Encode(ProductList{Products: products})
+}
+
+func addProduct(w http.ResponseWriter, r *http.Request) {
+    var p Product
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "Invalid body", http.StatusBadRequest)
+        return
+    }
+    if err := xml.Unmarshal(body, &p); err != nil {
+        http.Error(w, "Invalid XML", http.StatusBadRequest)
+        return
+    }
+    mu.Lock()
+    defer mu.Unlock()
+    p.ID = len(products) + 1
+    products = append(products, p)
+    w.WriteHeader(http.StatusCreated)
+    xml.NewEncoder(w).Encode(p)
+}
 ```
+
+Full file: [`xml_server.go`](../../exercises/part2/11-json-xml-examples/xml_server/main.go).
 
 ### Client Example: Fetch and Post XML
 
-See: [`xml_client.go`](../../exercises/part2/11-json-xml-examples/xml_client.go)
-
 ```go
-// ...see exercises/part2/11-json-xml-examples/xml_client.go
-// for full code and comments...
+func main() {
+    resp, err := http.Get("http://localhost:8081/products")
+    if err != nil {
+        panic(err)
+    }
+    defer resp.Body.Close()
+    var plist ProductList
+    if err := xml.NewDecoder(resp.Body).Decode(&plist); err != nil {
+        panic(err)
+    }
+    for _, p := range plist.Products {
+        fmt.Printf("- ID: %d, Name: %s, Tags: %v\n", p.ID, p.Name, p.Tags)
+    }
+
+    newProduct := Product{Name: "Thingamajig", Tags: []string{"novelty", "fun"}}
+    data, _ := xml.Marshal(newProduct)
+    resp2, err := http.Post(
+        "http://localhost:8081/products", "application/xml",
+        bytes.NewBuffer(data),
+    )
+    if err != nil {
+        panic(err)
+    }
+    defer resp2.Body.Close()
+    var created Product
+    body, _ := io.ReadAll(resp2.Body)
+    xml.Unmarshal(body, &created)
+    fmt.Println("Created product:", created)
+}
 ```
+
+Full file: [`xml_client.go`](../../exercises/part2/11-json-xml-examples/xml_client/main.go).
 
 **Key Details:**
 - Use `xml.NewEncoder(w).Encode(data)` to send XML from a handler.
@@ -256,10 +401,10 @@ func productHandler(w http.ResponseWriter, r *http.Request) {
 ---
 
 ## Practical Exercise Files
-- [JSON Server Example](../../exercises/part2/11-json-xml-examples/json_server.go)
-- [JSON Client Example](../../exercises/part2/11-json-xml-examples/json_client.go)
-- [XML Server Example](../../exercises/part2/11-json-xml-examples/xml_server.go)
-- [XML Client Example](../../exercises/part2/11-json-xml-examples/xml_client.go)
+- [JSON Server Example](../../exercises/part2/11-json-xml-examples/json_server/main.go)
+- [JSON Client Example](../../exercises/part2/11-json-xml-examples/json_client/main.go)
+- [XML Server Example](../../exercises/part2/11-json-xml-examples/xml_server/main.go)
+- [XML Client Example](../../exercises/part2/11-json-xml-examples/xml_client/main.go)
 
 ---
 
@@ -284,7 +429,7 @@ It earns its keep the first time a client typos a field name — say `"naem"` in
 - Use JSON for most web APIs—compact, fast, and easy in Go.
 - Use XML when you need to interoperate with older systems or standards.
 - Always set the correct `Content-Type` header.
-- Use Go’s `encoding/json` and `encoding/xml` for safe, automatic encoding/decoding.
+- Use Go's `encoding/json` and `encoding/xml` for safe, automatic encoding/decoding.
 - For nested/child data, use slices and struct tags.
 - Test with `curl` or Postman for real-world scenarios.
 - Prefer `Decoder`/`Encoder` streaming over `ReadAll`+`Unmarshal` for

@@ -2,7 +2,7 @@
 
 ## Repo identity
 
-This is an educational book (`.mdx` chapters under `docs/`) plus standalone Go exercises (`exercises/part2/`). There is no top-level `go.mod`, no test suite, and no CI. Do not treat it as a Go application.
+This is an educational book (`.mdx` chapters under `docs/`) plus standalone Go exercises (`exercises/part2/`). There is no top-level `go.mod`, no test suite, and no CI for exercises. CI exists for website/PDF builds under `.github/workflows/`. Do not treat it as a Go application.
 
 ## Commands
 
@@ -16,13 +16,17 @@ Install the PDF tool once: `go install github.com/sazardev/go-pretty-pdf/cmd/pre
 
 ## Running exercises
 
-- **Stdlib-only exercises** (most): `go run ./exercises/part2/<exercise-dir>`
-- **Third-party deps** (exercises 12 & 13, gorilla/websocket): `cd exercises/part2/<dir> && go run .` — these have their own `go.mod`
+- **Stdlib-only exercises** (most): `GO111MODULE=off go run ./exercises/part2/<exercise-dir>` (required because Go detects the parent `.git` directory without a `go.mod`)
+- **Third-party deps** (exercises 12 & 13, gorilla/websocket): `cd exercises/part2/<dir> && go run .` — these have their own `go.mod`. Not all chapter 12 exercises use gorilla/websocket; the native WebSocket exercises (websocket-hello-server, websocket-native-client, websocket-native-server) are stdlib-only.
 
 ## Critical rules
 
-- **Zero emoji** anywhere in docs or exercises — hard repo-wide rule.
+- **Zero emoji** anywhere in docs or exercises -- hard repo-wide rule.
 - **Before editing any `docs/**/*.mdx`**: read `.claude/skills/mdx-pdf-format/SKILL.md` for required frontmatter (`id`/`title`), ID scheme, h3 depth cap, and allowed components.
-- **After adding/removing/renaming/reordering a chapter in `docs/`**: update the matching link in `README.md` — they must stay in sync.
-- **Part 1 chapters 3-13 are theory-only** — no Go code. Chapters 1-2 are the sole exception (one small snippet each at the end).
+- **After adding/removing/renaming/reordering a chapter in `docs/`**: update the matching link in `README.md` -- they must stay in sync.
+- **Part 1 chapters 3-13 are theory-only** -- no Go code. Chapters 1-2 are the sole exception (one small snippet each at the end).
 - **New exercises**: single `main.go` per directory, no `go.mod` unless a third-party dependency is needed, client/server pairs in separate directories.
+
+## Tool versions
+
+- `pretty-pdf` is pinned to `@v0.8.0` in both CI workflows (`.github/workflows/deploy-pages.yml` and `release-pdf.yml`). When upgrading, update both workflow files and this line.

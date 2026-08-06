@@ -145,6 +145,19 @@ With `minAvailable: 2` set against 3 replicas, Kubernetes will refuse to volunta
 When Kubernetes terminates a pod — during a rollout, a scale-down, or a node drain — it sends `SIGTERM` and starts a clock: `terminationGracePeriodSeconds` later, if the process hasn't exited on its own, it receives `SIGKILL`, which cannot be caught or cleaned up after. Everything in this section exists to make sure the process finishes on its own, well inside that window.
 
 ```go
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
+	"time"
+)
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)

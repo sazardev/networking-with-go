@@ -178,7 +178,7 @@ Content-Type: application/json
 
 ## Custom Middleware
 
-Middleware in Gin is a `gin.HandlerFunc` that calls `c.Next()` to continue the chain, or stops it early with `c.Abort()`:
+Middleware in Gin is a `gin.HandlerFunc` that calls `c.Next()` to continue the chain, or stops it early with `c.Abort()`. This example also reaches for `github.com/google/uuid` (`go get github.com/google/uuid`) to generate a request ID when the caller didn't supply one:
 
 ```go
 func requestID() gin.HandlerFunc {

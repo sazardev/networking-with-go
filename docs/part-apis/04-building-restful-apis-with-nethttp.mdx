@@ -17,11 +17,17 @@ We'll build a small task-tracking API. Tasks live in memory, guarded by a mutex,
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
+	"time"
 )
 
 type Task struct {

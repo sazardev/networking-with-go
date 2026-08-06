@@ -13,7 +13,7 @@ packaging your API and everything it needs into a single, portable image.
 This chapter is deliberately hands-on: every command shown is meant to be
 copy-pasted and run exactly as written.
 
-### Why Multi-Stage Builds
+## Why Multi-Stage Builds
 
 A naive Dockerfile starts `FROM golang:1.23`, copies your source in, and
 runs the API from inside that same image. It works, but that image
@@ -28,7 +28,7 @@ discards everything from the build stage except the files you explicitly
 copy forward, so the final image never sees the Go compiler, your module
 cache, or your source code at all -- only the binary.
 
-### The Dockerfile
+## The Dockerfile
 
 Create a file named `Dockerfile` at the root of your project:
 
@@ -89,7 +89,7 @@ compiled binary plus a few kilobytes of certificates.
 
 <DeepDive title="Why scratch and distroless have no shell">Neither `scratch` nor a distroless image includes `/bin/sh`, `ls`, or any other userland tool -- there is nothing to exploit even if an attacker achieves code execution inside the container, and nothing for a misconfigured `ENTRYPOINT` to accidentally invoke. The tradeoff is that you cannot `docker exec` into a running container and poke around with a shell the way you can with a full `ubuntu`-based image; debugging leans instead on structured logs shipped out of the process, and on attaching an ephemeral debug container alongside it when you truly need a shell.</DeepDive>
 
-### Choosing a Base Image
+## Choosing a Base Image
 
 `scratch` and distroless aren't the only options, and it's worth knowing
 what you're trading away as images get smaller:
@@ -110,7 +110,7 @@ libc that a fully static, cgo-free Go binary avoids entirely. For a
 genuinely wants an interactive shell inside the container during
 development.
 
-### Signals and Graceful Shutdown
+## Signals and Graceful Shutdown
 
 Write `ENTRYPOINT` using the JSON array ("exec") form, `["/api"]`, not the
 shell form, `ENTRYPOINT /api`. The shell form runs your binary as a child
@@ -123,7 +123,7 @@ makes your Go binary PID 1 directly, so the `signal.NotifyContext`-style
 graceful shutdown you would already write for a bare `net/http` server
 receives `SIGTERM` exactly as it would running outside a container.
 
-### A Dockerfile-Level Health Check
+## A Dockerfile-Level Health Check
 
 Beyond the Compose-level `healthcheck` shown for Postgres, you can add one
 directly to your API's own Dockerfile so `docker ps` reports the
@@ -139,7 +139,7 @@ This assumes your binary supports a `-healthcheck` flag that pings its own
 `main()`'s flag parsing that turns `docker ps` into an at-a-glance signal
 for whether the API inside is actually serving traffic, not just running.
 
-### .dockerignore
+## .dockerignore
 
 Without a `.dockerignore` file, `COPY . .` sends your entire working
 directory -- including `.git`, local binaries, and editor state -- into
@@ -163,7 +163,7 @@ Dockerfile
 it should never be sent into a build context, let alone baked into an
 image layer.
 
-### Building and Running the Image
+## Building and Running the Image
 
 Build the image, tagging it with a name and version:
 
@@ -204,7 +204,7 @@ docker stop myapi
 docker rm myapi
 ```
 
-### Running Alongside PostgreSQL with Compose
+## Running Alongside PostgreSQL with Compose
 
 A real API rarely runs alone -- Chapter 6.36 covered talking to Postgres
 from Go, and `docker-compose` is the simplest way to run both containers
@@ -260,7 +260,7 @@ docker compose logs -f api
 docker compose down
 ```
 
-### Key Terminal Commands, All in One Place
+## Key Terminal Commands, All in One Place
 
 ```sh
 docker build -t myapi:1.0 .
@@ -298,7 +298,7 @@ No -- every instruction writes into the image's permanent layer history, and ear
 **Why does the Compose file need both a named volume and a `healthcheck` for Postgres?**
 They solve two unrelated problems that both bite you the first time you skip them. The named volume `pgdata` is what makes Postgres's data survive a container restart -- without it, `docker compose down` deletes the writable layer and every row along with it. The `healthcheck`, combined with `depends_on: condition: service_healthy`, makes Compose wait until Postgres is actually accepting connections rather than merely "started," which avoids a race where the API container tries to connect before Postgres has finished initializing.
 
-### Key Takeaways
+## Key Takeaways
 
 - Use a multi-stage Dockerfile: compile with the full `golang` image, then
   copy only the static binary (`CGO_ENABLED=0`) into a minimal final

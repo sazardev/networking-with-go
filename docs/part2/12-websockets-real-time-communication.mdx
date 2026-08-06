@@ -92,7 +92,7 @@ sequenceDiagram
 
 ## Go in Action: WebSocket Echo Server (Gorilla)
 
-Let’s build a simple WebSocket echo server using the popular [gorilla/websocket](https://github.com/gorilla/websocket) package.
+Let's build a simple WebSocket echo server using the popular [gorilla/websocket](https://github.com/gorilla/websocket) package.
 
 ### How it works (step by step):
 1. The client connects to `/ws` via HTTP and requests an upgrade to WebSocket.
@@ -111,8 +111,43 @@ sequenceDiagram
     end
 ```
 
-### Code (see full comments in the file):
-See: [`main.go`](../../exercises/part2/12-websocket-echo-server/main.go)
+### Code
+
+```go
+var upgrader = websocket.Upgrader{
+    CheckOrigin: func(r *http.Request) bool { return true }, // demo only
+}
+
+func echoHandler(w http.ResponseWriter, r *http.Request) {
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        http.Error(w, "Could not open websocket connection",
+            http.StatusBadRequest)
+        return
+    }
+    defer conn.Close()
+    for {
+        mt, msg, err := conn.ReadMessage()
+        if err != nil {
+            fmt.Println("Read error:", err)
+            break
+        }
+        fmt.Printf("Received: %s\n", msg)
+        if err := conn.WriteMessage(mt, msg); err != nil {
+            fmt.Println("Write error:", err)
+            break
+        }
+    }
+}
+
+func main() {
+    http.HandleFunc("/ws", echoHandler)
+    fmt.Println("WebSocket server at ws://localhost:8080/ws ...")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+Full file: [`main.go`](../../exercises/part2/12-websocket-echo-server/main.go).
 
 **How to use:**
 - Run the server: `go run exercises/part2/12-websocket-echo-server/main.go`
@@ -135,7 +170,51 @@ sequenceDiagram
     Client->>Server: Close connection (on interrupt)
 ```
 
-See: [`main.go`](../../exercises/part2/12-websocket-client/main.go)
+```go
+func main() {
+    c, _, err := websocket.DefaultDialer.Dial("ws://localhost:8080/ws", nil)
+    if err != nil {
+        log.Fatal("dial:", err)
+    }
+    defer c.Close()
+    done := make(chan struct{})
+    go func() {
+        for {
+            _, message, err := c.ReadMessage()
+            if err != nil {
+                log.Println("read:", err)
+                close(done)
+                return
+            }
+            fmt.Printf("Received: %s\n", message)
+        }
+    }()
+
+    ticker := time.NewTicker(time.Second)
+    defer ticker.Stop()
+    interrupt := make(chan os.Signal, 1)
+    signal.Notify(interrupt, os.Interrupt)
+
+    for {
+        select {
+        case t := <-ticker.C:
+            msg := fmt.Sprintf("Hello at %v", t)
+            if err := c.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+                log.Println("write:", err)
+                return
+            }
+        case <-interrupt:
+            c.WriteMessage(websocket.CloseMessage,
+                websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+            return
+        case <-done:
+            return
+        }
+    }
+}
+```
+
+Full file: [`main.go`](../../exercises/part2/12-websocket-client/main.go).
 
 **How to use:**
 - Run the client: `go run exercises/part2/12-websocket-client/main.go`
@@ -145,7 +224,7 @@ See: [`main.go`](../../exercises/part2/12-websocket-client/main.go)
 
 ## Go in Action: Native WebSocket Echo Server (No Third-Party Packages)
 
-Go’s standard library does not provide a high-level WebSocket API, but you can implement the protocol manually for learning purposes.
+Go's standard library does not provide a high-level WebSocket API, but you can implement the protocol manually for learning purposes.
 
 ### How it works (step by step):
 1. The client connects to `/ws` and requests an upgrade.
@@ -164,7 +243,83 @@ sequenceDiagram
     end
 ```
 
-See: [`main.go`](../../exercises/part2/12-websocket-native-server/main.go)
+```go
+const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11" // RFC 6455
+
+func computeAcceptKey(key string) string {
+    h := sha1.New()
+    h.Write([]byte(key + wsGUID))
+    return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Header.Get("Connection") != "Upgrade" ||
+        r.Header.Get("Upgrade") != "websocket" {
+        http.Error(w, "Not a websocket handshake", http.StatusBadRequest)
+        return
+    }
+    key := r.Header.Get("Sec-WebSocket-Key")
+    accept := computeAcceptKey(key)
+
+    hj, ok := w.(http.Hijacker)
+    if !ok {
+        http.Error(w, "Hijacking not supported",
+            http.StatusInternalServerError)
+        return
+    }
+    conn, buf, err := hj.Hijack()
+    if err != nil {
+        return
+    }
+    defer conn.Close()
+
+    fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\n")
+    fmt.Fprintf(conn, "Upgrade: websocket\r\n")
+    fmt.Fprintf(conn, "Connection: Upgrade\r\n")
+    fmt.Fprintf(conn, "Sec-WebSocket-Accept: %s\r\n\r\n", accept)
+
+    // Echo loop: read one frame, send it back. Only handles small,
+    // unfragmented text frames — see the full file for the 126-byte
+    // extended-length case and closing-frame handling.
+    for {
+        head := make([]byte, 2)
+        if _, err := io.ReadFull(buf, head); err != nil {
+            break
+        }
+        fin := head[0]&0x80 != 0
+        opcode := head[0] & 0x0F
+        masked := head[1]&0x80 != 0
+        payloadLen := int(head[1] & 0x7F)
+
+        var maskKey [4]byte
+        if masked {
+            io.ReadFull(buf, maskKey[:])
+        }
+        payload := make([]byte, payloadLen)
+        io.ReadFull(buf, payload)
+        if masked {
+            for i := 0; i < payloadLen; i++ {
+                payload[i] ^= maskKey[i%4]
+            }
+        }
+        if opcode == 0x8 { // close frame
+            break
+        }
+        if opcode == 0x1 && fin { // text frame: echo it back
+            conn.Write([]byte{0x81, byte(len(payload))})
+            conn.Write(payload)
+        }
+    }
+}
+
+func main() {
+    http.HandleFunc("/ws", wsHandler)
+    fmt.Println("Native WebSocket echo server at ws://localhost:8082/ws")
+    http.ListenAndServe(":8082", nil)
+}
+```
+
+Full file: [`main.go`](../../exercises/part2/12-websocket-native-server/main.go).
 
 **How to use:**
 - Run the server: `go run exercises/part2/12-websocket-native-server/main.go`
@@ -187,7 +342,61 @@ sequenceDiagram
     end
 ```
 
-See: [`main.go`](../../exercises/part2/12-websocket-native-client/main.go)
+```go
+func main() {
+    conn, err := net.Dial("tcp", "localhost:8082")
+    if err != nil {
+        panic(err)
+    }
+    defer conn.Close()
+
+    keyBytes := make([]byte, 16)
+    rand.Read(keyBytes)
+    key := base64.StdEncoding.EncodeToString(keyBytes)
+
+    req := "GET /ws HTTP/1.1\r\n" +
+        "Host: localhost:8082\r\n" +
+        "Upgrade: websocket\r\n" +
+        "Connection: Upgrade\r\n" +
+        "Sec-WebSocket-Key: " + key + "\r\n" +
+        "Sec-WebSocket-Version: 13\r\n\r\n"
+    conn.Write([]byte(req))
+
+    resp, _ := bufio.NewReader(conn).ReadString('\n')
+    if !strings.Contains(resp, "101") {
+        fmt.Println("Handshake failed:", resp)
+        return
+    }
+    for { // skip remaining response headers
+        line, _ := bufio.NewReader(conn).ReadString('\n')
+        if line == "\r\n" {
+            break
+        }
+    }
+
+    fmt.Println("Connected! Type messages to send, Ctrl+C to quit.")
+    for {
+        fmt.Print("> ")
+        var msg string
+        fmt.Scanln(&msg)
+        if msg == "" {
+            continue
+        }
+        frame := []byte{0x81, byte(len(msg))} // FIN=1, opcode=1 (text)
+        frame = append(frame, []byte(msg)...)
+        conn.Write(frame)
+
+        head := make([]byte, 2)
+        io.ReadFull(conn, head)
+        payloadLen := int(head[1] & 0x7F)
+        payload := make([]byte, payloadLen)
+        io.ReadFull(conn, payload)
+        fmt.Println("Echo:", string(payload))
+    }
+}
+```
+
+Full file: [`main.go`](../../exercises/part2/12-websocket-native-client/main.go).
 
 **How to use:**
 - Run the client: `go run exercises/part2/12-websocket-native-client/main.go`
@@ -216,7 +425,49 @@ sequenceDiagram
     Note over Client,Server: Connection can stay open for more messages
 ```
 
-See: [`main.go`](../../exercises/part2/12-websocket-hello-server/main.go)
+```go
+func handleWS(w http.ResponseWriter, r *http.Request) {
+    key := r.Header.Get("Sec-WebSocket-Key")
+    accept := computeAcceptKey(key) // same helper as the native echo server
+
+    w.Header().Set("Upgrade", "websocket")
+    w.Header().Set("Connection", "Upgrade")
+    w.Header().Set("Sec-WebSocket-Accept", accept)
+    w.WriteHeader(http.StatusSwitchingProtocols)
+
+    hj, ok := w.(http.Hijacker)
+    if !ok {
+        http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
+        return
+    }
+    conn, buf, err := hj.Hijack()
+    if err != nil {
+        return
+    }
+    defer conn.Close()
+
+    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+    sendTextFrame(buf, fmt.Sprintf("Hello! Your IP is %s", ip))
+    buf.Flush()
+}
+
+// sendTextFrame writes a single WebSocket text frame with the given message.
+func sendTextFrame(w io.Writer, msg string) {
+    payload := []byte(msg)
+    frame := []byte{0x81} // FIN=1, opcode=1 (text)
+    if len(payload) < 126 {
+        frame = append(frame, byte(len(payload)))
+    } else if len(payload) < 65536 {
+        frame = append(frame, 126, byte(len(payload)>>8), byte(len(payload)))
+    } else {
+        return // not handling >64K payloads for simplicity
+    }
+    frame = append(frame, payload...)
+    w.Write(frame)
+}
+```
+
+Full file: [`main.go`](../../exercises/part2/12-websocket-hello-server/main.go).
 
 **How to use:**
 - Run the server: `go run exercises/part2/12-websocket-hello-server/main.go`
@@ -254,7 +505,38 @@ sequenceDiagram
     end
 ```
 
-See: [`main.go`](../../exercises/part2/12-websocket-hello-server-gorilla/main.go)
+```go
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        http.Error(w, "Could not open websocket connection",
+            http.StatusBadRequest)
+        return
+    }
+    defer conn.Close()
+
+    clientIP := r.RemoteAddr
+    greeting := fmt.Sprintf("Hello! Your IP is %s", clientIP)
+    if err := conn.WriteMessage(websocket.TextMessage, []byte(greeting)); err != nil {
+        fmt.Println("Write error:", err)
+        return
+    }
+
+    for { // keep the connection open and echo whatever arrives
+        _, msg, err := conn.ReadMessage()
+        if err != nil {
+            fmt.Println("Read error:", err)
+            break
+        }
+        if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+            fmt.Println("Write error:", err)
+            break
+        }
+    }
+}
+```
+
+Full file: [`main.go`](../../exercises/part2/12-websocket-hello-server-gorilla/main.go).
 
 **How to use:**
 - Run the server: `go run exercises/part2/12-websocket-hello-server-gorilla/main.go`

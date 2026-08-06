@@ -12,10 +12,10 @@ collection can all speak it without prior coordination. But REST is not the
 only way to build an API, and it is not always the best one. This chapter
 looks at RPC (Remote Procedure Call) as a different API style, and at gRPC,
 its most successful modern implementation, from the angle of building APIs
-rather than the general networking angle already covered in the gRPC and
-Protocol Buffers chapter earlier in this book.
+rather than the general networking angle already covered in Chapter 4.1, gRPC and
+Protocol Buffers in Go.
 
-### RPC as an API Style
+## RPC as an API Style
 
 REST models an API as a set of **resources** you manipulate with a small,
 fixed vocabulary of verbs: `GET /orders/42`, `POST /orders`, `DELETE
@@ -35,7 +35,7 @@ whose name, arguments, and return type are all part of a schema the compiler
 checks. That difference is the entire reason teams choose one style over
 the other.
 
-### When Each Style Is the Better Fit
+## When Each Style Is the Better Fit
 
 Neither REST nor RPC-style APIs are strictly better; they optimize for
 different constraints.
@@ -59,12 +59,12 @@ and performance or streaming matters, gRPC usually wins.
 
 <Axiom>REST optimizes for who can call you; RPC optimizes for how fast and how strictly.</Axiom>
 
-### A Minimal Service Definition
+## A Minimal Service Definition
 
 gRPC uses Protocol Buffers (protobuf) as its schema language -- the
 mechanics of protobuf encoding, field numbers, and the four RPC shapes
 (unary, server streaming, client streaming, bidirectional streaming) are
-covered in depth in the gRPC and Protocol Buffers chapter. Here we focus on
+covered in depth in Chapter 4.1. Here we focus on
 using that same machinery to build an API, with a small inventory service
 as the running example:
 
@@ -107,7 +107,7 @@ Generating the Go bindings uses the same two `protoc` plugins as before:
 protoc --go_out=. --go-grpc_out=. inventory.proto
 ```
 
-### Implementing the Unary RPC
+## Implementing the Unary RPC
 
 ```go
 package main
@@ -158,7 +158,7 @@ This should feel familiar: it is a normal Go function, taking a context and
 a request struct, returning a response struct and an error. The generated
 code hides the wire format entirely -- you never touch a byte buffer.
 
-### Errors and Status Codes
+## Errors and Status Codes
 
 REST leans on HTTP status codes to describe what went wrong: `404` for a
 missing resource, `409` for a conflict, `500` for a server fault. gRPC has
@@ -193,7 +193,7 @@ branch on a `404`. The two systems solve the same problem with a smaller,
 strongly typed enum instead of an open-ended set of numbers borrowed from
 HTTP.
 
-### Implementing the Streaming RPC
+## Implementing the Streaming RPC
 
 Server streaming trades a single return value for a stream object with a
 `Send` method. Add this method to the same `inventoryServer`:
@@ -274,7 +274,7 @@ disappears behind function calls your editor can autocomplete.
 
 <DeepDive title="Deadlines propagate through the whole call chain">Because every generated method takes a `context.Context` first, a deadline set once at the edge of a request survives every downstream gRPC call it triggers. If service A calls service B which calls service C, and A's context has a 2-second timeout, C receives that same shrinking deadline automatically -- there is no equivalent built into plain REST clients unless you wire it up yourself with request headers and manual timers.</DeepDive>
 
-### Bridging REST and gRPC
+## Bridging REST and gRPC
 
 Some teams want gRPC's strict contracts internally, but still need to expose
 a plain JSON/REST surface to browsers or external partners. The common
@@ -302,7 +302,7 @@ service keep one schema and one implementation while serving two audiences:
 internal gRPC clients that want speed and type safety, and external HTTP
 clients that just want JSON.
 
-### Comparing the Three Styles
+## Comparing the Three Styles
 
 | Dimension | REST (JSON/HTTP) | gRPC (protobuf/HTTP2) | JSON-RPC |
 |---|---|---|---|
@@ -339,7 +339,7 @@ Because every generated gRPC method takes a `context.Context` as its first argum
 **Is JSON-RPC worth learning if this chapter mostly talks about REST and gRPC?**
 Mostly by name rather than by practice for new Go services -- it's a thin JSON envelope (`method`, `params`, `id`) for RPC-style calls without any of gRPC's code generation, streaming, or binary efficiency. It's worth recognizing because it still shows up in specific niches, like some blockchain node APIs and simple internal tools, but for a new backend the real decision in this chapter remains REST versus gRPC.
 
-### Key Takeaways
+## Key Takeaways
 
 - RPC-style APIs model a remote call as invoking a named function with
   typed arguments; REST models it as manipulating a resource with a fixed
