@@ -1,0 +1,995 @@
+{
+  "count": 165,
+  "assets": [
+    {
+      "file": "og-card.png",
+      "thumb": "og-card.thumb.jpg",
+      "label": "Book landing card",
+      "group": "Featured"
+    },
+    {
+      "file": "og-read.png",
+      "thumb": "og-read.thumb.jpg",
+      "label": "Read Online",
+      "group": "Featured"
+    },
+    {
+      "file": "og-topics.png",
+      "thumb": "og-topics.thumb.jpg",
+      "label": "Browse by Topic",
+      "group": "Featured"
+    },
+    {
+      "file": "cover.jpg",
+      "thumb": "cover.jpg",
+      "label": "Book cover",
+      "group": "Featured"
+    },
+    {
+      "file": "icon-192.png",
+      "thumb": "icon-192.png",
+      "label": "App icon 192",
+      "group": "Icons"
+    },
+    {
+      "file": "icon-512.png",
+      "thumb": "icon-512.png",
+      "label": "App icon 512",
+      "group": "Icons"
+    },
+    {
+      "file": "og-advanced-specialized.png",
+      "thumb": "og-advanced-specialized.thumb.jpg",
+      "label": "Advanced &amp; Specialized",
+      "group": "Parts"
+    },
+    {
+      "file": "og-advanced-specialized-01-grpc-and-protocol-buffers-in-go.png",
+      "thumb": "og-advanced-specialized-01-grpc-and-protocol-buffers-in-go.thumb.jpg",
+      "label": "gRPC and Protocol Buffers in Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-02-webrtc-and-p2p-communication-in-go.png",
+      "thumb": "og-advanced-specialized-02-webrtc-and-p2p-communication-in-go.thumb.jpg",
+      "label": "WebRTC and P2P Communication in Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-03-mqtt-amqp-and-iot-messaging-protocols.png",
+      "thumb": "og-advanced-specialized-03-mqtt-amqp-and-iot-messaging-protocols.thumb.jpg",
+      "label": "MQTT, AMQP, and IoT Messaging Protocols",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-04-sdn-software-defined-networking-and-openflow-with-go.png",
+      "thumb": "og-advanced-specialized-04-sdn-software-defined-networking-and-openflow-with-go.thumb.jpg",
+      "label": "SDN (Software Defined Networking) and OpenFlow with Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-05-network-function-virtualization-nfv-in-go.png",
+      "thumb": "og-advanced-specialized-05-network-function-virtualization-nfv-in-go.thumb.jpg",
+      "label": "Network Function Virtualization (NFV) in Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-06-deep-packet-inspection-and-packet-manipulation.png",
+      "thumb": "og-advanced-specialized-06-deep-packet-inspection-and-packet-manipulation.thumb.jpg",
+      "label": "Deep Packet Inspection and Packet Manipulation",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-07-custom-protocol-design-and-implementation.png",
+      "thumb": "og-advanced-specialized-07-custom-protocol-design-and-implementation.thumb.jpg",
+      "label": "Custom Protocol Design and Implementation",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-08-cloud-networking-apis-and-automation-with-go.png",
+      "thumb": "og-advanced-specialized-08-cloud-networking-apis-and-automation-with-go.thumb.jpg",
+      "label": "Cloud Networking APIs and Automation with Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-09-zero-trust-networking-and-microsegmentation.png",
+      "thumb": "og-advanced-specialized-09-zero-trust-networking-and-microsegmentation.thumb.jpg",
+      "label": "Zero Trust Networking and Microsegmentation",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-10-network-simulation-and-virtual-labs.png",
+      "thumb": "og-advanced-specialized-10-network-simulation-and-virtual-labs.thumb.jpg",
+      "label": "Network Simulation and Virtual Labs",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-11-automating-network-device-configuration.png",
+      "thumb": "og-advanced-specialized-11-automating-network-device-configuration.thumb.jpg",
+      "label": "Automating Network Device Configuration",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-12-observability-and-tracing-in-go-networking.png",
+      "thumb": "og-advanced-specialized-12-observability-and-tracing-in-go-networking.thumb.jpg",
+      "label": "Observability and Tracing in Go Networking",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-13-wireless-networking-and-go.png",
+      "thumb": "og-advanced-specialized-13-wireless-networking-and-go.thumb.jpg",
+      "label": "Wireless Networking and Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-14-mesh-networks-and-dynamic-routing.png",
+      "thumb": "og-advanced-specialized-14-mesh-networks-and-dynamic-routing.thumb.jpg",
+      "label": "Mesh Networks and Dynamic Routing",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-15-high-availability-and-load-balancing.png",
+      "thumb": "og-advanced-specialized-15-high-availability-and-load-balancing.thumb.jpg",
+      "label": "High Availability and Load Balancing",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-16-real-time-networking-for-games.png",
+      "thumb": "og-advanced-specialized-16-real-time-networking-for-games.thumb.jpg",
+      "label": "Real-Time Networking for Games",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-17-blockchain-and-cryptocurrency-networking.png",
+      "thumb": "og-advanced-specialized-17-blockchain-and-cryptocurrency-networking.thumb.jpg",
+      "label": "Blockchain and Cryptocurrency Networking",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-18-big-data-ai-and-streaming-networks.png",
+      "thumb": "og-advanced-specialized-18-big-data-ai-and-streaming-networks.thumb.jpg",
+      "label": "Big Data, AI, and Streaming Networks",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-19-go-networking-performance-benchmarks.png",
+      "thumb": "og-advanced-specialized-19-go-networking-performance-benchmarks.thumb.jpg",
+      "label": "Go Networking Performance Benchmarks",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-20-quic-and-http-3-in-go.png",
+      "thumb": "og-advanced-specialized-20-quic-and-http-3-in-go.thumb.jpg",
+      "label": "QUIC and HTTP/3 in Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-21-message-queues-and-service-discovery-in-go.png",
+      "thumb": "og-advanced-specialized-21-message-queues-and-service-discovery-in-go.thumb.jpg",
+      "label": "Message Queues and Service Discovery in Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-advanced-specialized-22-ipv6-networking-in-go.png",
+      "thumb": "og-advanced-specialized-22-ipv6-networking-in-go.thumb.jpg",
+      "label": "IPv6 Networking in Go",
+      "group": "Advanced &amp; Specialized"
+    },
+    {
+      "file": "og-back-matter.png",
+      "thumb": "og-back-matter.thumb.jpg",
+      "label": "A Final Word",
+      "group": "Parts"
+    },
+    {
+      "file": "og-back-matter-01-a-final-word.png",
+      "thumb": "og-back-matter-01-a-final-word.thumb.jpg",
+      "label": "A Final Word",
+      "group": "A Final Word"
+    },
+    {
+      "file": "og-core-go-networking.png",
+      "thumb": "og-core-go-networking.thumb.jpg",
+      "label": "Core Go Networking",
+      "group": "Parts"
+    },
+    {
+      "file": "og-core-go-networking-01-setting-up-your-go-development-environment.png",
+      "thumb": "og-core-go-networking-01-setting-up-your-go-development-environment.thumb.jpg",
+      "label": "Setting Up Your Go Development Environment",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-02-go-language-basics-for-networking.png",
+      "thumb": "og-core-go-networking-02-go-language-basics-for-networking.thumb.jpg",
+      "label": "Go Language Basics for Networking",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-03-go-networking-packages-overview.png",
+      "thumb": "og-core-go-networking-03-go-networking-packages-overview.thumb.jpg",
+      "label": "Go Networking Packages Overview",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-04-working-with-ip-ports-and-addresses-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-04-working-with-ip-ports-and-addresses-concepts-and-go-implementation.thumb.jpg",
+      "label": "Working with IP, Ports, and Addresses: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-05-tcp-in-depth-protocol-theory-and-go-implementation.png",
+      "thumb": "og-core-go-networking-05-tcp-in-depth-protocol-theory-and-go-implementation.thumb.jpg",
+      "label": "TCP in Depth: Protocol Theory and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-06-udp-in-depth-protocol-theory-and-go-implementation.png",
+      "thumb": "og-core-go-networking-06-udp-in-depth-protocol-theory-and-go-implementation.thumb.jpg",
+      "label": "UDP in Depth: Protocol Theory and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-07-error-handling-and-debugging-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-07-error-handling-and-debugging-concepts-and-go-implementation.thumb.jpg",
+      "label": "Error Handling and Debugging: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-08-concurrency-in-networking-theory-and-go-implementation.png",
+      "thumb": "og-core-go-networking-08-concurrency-in-networking-theory-and-go-implementation.thumb.jpg",
+      "label": "Concurrency in Networking: Theory and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-09-context-and-cancellation-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-09-context-and-cancellation-concepts-and-go-implementation.thumb.jpg",
+      "label": "Context and Cancellation: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-10-http-protocol-theory-and-go-implementation.png",
+      "thumb": "og-core-go-networking-10-http-protocol-theory-and-go-implementation.thumb.jpg",
+      "label": "HTTP: Protocol Theory and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-11-handling-json-and-xml-over-http-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-11-handling-json-and-xml-over-http-concepts-and-go-implementation.thumb.jpg",
+      "label": "Handling JSON and XML over HTTP: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-12-websockets-real-time-communication-in-go.png",
+      "thumb": "og-core-go-networking-12-websockets-real-time-communication-in-go.thumb.jpg",
+      "label": "WebSockets: Real-Time Communication in Go",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-13-chat-applications-design-protocols-and-go-implementation.png",
+      "thumb": "og-core-go-networking-13-chat-applications-design-protocols-and-go-implementation.thumb.jpg",
+      "label": "Chat Applications: Design, Protocols, and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-14-file-transfer-applications-protocols-and-go-implementation.png",
+      "thumb": "og-core-go-networking-14-file-transfer-applications-protocols-and-go-implementation.thumb.jpg",
+      "label": "File Transfer Applications: Protocols and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-15-proxy-servers-and-clients-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-15-proxy-servers-and-clients-concepts-and-go-implementation.thumb.jpg",
+      "label": "Proxy Servers and Clients: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-16-dns-theory-and-go-implementation.png",
+      "thumb": "og-core-go-networking-16-dns-theory-and-go-implementation.thumb.jpg",
+      "label": "DNS: Theory and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-17-nat-traversal-and-p2p-networking-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-17-nat-traversal-and-p2p-networking-concepts-and-go-implementation.thumb.jpg",
+      "label": "NAT Traversal and P2P Networking: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-18-authentication-and-authorization-security-theory-and-go-implementation.png",
+      "thumb": "og-core-go-networking-18-authentication-and-authorization-security-theory-and-go-implementation.thumb.jpg",
+      "label": "Authentication and Authorization: Security Theory and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-19-security-in-go-networking-tls-encryption-and-best-practices.png",
+      "thumb": "og-core-go-networking-19-security-in-go-networking-tls-encryption-and-best-practices.thumb.jpg",
+      "label": "Security in Go Networking: TLS, Encryption, and Best Practices",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-20-logging-and-monitoring-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-20-logging-and-monitoring-concepts-and-go-implementation.thumb.jpg",
+      "label": "Logging and Monitoring: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-21-testing-and-debugging-go-network-applications-theory-and-practice.png",
+      "thumb": "og-core-go-networking-21-testing-and-debugging-go-network-applications-theory-and-practice.thumb.jpg",
+      "label": "Testing and Debugging Go Network Applications: Theory and Practice",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-22-performance-optimization-concepts-and-go-implementation.png",
+      "thumb": "og-core-go-networking-22-performance-optimization-concepts-and-go-implementation.thumb.jpg",
+      "label": "Performance Optimization: Concepts and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-23-deploying-go-network-applications-best-practices.png",
+      "thumb": "og-core-go-networking-23-deploying-go-network-applications-best-practices.thumb.jpg",
+      "label": "Deploying Go Network Applications: Best Practices",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-24-real-world-projects-and-case-studies.png",
+      "thumb": "og-core-go-networking-24-real-world-projects-and-case-studies.thumb.jpg",
+      "label": "Real-World Projects and Case Studies",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-25-email-protocols-theory-and-go-implementation.png",
+      "thumb": "og-core-go-networking-25-email-protocols-theory-and-go-implementation.thumb.jpg",
+      "label": "Email Protocols: Theory and Go Implementation",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-core-go-networking-26-further-resources-and-next-steps.png",
+      "thumb": "og-core-go-networking-26-further-resources-and-next-steps.thumb.jpg",
+      "label": "Further Resources and Next Steps",
+      "group": "Core Go Networking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking.png",
+      "thumb": "og-cybersecurity-ethical-hacking.thumb.jpg",
+      "label": "Cybersecurity &amp; Ethical Hacking",
+      "group": "Parts"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-01-introduction-to-cybersecurity-in-networking.png",
+      "thumb": "og-cybersecurity-ethical-hacking-01-introduction-to-cybersecurity-in-networking.thumb.jpg",
+      "label": "Introduction to Cybersecurity in Networking",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-02-threat-modeling-and-attack-surfaces.png",
+      "thumb": "og-cybersecurity-ethical-hacking-02-threat-modeling-and-attack-surfaces.thumb.jpg",
+      "label": "Threat Modeling and Attack Surfaces",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-03-common-network-attacks-dos-mitm-spoofing-etc.png",
+      "thumb": "og-cybersecurity-ethical-hacking-03-common-network-attacks-dos-mitm-spoofing-etc.thumb.jpg",
+      "label": "Common Network Attacks (DoS, MITM, Spoofing, etc.)",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-04-network-scanning-and-enumeration-with-go.png",
+      "thumb": "og-cybersecurity-ethical-hacking-04-network-scanning-and-enumeration-with-go.thumb.jpg",
+      "label": "Network Scanning and Enumeration with Go",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-05-packet-sniffing-and-analysis-with-go.png",
+      "thumb": "og-cybersecurity-ethical-hacking-05-packet-sniffing-and-analysis-with-go.thumb.jpg",
+      "label": "Packet Sniffing and Analysis with Go",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-06-vulnerability-assessment-and-exploitation-basics.png",
+      "thumb": "og-cybersecurity-ethical-hacking-06-vulnerability-assessment-and-exploitation-basics.thumb.jpg",
+      "label": "Vulnerability Assessment and Exploitation Basics",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-07-building-simple-security-tools-in-go.png",
+      "thumb": "og-cybersecurity-ethical-hacking-07-building-simple-security-tools-in-go.thumb.jpg",
+      "label": "Building Simple Security Tools in Go",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-08-penetration-testing-workflows.png",
+      "thumb": "og-cybersecurity-ethical-hacking-08-penetration-testing-workflows.thumb.jpg",
+      "label": "Penetration Testing Workflows",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-09-incident-response-and-forensics.png",
+      "thumb": "og-cybersecurity-ethical-hacking-09-incident-response-and-forensics.thumb.jpg",
+      "label": "Incident Response and Forensics",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-10-ethical-hacking-and-legal-considerations.png",
+      "thumb": "og-cybersecurity-ethical-hacking-10-ethical-hacking-and-legal-considerations.thumb.jpg",
+      "label": "Ethical Hacking and Legal Considerations",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-11-implementing-tls-ssl-in-go.png",
+      "thumb": "og-cybersecurity-ethical-hacking-11-implementing-tls-ssl-in-go.thumb.jpg",
+      "label": "Implementing TLS/SSL in Go",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-12-certificate-management-and-pki.png",
+      "thumb": "og-cybersecurity-ethical-hacking-12-certificate-management-and-pki.thumb.jpg",
+      "label": "Certificate Management and PKI",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-13-secure-coding-practices-in-go.png",
+      "thumb": "og-cybersecurity-ethical-hacking-13-secure-coding-practices-in-go.thumb.jpg",
+      "label": "Secure Coding Practices in Go",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-14-zero-trust-networking-concepts.png",
+      "thumb": "og-cybersecurity-ethical-hacking-14-zero-trust-networking-concepts.thumb.jpg",
+      "label": "Zero Trust Networking Concepts",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-15-network-segmentation-and-microsegmentation.png",
+      "thumb": "og-cybersecurity-ethical-hacking-15-network-segmentation-and-microsegmentation.thumb.jpg",
+      "label": "Network Segmentation and Microsegmentation",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-16-ids-ips-concepts-and-go-implementations.png",
+      "thumb": "og-cybersecurity-ethical-hacking-16-ids-ips-concepts-and-go-implementations.thumb.jpg",
+      "label": "IDS/IPS: Concepts and Go Implementations",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-17-siem-and-log-analysis-for-network-security.png",
+      "thumb": "og-cybersecurity-ethical-hacking-17-siem-and-log-analysis-for-network-security.thumb.jpg",
+      "label": "SIEM and Log Analysis for Network Security",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-18-malware-analysis-and-network-indicators.png",
+      "thumb": "og-cybersecurity-ethical-hacking-18-malware-analysis-and-network-indicators.thumb.jpg",
+      "label": "Malware Analysis and Network Indicators",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-19-reverse-engineering-network-protocols.png",
+      "thumb": "og-cybersecurity-ethical-hacking-19-reverse-engineering-network-protocols.thumb.jpg",
+      "label": "Reverse Engineering Network Protocols",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-20-red-team-vs-blue-team-concepts-and-labs.png",
+      "thumb": "og-cybersecurity-ethical-hacking-20-red-team-vs-blue-team-concepts-and-labs.thumb.jpg",
+      "label": "Red Team vs Blue Team: Concepts and Labs",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-21-social-engineering-in-networking.png",
+      "thumb": "og-cybersecurity-ethical-hacking-21-social-engineering-in-networking.thumb.jpg",
+      "label": "Social Engineering in Networking",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-22-wireless-network-security-theory-and-attacks.png",
+      "thumb": "og-cybersecurity-ethical-hacking-22-wireless-network-security-theory-and-attacks.thumb.jpg",
+      "label": "Wireless Network Security: Theory and Attacks",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-23-iot-security-concepts-and-go-implementations.png",
+      "thumb": "og-cybersecurity-ethical-hacking-23-iot-security-concepts-and-go-implementations.thumb.jpg",
+      "label": "IoT Security: Concepts and Go Implementations",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-24-cloud-networking-security.png",
+      "thumb": "og-cybersecurity-ethical-hacking-24-cloud-networking-security.thumb.jpg",
+      "label": "Cloud Networking Security",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-25-container-and-kubernetes-network-security.png",
+      "thumb": "og-cybersecurity-ethical-hacking-25-container-and-kubernetes-network-security.thumb.jpg",
+      "label": "Container and Kubernetes Network Security",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-26-bug-bounty-and-responsible-disclosure.png",
+      "thumb": "og-cybersecurity-ethical-hacking-26-bug-bounty-and-responsible-disclosure.thumb.jpg",
+      "label": "Bug Bounty and Responsible Disclosure",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-27-security-automation-with-go.png",
+      "thumb": "og-cybersecurity-ethical-hacking-27-security-automation-with-go.thumb.jpg",
+      "label": "Security Automation with Go",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-28-building-a-custom-honeypot-in-go.png",
+      "thumb": "og-cybersecurity-ethical-hacking-28-building-a-custom-honeypot-in-go.thumb.jpg",
+      "label": "Building a Custom Honeypot in Go",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-29-simulating-attacks-and-defense-in-lab-environments.png",
+      "thumb": "og-cybersecurity-ethical-hacking-29-simulating-attacks-and-defense-in-lab-environments.thumb.jpg",
+      "label": "Simulating Attacks and Defense in Lab Environments",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-30-case-studies-real-world-network-breaches.png",
+      "thumb": "og-cybersecurity-ethical-hacking-30-case-studies-real-world-network-breaches.thumb.jpg",
+      "label": "Case Studies: Real-World Network Breaches",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-31-emerging-threats-and-future-trends-in-network-security.png",
+      "thumb": "og-cybersecurity-ethical-hacking-31-emerging-threats-and-future-trends-in-network-security.thumb.jpg",
+      "label": "Emerging Threats and Future Trends in Network Security",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-cybersecurity-ethical-hacking-32-further-cybersecurity-resources.png",
+      "thumb": "og-cybersecurity-ethical-hacking-32-further-cybersecurity-resources.thumb.jpg",
+      "label": "Further Cybersecurity Resources",
+      "group": "Cybersecurity &amp; Ethical Hacking"
+    },
+    {
+      "file": "og-front-matter.png",
+      "thumb": "og-front-matter.thumb.jpg",
+      "label": "About the Author",
+      "group": "Parts"
+    },
+    {
+      "file": "og-front-matter-01-about-the-author.png",
+      "thumb": "og-front-matter-01-about-the-author.thumb.jpg",
+      "label": "About the Author",
+      "group": "About the Author"
+    },
+    {
+      "file": "og-go-fundamentals.png",
+      "thumb": "og-go-fundamentals.thumb.jpg",
+      "label": "Go From Scratch",
+      "group": "Parts"
+    },
+    {
+      "file": "og-go-fundamentals-01-installing-go-and-your-first-program.png",
+      "thumb": "og-go-fundamentals-01-installing-go-and-your-first-program.thumb.jpg",
+      "label": "Installing Go and Your First Program",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-02-variables-types-and-constants.png",
+      "thumb": "og-go-fundamentals-02-variables-types-and-constants.thumb.jpg",
+      "label": "Variables, Types, and Constants",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-03-functions-and-methods.png",
+      "thumb": "og-go-fundamentals-03-functions-and-methods.thumb.jpg",
+      "label": "Functions and Methods",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-04-structs-and-interfaces.png",
+      "thumb": "og-go-fundamentals-04-structs-and-interfaces.thumb.jpg",
+      "label": "Structs and Interfaces",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-05-io-reader-io-writer-and-streaming-data.png",
+      "thumb": "og-go-fundamentals-05-io-reader-io-writer-and-streaming-data.thumb.jpg",
+      "label": "io.Reader, io.Writer, and Streaming Data",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-06-slices-arrays-and-maps.png",
+      "thumb": "og-go-fundamentals-06-slices-arrays-and-maps.thumb.jpg",
+      "label": "Slices, Arrays, and Maps",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-07-error-handling-in-go.png",
+      "thumb": "og-go-fundamentals-07-error-handling-in-go.thumb.jpg",
+      "label": "Error Handling in Go",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-08-packages-modules-and-go-mod.png",
+      "thumb": "og-go-fundamentals-08-packages-modules-and-go-mod.thumb.jpg",
+      "label": "Packages, Modules, and go.mod",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-09-testing-basics-with-go-test.png",
+      "thumb": "og-go-fundamentals-09-testing-basics-with-go-test.thumb.jpg",
+      "label": "Testing Basics with go test",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-go-fundamentals-10-goroutines-channels-and-concurrency.png",
+      "thumb": "og-go-fundamentals-10-goroutines-channels-and-concurrency.thumb.jpg",
+      "label": "Goroutines, Channels, and Concurrency",
+      "group": "Go From Scratch"
+    },
+    {
+      "file": "og-networking-foundations.png",
+      "thumb": "og-networking-foundations.thumb.jpg",
+      "label": "Networking Foundations",
+      "group": "Parts"
+    },
+    {
+      "file": "og-networking-foundations-01-introduction-to-networking.png",
+      "thumb": "og-networking-foundations-01-introduction-to-networking.thumb.jpg",
+      "label": "Introduction to Networking",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-02-history-and-evolution-of-computer-networks.png",
+      "thumb": "og-networking-foundations-02-history-and-evolution-of-computer-networks.thumb.jpg",
+      "label": "History and Evolution of Computer Networks",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-03-types-of-networks-lan-wan-man-pan.png",
+      "thumb": "og-networking-foundations-03-types-of-networks-lan-wan-man-pan.thumb.jpg",
+      "label": "Types of Networks: LAN, WAN, MAN, PAN",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-04-network-topologies-and-architectures.png",
+      "thumb": "og-networking-foundations-04-network-topologies-and-architectures.thumb.jpg",
+      "label": "Network Topologies and Architectures",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-05-the-osi-and-tcp-ip-models.png",
+      "thumb": "og-networking-foundations-05-the-osi-and-tcp-ip-models.thumb.jpg",
+      "label": "The OSI and TCP/IP Models",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-06-understanding-ip-addressing-and-subnetting.png",
+      "thumb": "og-networking-foundations-06-understanding-ip-addressing-and-subnetting.thumb.jpg",
+      "label": "Understanding IP Addressing and Subnetting",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-07-ports-sockets-and-endpoints.png",
+      "thumb": "og-networking-foundations-07-ports-sockets-and-endpoints.thumb.jpg",
+      "label": "Ports, Sockets, and Endpoints",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-08-tcp-vs-udp-concepts-and-use-cases.png",
+      "thumb": "og-networking-foundations-08-tcp-vs-udp-concepts-and-use-cases.thumb.jpg",
+      "label": "TCP vs UDP: Concepts and Use Cases",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-09-common-network-protocols-http-ftp-dns-etc.png",
+      "thumb": "og-networking-foundations-09-common-network-protocols-http-ftp-dns-etc.thumb.jpg",
+      "label": "Common Network Protocols (HTTP, FTP, DNS, etc.)",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-10-network-security-fundamentals.png",
+      "thumb": "og-networking-foundations-10-network-security-fundamentals.thumb.jpg",
+      "label": "Network Security Fundamentals",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-11-firewalls-nat-and-vpns.png",
+      "thumb": "og-networking-foundations-11-firewalls-nat-and-vpns.thumb.jpg",
+      "label": "Firewalls, NAT, and VPNs",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-12-network-troubleshooting-and-tools.png",
+      "thumb": "og-networking-foundations-12-network-troubleshooting-and-tools.thumb.jpg",
+      "label": "Network Troubleshooting and Tools",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-networking-foundations-13-performance-latency-and-bandwidth.png",
+      "thumb": "og-networking-foundations-13-performance-latency-and-bandwidth.thumb.jpg",
+      "label": "Performance, Latency, and Bandwidth",
+      "group": "Networking Foundations"
+    },
+    {
+      "file": "og-production-apis-architecture.png",
+      "thumb": "og-production-apis-architecture.thumb.jpg",
+      "label": "Production APIs &amp; Architecture",
+      "group": "Parts"
+    },
+    {
+      "file": "og-production-apis-architecture-01-api-fundamentals-rest-http-and-the-web.png",
+      "thumb": "og-production-apis-architecture-01-api-fundamentals-rest-http-and-the-web.thumb.jpg",
+      "label": "API Fundamentals: REST, HTTP, and the Web",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-02-designing-clean-urls-query-params-and-routing.png",
+      "thumb": "og-production-apis-architecture-02-designing-clean-urls-query-params-and-routing.thumb.jpg",
+      "label": "Designing Clean URLs, Query Params, and Routing",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-03-json-xml-and-data-serialization.png",
+      "thumb": "og-production-apis-architecture-03-json-xml-and-data-serialization.thumb.jpg",
+      "label": "JSON, XML, and Data Serialization",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-04-building-restful-apis-with-net-http.png",
+      "thumb": "og-production-apis-architecture-04-building-restful-apis-with-net-http.thumb.jpg",
+      "label": "Building RESTful APIs with net/http",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-05-building-apis-with-gin.png",
+      "thumb": "og-production-apis-architecture-05-building-apis-with-gin.thumb.jpg",
+      "label": "Building APIs with Gin",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-06-building-apis-with-fiber.png",
+      "thumb": "og-production-apis-architecture-06-building-apis-with-fiber.thumb.jpg",
+      "label": "Building APIs with Fiber",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-07-serving-html-templates-and-static-files.png",
+      "thumb": "og-production-apis-architecture-07-serving-html-templates-and-static-files.thumb.jpg",
+      "label": "Serving HTML, Templates, and Static Files",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-08-adding-websockets-to-your-api.png",
+      "thumb": "og-production-apis-architecture-08-adding-websockets-to-your-api.thumb.jpg",
+      "label": "Adding WebSockets to Your API",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-09-notifications-sse-and-real-time-updates.png",
+      "thumb": "og-production-apis-architecture-09-notifications-sse-and-real-time-updates.thumb.jpg",
+      "label": "Notifications, SSE, and Real-Time Updates",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-10-api-security-tokens-auth-and-best-practices.png",
+      "thumb": "og-production-apis-architecture-10-api-security-tokens-auth-and-best-practices.thumb.jpg",
+      "label": "API Security: Tokens, Auth, and Best Practices",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-11-rate-limiting-cors-and-api-gateways.png",
+      "thumb": "og-production-apis-architecture-11-rate-limiting-cors-and-api-gateways.thumb.jpg",
+      "label": "Rate Limiting, CORS, and API Gateways",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-12-api-documentation-and-openapi-swagger.png",
+      "thumb": "og-production-apis-architecture-12-api-documentation-and-openapi-swagger.thumb.jpg",
+      "label": "API Documentation and OpenAPI/Swagger",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-13-testing-and-mocking-apis.png",
+      "thumb": "og-production-apis-architecture-13-testing-and-mocking-apis.thumb.jpg",
+      "label": "Testing and Mocking APIs",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-14-versioning-deprecation-and-maintenance.png",
+      "thumb": "og-production-apis-architecture-14-versioning-deprecation-and-maintenance.thumb.jpg",
+      "label": "Versioning, Deprecation, and Maintenance",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-15-prebuilt-solutions-and-api-boilerplates.png",
+      "thumb": "og-production-apis-architecture-15-prebuilt-solutions-and-api-boilerplates.thumb.jpg",
+      "label": "Prebuilt Solutions and API Boilerplates",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-16-api-performance-monitoring-and-observability.png",
+      "thumb": "og-production-apis-architecture-16-api-performance-monitoring-and-observability.thumb.jpg",
+      "label": "API Performance, Monitoring, and Observability",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-17-deploying-and-scaling-go-apis.png",
+      "thumb": "og-production-apis-architecture-17-deploying-and-scaling-go-apis.thumb.jpg",
+      "label": "Deploying and Scaling Go APIs",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-18-advanced-api-rate-limiting-and-anti-abuse.png",
+      "thumb": "og-production-apis-architecture-18-advanced-api-rate-limiting-and-anti-abuse.thumb.jpg",
+      "label": "Advanced API Rate Limiting and Anti-Abuse",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-19-advanced-api-gateway-and-service-mesh.png",
+      "thumb": "og-production-apis-architecture-19-advanced-api-gateway-and-service-mesh.thumb.jpg",
+      "label": "Advanced API Gateway and Service Mesh",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-20-apis-for-graph-databases-and-nosql.png",
+      "thumb": "og-production-apis-architecture-20-apis-for-graph-databases-and-nosql.thumb.jpg",
+      "label": "APIs for Graph Databases and NoSQL",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-21-apis-for-background-jobs-and-task-queues.png",
+      "thumb": "og-production-apis-architecture-21-apis-for-background-jobs-and-task-queues.thumb.jpg",
+      "label": "APIs for Background Jobs and Task Queues",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-22-apis-for-file-uploads-media-and-streaming.png",
+      "thumb": "og-production-apis-architecture-22-apis-for-file-uploads-media-and-streaming.thumb.jpg",
+      "label": "APIs for File Uploads, Media, and Streaming",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-23-apis-for-webhooks-and-event-driven-design.png",
+      "thumb": "og-production-apis-architecture-23-apis-for-webhooks-and-event-driven-design.thumb.jpg",
+      "label": "APIs for Webhooks and Event-Driven Design",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-24-apis-for-oauth2-sso-saml-openid-connect.png",
+      "thumb": "og-production-apis-architecture-24-apis-for-oauth2-sso-saml-openid-connect.thumb.jpg",
+      "label": "APIs for OAuth2, SSO, SAML, OpenID Connect",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-25-apis-for-multi-tenancy-and-saas.png",
+      "thumb": "og-production-apis-architecture-25-apis-for-multi-tenancy-and-saas.thumb.jpg",
+      "label": "APIs for Multi-Tenancy and SaaS",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-26-apis-for-internationalization-i18n-and-localization-l10n.png",
+      "thumb": "og-production-apis-architecture-26-apis-for-internationalization-i18n-and-localization-l10n.thumb.jpg",
+      "label": "APIs for Internationalization (i18n) and Localization (l10n)",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-27-apis-for-feature-flags-and-dynamic-config.png",
+      "thumb": "og-production-apis-architecture-27-apis-for-feature-flags-and-dynamic-config.thumb.jpg",
+      "label": "APIs for Feature Flags and Dynamic Config",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-28-apis-for-load-and-stress-testing.png",
+      "thumb": "og-production-apis-architecture-28-apis-for-load-and-stress-testing.thumb.jpg",
+      "label": "APIs for Load and Stress Testing",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-29-apis-for-ci-cd-and-devops.png",
+      "thumb": "og-production-apis-architecture-29-apis-for-ci-cd-and-devops.thumb.jpg",
+      "label": "APIs for CI/CD and DevOps",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-30-apis-for-serverless-and-faas.png",
+      "thumb": "og-production-apis-architecture-30-apis-for-serverless-and-faas.thumb.jpg",
+      "label": "APIs for Serverless and FaaS",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-31-apis-for-edge-computing-and-cdn.png",
+      "thumb": "og-production-apis-architecture-31-apis-for-edge-computing-and-cdn.thumb.jpg",
+      "label": "APIs for Edge Computing and CDN",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-32-apis-for-advanced-security.png",
+      "thumb": "og-production-apis-architecture-32-apis-for-advanced-security.thumb.jpg",
+      "label": "APIs for Advanced Security",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-33-apis-for-advanced-observability-metrics-and-logging.png",
+      "thumb": "og-production-apis-architecture-33-apis-for-advanced-observability-metrics-and-logging.thumb.jpg",
+      "label": "APIs for Advanced Observability: Metrics and Logging",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-34-apis-for-advanced-observability-distributed-tracing.png",
+      "thumb": "og-production-apis-architecture-34-apis-for-advanced-observability-distributed-tracing.thumb.jpg",
+      "label": "APIs for Advanced Observability: Distributed Tracing",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-35-rpc-and-grpc-for-apis.png",
+      "thumb": "og-production-apis-architecture-35-rpc-and-grpc-for-apis.thumb.jpg",
+      "label": "RPC and gRPC for APIs",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-36-working-with-sql-databases-postgresql.png",
+      "thumb": "og-production-apis-architecture-36-working-with-sql-databases-postgresql.thumb.jpg",
+      "label": "Working with SQL Databases: PostgreSQL",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-37-working-with-sqlite-in-go.png",
+      "thumb": "og-production-apis-architecture-37-working-with-sqlite-in-go.thumb.jpg",
+      "label": "Working with SQLite in Go",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-38-containerizing-go-apis-with-docker.png",
+      "thumb": "og-production-apis-architecture-38-containerizing-go-apis-with-docker.thumb.jpg",
+      "label": "Containerizing Go APIs with Docker",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-39-clean-architecture-for-go-apis.png",
+      "thumb": "og-production-apis-architecture-39-clean-architecture-for-go-apis.thumb.jpg",
+      "label": "Clean Architecture for Go APIs",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-40-hexagonal-architecture-ports-and-adapters-for-go-apis.png",
+      "thumb": "og-production-apis-architecture-40-hexagonal-architecture-ports-and-adapters-for-go-apis.thumb.jpg",
+      "label": "Hexagonal Architecture (Ports and Adapters) for Go APIs",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-41-domain-driven-design-in-go.png",
+      "thumb": "og-production-apis-architecture-41-domain-driven-design-in-go.thumb.jpg",
+      "label": "Domain-Driven Design in Go",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-42-building-a-complete-project-end-to-end.png",
+      "thumb": "og-production-apis-architecture-42-building-a-complete-project-end-to-end.thumb.jpg",
+      "label": "Building a Complete Project End-to-End",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-43-deploying-to-google-cloud.png",
+      "thumb": "og-production-apis-architecture-43-deploying-to-google-cloud.thumb.jpg",
+      "label": "Deploying to Google Cloud",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-44-orchestration-replicas-and-graceful-shutdown.png",
+      "thumb": "og-production-apis-architecture-44-orchestration-replicas-and-graceful-shutdown.thumb.jpg",
+      "label": "Orchestration, Replicas, and Graceful Shutdown",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-45-thinking-like-an-attacker-api-security.png",
+      "thumb": "og-production-apis-architecture-45-thinking-like-an-attacker-api-security.thumb.jpg",
+      "label": "Thinking Like an Attacker: API Security",
+      "group": "Production APIs &amp; Architecture"
+    },
+    {
+      "file": "og-production-apis-architecture-46-caching-and-redis-for-go-apis.png",
+      "thumb": "og-production-apis-architecture-46-caching-and-redis-for-go-apis.thumb.jpg",
+      "label": "Caching and Redis for Go APIs",
+      "group": "Production APIs &amp; Architecture"
+    }
+  ]
+}

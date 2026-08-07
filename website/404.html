@@ -5,10 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>Page Not Found — Networking with Go, Made Easy</title>
-<meta name="description" content="The page you're looking for doesn't exist. Go back to the home page or start reading the book.">
+<meta name="description" content="The page you're looking for doesn't exist. Go back to the home page or start reading the free, open-source book.">
 <meta name="robots" content="noindex">
 <meta name="author" content="Omar Flores Salazar">
 <meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://sazardev.github.io/networking-with-go/404.html">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Networking with Go, Made Easy">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Page Not Found — Networking with Go, Made Easy">
+<meta property="og:description" content="The page you're looking for doesn't exist. Read the free, open-source book on networking in Go instead — 151 chapters, no paywall.">
+<meta property="og:url" content="https://sazardev.github.io/networking-with-go/404.html">
+<meta property="og:image" content="https://sazardev.github.io/networking-with-go/assets/og-card.png">
+<meta property="og:image:secure_url" content="https://sazardev.github.io/networking-with-go/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="Networking with Go, Made Easy — free, open-source book on networking in Go">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Page Not Found — Networking with Go, Made Easy">
+<meta name="twitter:description" content="The page you're looking for doesn't exist. Read the free, open-source book on networking in Go instead — 151 chapters, no paywall.">
+<meta name="twitter:image" content="https://sazardev.github.io/networking-with-go/assets/og-card.png">
+<meta name="twitter:image:alt" content="Networking with Go, Made Easy — free, open-source book on networking in Go">
 
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23000'/%3E%3Ccircle cx='16' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='48' cy='46' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='32' cy='16' r='5' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='19' y1='43' x2='29' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='45' y1='43' x2='35' y2='20' stroke='%23fff' stroke-width='3'/%3E%3Cline x1='21' y1='46' x2='43' y2='46' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
 
@@ -147,6 +167,37 @@
     max-width: 480px;
     margin: 0 0 32px;
   }
+  .error-search {
+    display: flex;
+    gap: 0;
+    max-width: 480px;
+    width: 100%;
+    margin: 0 auto 32px;
+    border: 1px solid var(--line);
+  }
+  .error-search input {
+    flex: 1;
+    border: none;
+    background: var(--card);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 12px 14px;
+  }
+  .error-search input:focus { outline: none; }
+  .error-search button {
+    border: none;
+    border-left: 1px solid var(--line);
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0 16px;
+    cursor: pointer;
+  }
+  .error-search button:hover { background: var(--fg); color: var(--bg); }
   .btn-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
   .btn {
     display: inline-flex;
@@ -236,10 +287,15 @@
 <main>
   <div class="error-code">404</div>
   <h1 class="error-title">Page not found</h1>
-  <p class="error-message">The page you're looking for doesn't exist or has been moved. Try going back to the home page or start reading the book.</p>
+  <p class="error-message">The page you're looking for doesn't exist or has been moved. Try a search, go home, or start reading the free book.</p>
+  <form class="error-search" id="search-form" role="search" action="/read/index.html">
+    <input id="search-input" type="search" placeholder="Search the book..." autocomplete="off">
+    <button type="submit">Search</button>
+  </form>
   <div class="btn-row">
     <a class="btn btn-primary" href="/">Go Home</a>
     <a class="btn btn-secondary" href="/read/index.html">Read the Book</a>
+    <a class="btn btn-secondary" href="/marketing.html">Promote the Book</a>
   </div>
 </main>
 
@@ -260,6 +316,18 @@
 
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var form = document.getElementById('search-form');
+    var input = document.getElementById('search-input');
+    if (form && input) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var q = encodeURIComponent(input.value.trim());
+        window.location.href = '/read/index.html' + (q ? '?q=' + q : '');
+      });
+    }
+  })();
 
   (function () {
     var menuToggle = document.querySelector('.menu-toggle');

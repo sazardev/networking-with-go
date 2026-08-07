@@ -35,6 +35,7 @@
 <meta property="og:description" content="Learn TCP/IP, sockets, concurrency, HTTP, WebSockets, DNS, security, and how to build production APIs in Go — free PDF and EPUB.">
 <meta property="og:url" content="https://sazardev.github.io/networking-with-go/">
 <meta property="og:image" content="https://sazardev.github.io/networking-with-go/assets/og-card.png">
+<meta property="og:image:secure_url" content="https://sazardev.github.io/networking-with-go/assets/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:type" content="image/png">
@@ -194,56 +195,32 @@
             "@type": "Answer",
             "text": "Omar Flores Salazar. The book text is CC BY-NC 4.0 and the example code is MIT, both fully open in the public repository, so every claim, every code sample, and every chapter is there for anyone to read, run, and check."
           }
+        },
+        {
+          "@type": "Question",
+          "name": "Do I need to know networking first?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Part 1 explains networking concepts — TCP/IP, IP addressing, ports, protocols, NAT, VPNs — with history, analogies, and diagrams, with zero code required."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What topics does the book cover?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The full journey from TCP/IP and UDP to HTTP, WebSockets, DNS, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, SQLite, Docker, and Google Cloud — 150+ chapters."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use the code in my own projects?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. All the code in the book and exercises/ is MIT licensed — use it freely, with or without attribution. The book text itself is CC BY-NC 4.0."
+          }
         }
       ]
-    }
-  ]
-}
-</script>
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [
-    {
-      "@type": "Question",
-      "name": "Is Networking with Go, Made Easy really free?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Yes. The book text is licensed CC BY-NC 4.0 and the code MIT — you can read every chapter free online, and download the PDF and EPUB free from the GitHub Releases page."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "Do I need to know Go before reading it?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "No. A dedicated Go Fundamentals section teaches the language from scratch, including a flagship chapter on goroutines, channels, and concurrency, before any networking code starts."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "Do I need to know networking first?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "No. Part 1 explains networking concepts — TCP/IP, IP addressing, ports, protocols, NAT, VPNs — with history, analogies, and diagrams, with zero code required."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "What topics does the book cover?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "The full journey from TCP/IP and UDP to HTTP, WebSockets, DNS, gRPC, WebRTC, TLS, ethical hacking, and production-grade REST APIs with Gin, Fiber, PostgreSQL, SQLite, Docker, and Google Cloud — 150+ chapters."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "Can I use the code in my own projects?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Yes. All the code in the book and exercises/ is MIT licensed — use it freely, with or without attribution. The book text itself is CC BY-NC 4.0."
-      }
     }
   ]
 }
@@ -431,6 +408,32 @@
   .btn-secondary { background: transparent; color: var(--fg); }
   .btn:hover { opacity: 0.75; }
   .fineprint { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .share-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 18px;
+  }
+  .share-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+  .share-link {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-decoration: none;
+    border: 1px solid var(--line-soft);
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--fg);
+  }
+  .share-link:hover { border-color: var(--line); }
+  button.share-link { cursor: pointer; }
 
   hr.rule { border: none; border-top: 1px solid var(--line-soft); margin: 0; }
 
@@ -884,6 +887,7 @@
         <a href="#formats">Formats</a>
         <a href="#faq">FAQ</a>
         <a href="#author">About</a>
+        <a href="marketing.html">Marketing</a>
         <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
       </nav>
       <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
@@ -913,6 +917,15 @@
       </div>
       <p class="fineprint">No signup. No paywall. <span data-stars>★ open source on GitHub</span>.</p>
       <p class="fineprint">Want to support? <a href="https://buymeacoffee.com/sazarcode">Buy me a coffee</a>.</p>
+      <div class="share-row" aria-label="Share the book">
+        <span class="share-label">Share</span>
+        <a class="share-link" rel="noopener" target="_blank" href="https://twitter.com/intent/tweet?text=Free%20open-source%20book%3A%20networking%20%2B%20network%20programming%20in%20Go%20from%20zero%2C%20no%20paywall&url=https%3A%2F%2Fsazardev.github.io%2Fnetworking-with-go%2F">X</a>
+        <a class="share-link" rel="noopener" target="_blank" href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fsazardev.github.io%2Fnetworking-with-go%2F">LinkedIn</a>
+        <a class="share-link" rel="noopener" target="_blank" href="https://wa.me/?text=Networking%20with%20Go%2C%20Made%20Easy%20%E2%80%94%20free%2C%20open-source%20book%20https%3A%2F%2Fsazardev.github.io%2Fnetworking-with-go%2F">WhatsApp</a>
+        <a class="share-link" rel="noopener" target="_blank" href="https://t.me/share/url?url=https%3A%2F%2Fsazardev.github.io%2Fnetworking-with-go%2F&text=Free%2C%20open-source%20book%3A%20networking%20in%20Go">Telegram</a>
+        <button class="share-link share-native" id="share-copy" type="button">Copy link</button>
+        <button class="share-link share-native" id="share-native" type="button">Share&hellip;</button>
+      </div>
     </div>
   </div>
 </section>
@@ -1199,6 +1212,43 @@
 
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  (function () {
+    var canonical = 'https://sazardev.github.io/networking-with-go/';
+    var copyBtn = document.getElementById('share-copy');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var old = copyBtn.textContent;
+        function done() {
+          copyBtn.textContent = 'Copied';
+          setTimeout(function () { copyBtn.textContent = old; }, 1500);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(canonical).then(done);
+        } else {
+          var t = document.createElement('textarea');
+          t.value = canonical;
+          document.body.appendChild(t);
+          t.select();
+          document.execCommand('copy');
+          document.body.removeChild(t);
+          done();
+        }
+      });
+    }
+    var nativeShare = document.getElementById('share-native');
+    if (nativeShare && navigator.share) {
+      nativeShare.addEventListener('click', function () {
+        navigator.share({
+          title: document.title,
+          text: 'Free, open-source book: networking and network programming in Go, from zero. No paywall.',
+          url: canonical
+        }).catch(function () {});
+      });
+    } else if (nativeShare) {
+      nativeShare.style.display = 'none';
+    }
+  })();
 
   (function () {
     var menuToggle = document.querySelector('.menu-toggle');
