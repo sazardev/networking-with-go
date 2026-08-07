@@ -52,6 +52,10 @@ func (c *Client) Connect(addr string) error {
 
 <Warning title="Copying a struct that holds a connection">Passing a `Client` by value copies the `net.Conn` field. Both copies share the same underlying connection, but writes to one copy's other fields never reach the original — a frequent source of silent bugs.</Warning>
 
+[Exercise: Variables and Types](../../exercises/part2/02-variables-and-types/main.go)
+
+[Exercise: Structs and Methods](../../exercises/part2/02-structs-and-methods/main.go)
+
 ---
 
 ## Error Handling Around I/O
@@ -74,6 +78,8 @@ if ne, ok := err.(net.Error); ok && ne.Timeout() {
 ```
 
 <Warning title="log.Fatal skips your defers">`log.Fatal` calls `os.Exit(1)` immediately — any `defer conn.Close()` written earlier never runs. Inside a server, `log.Fatal` on a per-connection error kills the entire process. Prefer `log.Println` plus `return` or `continue`.</Warning>
+
+[Exercise: Error Handling](../../exercises/part2/02-error-handling/main.go)
 
 ---
 
@@ -101,6 +107,8 @@ for {
 It does not scale to infinity. A connection flood with no limit exhausts memory and file descriptors even though goroutines are cheap. Chapter 8 (Concurrency in Networking) introduces worker pools — a fixed number of goroutines pulling connections off a channel — as the escape hatch, reached for only once you have measured that unbounded goroutines are the problem.
 
 <DeepDive title="Why the accept loop doesn't need a mutex on conn">Each `conn, err := ln.Accept()` declares a brand-new variable with `:=`, so nothing is shared between goroutines spawned by different iterations — each closes over its own private connection. Synchronization only becomes necessary once handlers touch something *outside* their connection, like a shared map or counter.</DeepDive>
+
+[Exercise: Goroutines and Channels](../../exercises/part2/02-goroutines-channels/main.go)
 
 ---
 
@@ -147,6 +155,16 @@ Key points:
 - `buf[:n]` prints *before* checking `err` — `Read` can return data and `io.EOF` in the same call.
 
 <Axiom>Every byte a TCP connection hands you comes through the same three-step ritual: read into a slice, check the error, decide whether to keep going.</Axiom>
+
+[Exercise: Hello Go](../../exercises/part2/02-hello-go/main.go)
+
+[Exercise: Control Structures](../../exercises/part2/02-control-structures/main.go)
+
+[Exercise: Functions](../../exercises/part2/02-functions/main.go)
+
+[Exercise: Slices and Maps](../../exercises/part2/02-slices-and-maps/main.go)
+
+[Exercise: TCP Client](../../exercises/part2/02-tcp-client/main.go)
 
 ---
 

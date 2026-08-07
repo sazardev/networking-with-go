@@ -27,7 +27,7 @@ Install the PDF tool once: `go install github.com/sazardev/go-pretty-pdf/cmd/pre
 - **Zero emoji** anywhere in docs or exercises -- hard repo-wide rule.
 - **Before editing any `docs/**/*.mdx`**: read `.claude/skills/mdx-pdf-format/SKILL.md` for required frontmatter (`id`/`title`), ID scheme (X per top-level docs folder), h3 depth cap, the one-physical-line rule for `DeepDive`/`Warning`/`Axiom` tags, and code-fence line-length limit.
 - **After adding/removing/renaming/reordering a chapter in `docs/`**: update the matching link in `README.md` (root) and/or `docs/part-apis/README.md` -- the book is ordered by frontmatter `id`, and links carry the `.mdx` extension.
-- **Part 1 chapters 3-13 are theory-only** -- no Go code. Chapters 1-2 are the sole exception (one small snippet each at the end).
+- **Part 1 chapters 1-13 are theory-only** -- no Go code. Chapters 1-2 contain only ASCII diagrams, and chapters 3-13 contain no code fences at all.
 - **New exercises**: single `main.go` per directory, no `go.mod` unless a third-party dependency is needed, client/server pairs in separate directories. Verify with `GO111MODULE=off go vet . && GO111MODULE=off go build -o /tmp/out .` from inside the dir, plus `gofmt -l`.
 
 ## Website / web reader

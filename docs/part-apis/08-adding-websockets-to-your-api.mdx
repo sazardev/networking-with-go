@@ -5,7 +5,7 @@ title: "Adding WebSockets to Your API"
 
 # Adding WebSockets to Your API
 
-REST is built around request-response: the client always speaks first. Some features — chat, live dashboards, multiplayer state, collaborative editing — need the server to push data the moment it happens, in both directions, over one long-lived connection. That's what WebSockets are for. This chapter uses `github.com/gorilla/websocket`, the de facto standard WebSocket library in the Go ecosystem, to add a real-time channel to an API.
+REST is built around request-response: the client always speaks first. Some features — chat, live dashboards, multiplayer state, collaborative editing — need the server to push data the moment it happens, in both directions, over one long-lived connection. That's what WebSockets are for. This chapter uses `github.com/gorilla/websocket`, the de facto standard WebSocket library in the Go ecosystem, to add a real-time channel to an API. Part 2, Chapter 12 covered the WebSocket protocol itself, including a native handshake implementation; this chapter focuses on the gorilla-based API integration.
 
 ---
 

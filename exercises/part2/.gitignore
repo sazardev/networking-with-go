@@ -1,0 +1,7 @@
+# Compiled binaries (built with `go build` inside these dirs) -- keep source only.
+*
+!*/
+!*.go
+!go.mod
+!go.sum
+!.gitignore

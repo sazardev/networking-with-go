@@ -19,7 +19,7 @@ type Reader interface {
 }
 ```
 
-One method. `Read` fills the caller-provided buffer `p` with up to `len(p)` bytes, returns how many bytes it actually wrote into `p`, and optionally an error. The caller owns the buffer — `Read` does not allocate.
+One method. `Read` fills the caller-provided buffer `p` with up to `len(p)` bytes, returns how many bytes it actually wrote into `p`, and optionally an error. The caller owns the buffer — `Read` does not allocate. (`[]byte` is a byte slice; slices, arrays, and maps get their own chapter next.)
 
 Key contract details:
 

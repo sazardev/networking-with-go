@@ -35,7 +35,7 @@ UDP is far friendlier to this than TCP, since it's connectionless — you don't 
 
 To punch a hole, both peers first need to *learn* their own public address and *exchange* it with the other peer — neither can see its own NAT mapping from the inside. That requires a third party both peers can already reach: a **rendezvous server**.
 
-<DeepDive title="STUN, TURN, and ICE">Production P2P systems (WebRTC, many VoIP tools) use standardized protocols for this: **STUN** servers tell a peer its own public IP/port; **TURN** servers relay traffic when direct punching fails (typically against symmetric NAT); **ICE** is the framework that tries direct connections first and falls back to a TURN relay. The rendezvous server we build below is a simplified, hand-rolled stand-in for what a STUN server provides.</DeepDive>
+<DeepDive title="STUN, TURN, and ICE">Production P2P systems (WebRTC, many VoIP tools) use standardized protocols for this: **STUN** servers tell a peer its own public IP/port; **TURN** servers relay traffic when direct punching fails (typically against symmetric NAT); **ICE** is the framework that tries direct connections first and falls back to a TURN relay. The rendezvous server we build below is a simplified, hand-rolled stand-in for what a STUN server provides. WebRTC builds all of this into a full framework with Go bindings — covered end to end in the Advanced section.</DeepDive>
 
 ---
 
