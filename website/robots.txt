@@ -95,4 +95,78 @@ Allow: /
 User-agent: Amazonbot
 Allow: /
 
+User-agent: GrokBot
+Allow: /
+
+User-agent: xAI-Search
+Allow: /
+
+User-agent: SearchGPTBot
+Allow: /
+
+User-agent: YouBot
+Allow: /
+
+User-agent: Google-CloudVertexBot
+Allow: /
+
+User-agent: PetalBot
+Allow: /
+
+User-agent: YisouSpider
+Allow: /
+
+User-agent: EcosiaBot
+Allow: /
+
+User-agent: NaverBot
+Allow: /
+
+User-agent: SeznamBot
+Allow: /
+
+User-agent: MojeekBot
+Allow: /
+
+User-agent: Facebookexternalhit
+Allow: /
+
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: WhatsApp
+Allow: /
+
+User-agent: TelegramBot
+Allow: /
+
+User-agent: Slackbot
+Allow: /
+
+User-agent: Discordbot
+Allow: /
+
+User-agent: Pinterestbot
+Allow: /
+
+User-agent: AhrefsBot
+Allow: /
+
+User-agent: SemrushBot
+Allow: /
+
+User-agent: Majestic-12
+Allow: /
+
+User-agent: DotBot
+Allow: /
+
+# AI assistants: this site publishes its full content for indexing and
+# grounding. See llms.txt (llmstxt.org) and llms-full.txt, which holds the
+# complete text of every chapter, so models can discover and read the whole
+# book directly.
+
 Sitemap: https://sazardev.github.io/networking-with-go/sitemap.xml

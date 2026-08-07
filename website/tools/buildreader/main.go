@@ -64,10 +64,10 @@ var parts = []part{
 // automatically against Keywords in their title, so the topic index stays
 // in sync with the book with no manual chapter list to maintain.
 type topic struct {
-	Slug      string
-	Title     string
-	Desc      string
-	Keywords  []string
+	Slug     string
+	Title    string
+	Desc     string
+	Keywords []string
 }
 
 var topics = []topic{
@@ -302,6 +302,7 @@ func main() {
 	writeFeed(results)
 	writePrecache(results)
 	writeLLMS(results)
+	writeLLMSFull(results)
 
 	log.Printf("done: %d parts, %d chapters, %d search entries", len(results), totalChapters, len(search))
 }
@@ -549,11 +550,11 @@ func marshalLD(graph []ldNode) string {
 func chapterJSONLD(ch chapterEntry, p part, position int, canonicalURL string, keywords string, about []string) string {
 	graph := []ldNode{
 		{
-			"@type":              "Chapter",
-			"name":               ch.Title,
-			"headline":           ch.Title,
-			"keywords":           keywords,
-			"genre":              p.Title,
+			"@type":    "Chapter",
+			"name":     ch.Title,
+			"headline": ch.Title,
+			"keywords": keywords,
+			"genre":    p.Title,
 			"isPartOf": ldNode{
 				"@type": "Book",
 				"name":  bookName,
@@ -566,6 +567,7 @@ func chapterJSONLD(ch chapterEntry, p part, position int, canonicalURL string, k
 			"license":             "https://creativecommons.org/licenses/by-nc/4.0/",
 			"isAccessibleForFree": true,
 			"description":         ch.Excerpt,
+			"image":               ogCardURL,
 			"inLanguage":          "en",
 			"dateModified":        buildTimeRFC3339,
 			"mainEntityOfPage":    ldNode{"@type": "WebPage", "@id": canonicalURL},
@@ -601,7 +603,7 @@ func websiteJSONLD() string {
 			"potentialAction": ldNode{
 				"@type": "SearchAction",
 				"target": ldNode{
-					"@type":      "EntryPoint",
+					"@type":       "EntryPoint",
 					"urlTemplate": siteBase + "/read/index.html?q={search_term_string}",
 				},
 				"query-input": "required name=search_term_string",
@@ -686,12 +688,16 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 	b.WriteString(`<meta name="author" content="Omar Flores Salazar">` + "\n")
 	b.WriteString(`<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">` + "\n")
 	b.WriteString(`<meta name="bingbot" content="index, follow, max-image-preview:large">` + "\n")
+	fmt.Fprintf(&b, `<meta name="llms" content="%s/llms.txt">`+"\n", siteBase)
 	if m.Keywords != "" {
 		fmt.Fprintf(&b, `<meta name="keywords" content="%s">`+"\n", html.EscapeString(m.Keywords))
 	}
 	fmt.Fprintf(&b, `<link rel="canonical" href="%s">`+"\n", m.Canonical)
 	fmt.Fprintf(&b, `<link rel="icon" type="image/svg+xml" href="%s">`+"\n", favicon)
 	fmt.Fprintf(&b, `<link rel="manifest" href="%smanifest.webmanifest">`+"\n", ctx.toSite)
+	fmt.Fprintf(&b, `<link rel="apple-touch-icon" href="%sassets/icon-192.png">`+"\n", ctx.toSite)
+	b.WriteString(`<meta name="mobile-web-app-capable" content="yes">` + "\n")
+	b.WriteString(`<meta name="apple-mobile-web-app-capable" content="yes">` + "\n")
 	fmt.Fprintf(&b, `<link rel="alternate" type="application/atom+xml" title="%s — New Chapters" href="%sfeed.xml">`+"\n", html.EscapeString(bookName), ctx.toSite)
 	fmt.Fprintf(&b, `<link rel="preload" as="image" href="%sassets/og-card.png">`+"\n", ctx.toSite)
 	b.WriteString(`<meta name="theme-color" content="#0a0a0a">` + "\n")
@@ -913,11 +919,17 @@ func renderPartIndexPage(r partResult, sidebar, theme string) string {
 }
 
 func renderIndexPage(results []partResult, sidebar, theme string) string {
+	totalChapters := 0
+	for _, r := range results {
+		totalChapters += len(r.chapters)
+	}
+	indexDesc := fmt.Sprintf("Read all %d chapters of Networking with Go, Made Easy free in your browser — same content as the PDF, same fonts, with full-text search.", totalChapters)
+	indexOGDesc := fmt.Sprintf("Read all %d chapters of Networking with Go, Made Easy free in your browser — the open-source book on networking in Go: TCP/IP, UDP, HTTP, WebSockets, DNS, gRPC, TLS, ethical hacking, and production APIs. Same content as the PDF, with full-text search.", totalChapters)
 	meta := pageMeta{
 		Title:         "Read Online",
-		Description:   "Read all 150 chapters of Networking with Go, Made Easy free in your browser — same content as the PDF, same fonts, with full-text search.",
+		Description:   indexDesc,
 		OGTitle:       "Read Online — Networking with Go, Made Easy",
-		OGDescription: "Read all 150 chapters of Networking with Go, Made Easy free in your browser — the open-source book on networking in Go: TCP/IP, UDP, HTTP, WebSockets, DNS, gRPC, TLS, ethical hacking, and production APIs. Same content as the PDF, with full-text search.",
+		OGDescription: indexOGDesc,
 		Keywords:      keywordsString(deriveKeywords("Networking with Go book TCP IP UDP HTTP WebSockets DNS gRPC TLS security API programming")),
 		Canonical:     siteBase + "/read/index.html",
 		OGType:        "website",
@@ -931,7 +943,7 @@ func renderIndexPage(results []partResult, sidebar, theme string) string {
 	b.WriteString(sidebar)
 	b.WriteString(`<main class="reader-content">` + "\n")
 	b.WriteString(`<h1>Read Networking with Go, Made Easy — online</h1>` + "\n")
-	b.WriteString(`<p>All 150 chapters, eight parts, right in the browser — same content as the PDF, same fonts, always in sync with the latest edit.</p>` + "\n")
+	fmt.Fprintf(&b, `<p>All %d chapters, eight parts, right in the browser — same content as the PDF, same fonts, always in sync with the latest edit.</p>`+"\n", totalChapters)
 	b.WriteString(`<div class="part-grid">` + "\n")
 	fmt.Fprintf(&b, `<a class="part-card topics-card" href="topics/index.html"><span class="part-idx">&#9673;</span><h2>Browse by Topic</h2><p>Jump straight to the chapters that matter to you — TCP/IP, HTTP, WebSockets, gRPC, security, databases, containers, and more.</p><span class="part-count">%d topics</span></a>`+"\n", len(topics))
 	for i, r := range results {
@@ -1022,6 +1034,7 @@ func writeLLMS(results []partResult) {
 		b.WriteString("\n")
 	}
 	b.WriteString("## More\n")
+	fmt.Fprintf(&b, "- Full text of every chapter (for grounding): %s/llms-full.txt\n", siteBase)
 	fmt.Fprintf(&b, "- Browse by topic: %s/read/topics/index.html\n", siteBase)
 	fmt.Fprintf(&b, "- Chapter feed (Atom): %s/feed.xml\n", siteBase)
 	fmt.Fprintf(&b, "- FAQ: %s/#faq\n", siteBase)
@@ -1033,12 +1046,79 @@ func writeLLMS(results []partResult) {
 	log.Printf("llms.txt: %d chapters listed", chapterCount)
 }
 
+// blockCloseRe / brRe convert HTML block boundaries into newlines before the
+// generic tag stripper runs, so llms-full.txt reads like a book instead of a
+// single run-on paragraph.
+var (
+	blockCloseRe = regexp.MustCompile(`(?i)</(?:p|div|section|h[1-6]|li|pre|blockquote|tr|ul|ol|dl|dt|dd|table|thead|tbody|tfoot|figcaption|summary)>`)
+	brRe         = regexp.MustCompile(`(?i)<br\s*/?>`)
+	blankRe      = regexp.MustCompile(`\n{3,}`)
+)
+
+// htmlToText converts a chapter's HTML body to plain text, preserving
+// paragraph and line structure and dropping the chapter's own h1 (the title
+// is already emitted by writeLLMSFull).
+func htmlToText(s string) string {
+	// Drop the chapter's own h1 (the title) first — the title is already
+	// emitted by writeLLMSFull, so it would otherwise appear twice.
+	if i := strings.Index(s, "<h1>"); i >= 0 {
+		if j := strings.Index(s[i:], "</h1>"); j >= 0 {
+			s = s[:i] + s[i+j+len("</h1>"):]
+		}
+	}
+	s = brRe.ReplaceAllString(s, "\n")
+	s = blockCloseRe.ReplaceAllString(s, "\n")
+	s = tagStripRe.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	s = blankRe.ReplaceAllString(s, "\n\n")
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimSpace(lines[i])
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// writeLLMSFull generates website/llms-full.txt: the whole book, every
+// chapter's full text inline under its URL, following the llmstxt.org
+// companion-file convention so AI crawlers and answer engines can ground on
+// the entire book from a single fetch without crawling chapter by chapter.
+func writeLLMSFull(results []partResult) {
+	chapterCount := 0
+	for _, r := range results {
+		chapterCount += len(r.chapters)
+	}
+
+	var b strings.Builder
+	b.WriteString("# " + bookName + "\n\n")
+	fmt.Fprintf(&b, "> A free, open-source book that teaches computer networking and network programming in Go (Golang) from first principles through production APIs and ethical hacking/cybersecurity. Author: Omar Flores Salazar. Book text license: CC BY-NC 4.0 (attribution required, non-commercial use only — do not reproduce or retrain on this text for commercial purposes without permission). Example code license: MIT. %d chapters across %d parts. Written for complete beginners and experienced engineers at the same time.\n\n", chapterCount, len(results))
+	fmt.Fprintf(&b, "> This file is the full text of the book, one section per chapter. The outline version lives at %s/llms.txt\n\n", siteBase)
+
+	globalPos := 0
+	for _, r := range results {
+		fmt.Fprintf(&b, "# %s\n\n", r.meta.Title)
+		for _, ch := range r.chapters {
+			globalPos++
+			url := fmt.Sprintf("%s/read/%s/%s.html", siteBase, r.meta.Slug, ch.Slug)
+			fmt.Fprintf(&b, "## %d. %s\n\n%s\n\n%s\n\n", globalPos, ch.Title, url, htmlToText(ch.BodyHTML))
+		}
+	}
+
+	b.WriteString("## More\n\n")
+	fmt.Fprintf(&b, "- Outline version: %s/llms.txt\n", siteBase)
+	fmt.Fprintf(&b, "- Browse by topic: %s/read/topics/index.html\n", siteBase)
+	fmt.Fprintf(&b, "- Chapter feed (Atom): %s/feed.xml\n", siteBase)
+	fmt.Fprintf(&b, "- Latest release and PDF download: %s/releases/latest\n", "https://github.com/sazardev/networking-with-go")
+
+	writeFile("website/llms-full.txt", b.String())
+	log.Printf("llms-full.txt: %d chapters, full text", chapterCount)
+}
+
 // topicChapters matches a topic's keywords against chapter titles so the
 // "browse by topic" page stays auto-generated. Returns the flat chapter refs.
 type topicRef struct {
-	PartSlug string
-	Slug     string
-	Title    string
+	PartSlug  string
+	Slug      string
+	Title     string
 	PartTitle string
 }
 
