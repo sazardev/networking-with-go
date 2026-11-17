@@ -14,7 +14,8 @@ claims checkable against the repository.
 | Awesome Networking (`facyber`) | PR open | https://github.com/facyber/awesome-networking/pull/75 |
 | GitHub topics | Done | `book`, `go`, `golang`, `networking`, `network-programming`, `tcp-ip`, `websockets`, `grpc`, `tls`, `http`, `cybersecurity`, `hacking`, `education`, `free` |
 | Marketing kit | Live | https://sazardev.github.io/networking-with-go/marketing.html |
-| dev.to article draft | Ready | `promotion/dev-to-article.md` (frontmatter has `published: false`) |
+| dev.to article | Live | https://dev.to/sazardev/rendering-25-mermaid-diagrams-into-a-print-pdf-and-what-broke-55a4 |
+| daily.dev post | Live | https://daily.dev/posts/free-open-source-book-networking-and-network-programming-in-go-e7phwhzww |
 | Homepage download | Live | Resolves the latest release asset through the GitHub API |
 
 ## Channels that need the author's account
