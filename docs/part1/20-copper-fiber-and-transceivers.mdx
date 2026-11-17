@@ -1,0 +1,103 @@
+---
+id: "[1.20.0]"
+title: "Copper, Fiber, and the Hardware You Plug In"
+---
+
+# Copper, Fiber, and the Hardware You Plug In
+
+> "No matter how hard you push and no matter what the priority, you can't increase the speed of light."
+> — RFC 1925, *The Twelve Networking Truths* (1996)
+
+A network engineer spends a surprising amount of time on things that look like plumbing: cable categories, connector types, transceiver reach, and whether that fiber patch cord is clean. The reason is simple. The physical medium is where the promises of the upper layers are either kept or broken. A perfect TCP implementation cannot recover from a cable that reflects too much signal, a transceiver that is the wrong reach, or a dusty connector that attenuates half the light.
+
+This chapter is a field guide to the hardware between the NIC and the other end: copper twisted pair, fiber, and the pluggable transceivers that connect them. The goal is not to make you a cabling installer; it is to make you dangerous enough to read a datasheet, choose the right part, and recognize when a network problem is physical before you spend a day debugging Go code.
+
+### Copper: Twisted Pair and Its Limits
+
+Most access networks still run on **unshielded twisted pair** (UTP) or **shielded twisted pair** (STP) copper. Four pairs, eight wires, an RJ45 connector. The categories encode how much bandwidth the cable can carry and how tightly crosstalk is controlled:
+
+| Category | Typical use | Distance |
+|---|---|---|
+| Cat5e | 1GBASE-T | 100 m |
+| Cat6 | 1GBASE-T, 10GBASE-T | 100 m at 1G, ~55 m at 10G |
+| Cat6a | 10GBASE-T | 100 m |
+| Cat7/8 | Data-center and specialized | Shielded, short runs |
+
+Two wiring standards, **T568A** and **T568B**, define which wire goes on which pin. Both work, but the two ends of a cable must use the same standard. A cable wired A on one end and B on the other is a **crossover cable**; modern gear usually auto-detects and compensates, but old installations can still surprise you.
+
+Copper has three practical limits. **Distance**: attenuation and crosstalk grow with length, which is why 100 meters is the standard limit. **Noise**: motors, fluorescent lights, power cables, and radio transmitters couple energy into the pairs; shielding and twisted pairs reduce it, but do not eliminate it. **Grounding**: shielded cable only helps if the shield is grounded correctly at the right points; a floating shield can make things worse.
+
+**Power over Ethernet** (PoE) carries DC power on the same pairs as data. The standards matter: 802.3af provides about 15.4 W at the switch and 12.95 W at the device; 802.3at ("PoE+") roughly doubles that; 802.3bt reaches 60 W and 90 W. A camera or access point that reboots under load is often a PoE budget problem, not a software problem.
+
+### Fiber: Light in Glass
+
+Fiber carries data as light, which makes it immune to electrical noise and capable of far greater distance and bandwidth. The trade-off is fragility, cost, and the need for careful termination and cleaning.
+
+There are two families:
+
+- **Multimode fiber** has a core of about 50 or 62.5 micrometers and carries multiple light paths. It is cheap, easy to terminate, and used for short reaches inside buildings and data centers, usually at 850 nm.
+- **Single-mode fiber** has a core of about 8-10 micrometers and carries one path. It is used for long haul, often at 1310 nm or 1550 nm, and can span tens of kilometers without regeneration.
+
+Connectors differ too: **LC** is the common small form factor, **SC** is the square push-pull connector, **ST** is the older bayonet style, and **MPO/MTP** carries many fibers in one connector for high-density 40G/100G/400G links. A mismatch here is a physical incompatibility, not a configuration error.
+
+Two habits prevent most fiber outages. **Clean every connector before plugging it in** — a speck of dust on a single-mode core can attenuate or reflect enough light to break the link — and **respect the bend radius**. Fiber is glass; a tight bend leaks light and can crack the core.
+
+### Transceivers: The Part Everyone Forgets
+
+The port on a switch or NIC is usually a cage, not a fixed connector. The actual optics live in a **pluggable transceiver**:
+
+| Form factor | Typical speed | Notes |
+|---|---|---|
+| SFP | 1G | The original small form factor |
+| SFP+ | 10G | Same size, higher speed |
+| SFP28 | 25G | Common in data centers |
+| QSFP+ | 40G | Four lanes |
+| QSFP28 | 100G | Four 25G lanes |
+| QSFP-DD / OSFP | 400G/800G | Eight lanes, high density |
+
+A transceiver has a **reach** rating — the distance and fiber type it is designed for. A 10GBASE-SR module expects multimode fiber at 850 nm; a 10GBASE-LR module expects single-mode at 1310 nm. Plugging the wrong one in usually produces no link at all, or a link that works briefly and then drops under temperature or bend changes.
+
+**DAC** (direct attach copper) and **AOC** (active optical cable) are pre-terminated alternatives for short racks. They are cheaper and lower-power than separate optics, but they are fixed-length and less flexible.
+
+Most enterprise transceivers expose **digital optical monitoring** (DOM/DDM): transmit power, receive power, temperature, and voltage. When a fiber link is marginal, those numbers tell you whether the problem is the module, the patch cord, or the far end. A receive power outside the datasheet's range is a physical problem; no amount of `ethtool` tuning will fix it.
+
+<DeepDive title="Link budget, in one paragraph">A fiber link works when the light arriving at the receiver is above its sensitivity and below its overload point. The **link budget** is transmit power minus the losses: connector loss, splice loss, fiber attenuation, and any patch-panel loss. A typical single-mode link might budget 0.3 dB per connector and 0.35 dB per kilometer at 1310 nm. If the calculated receive power is outside the module's range, the link is not marginal — it is impossible, and no software setting will make it reliable.</DeepDive>
+
+<Warning title="A link that comes up is not a link that is healthy">Ethernet auto-negotiation can bring a link up even when the optical or copper margin is poor. The link light turns green, pings work, and then large transfers fail under load. Check FCS/CRC error counters, receive power, and cable test results before blaming the application. A link that is "up" is only a statement about the physical layer's ability to exchange enough symbols to negotiate.</Warning>
+
+### Duplex, Autonegotiation, and the Classic Mismatch
+
+Copper Ethernet negotiates speed and duplex with **auto-negotiation**. When one side is hard-coded to full duplex and the other is left on auto, the auto side may fall back to half duplex. The result is a **duplex mismatch**: collisions, late collisions, retransmissions, and terrible throughput on an otherwise "working" link. The rule is simple: leave both sides on auto, or hard-code both sides to the same speed and duplex. Never mix.
+
+Fiber links do not have this problem in the same way — they are point-to-point and full duplex by construction — but they have their own version: a mismatch in speed or coding between the two transceivers simply produces no link.
+
+<Axiom>Upper layers can only be as reliable as the medium. A CRC error counter is a physical-layer alarm, not an application bug.</Axiom>
+
+## Frequently Asked Questions
+
+**Can I use a 10GBASE-LR transceiver on multimode fiber?**
+No, not reliably. LR is designed for single-mode at 1310 nm; multimode has different core size and dispersion. Use SR for multimode, LR for single-mode, and check the reach rating.
+
+**Why does my copper link work at 1G but fail at 10G?**
+10GBASE-T needs better cable and connector performance. Cat5e may support 10G only over very short runs, and alien crosstalk between bundled cables can ruin it. Cat6a is the safe choice for 100 meters.
+
+**Do I need shielded cable?**
+Only when the environment is electrically noisy or the run is near power equipment. Shielded cable must be grounded correctly; otherwise it can act as an antenna and make interference worse.
+
+**What causes a fiber link to flap?**
+Dirty connectors, a bend tighter than the cable's minimum radius, a failing transceiver, or a receive power level at the edge of the module's range. DOM readings and a fiber inspection scope are the fastest way to find out.
+
+### Further Reading
+
+- [IEEE 802.3 — Ethernet](https://standards.ieee.org/ieee/802.3/7071/), especially the copper and fiber PHY clauses.
+- TIA-568 — Commercial Building Telecommunications Cabling Standard.
+- Fiber Optic Association, *Fiber Optic Technician's Manual* and its online reference material.
+- Cisco, *Campus LAN and Wireless LAN Solution Design Guide*, cabling and transceiver chapters.
+- Transceiver datasheets: reach, wavelength, DOM, and link-budget tables are the authoritative source for a specific part.
+
+### Fun Facts and Notes
+
+- A single-mode fiber core is about 8-10 micrometers — roughly a tenth of a human hair — yet it can carry terabits per second over long distances.
+- 1000BASE-T uses all four pairs simultaneously, with echo cancellation separating transmit and receive on the same pair.
+- PoE can power a camera, a phone, or an access point over the same cable that carries its data; the switch's power budget is a real constraint, not an infinite resource.
+- A fiber connector can look perfectly clean and still scatter enough light to break a single-mode link. Inspection and cleaning are not optional habits.

@@ -1,0 +1,108 @@
+---
+id: "[1.21.0]"
+title: "From NIC to Go: How Packets Reach Your Program"
+---
+
+# From NIC to Go: How Packets Reach Your Program
+
+> "We should forget about small efficiencies, say about 97% of the time: premature optimization is the root of all evil."
+> — Donald Knuth, *Structured Programming with go to Statements* (1974)
+
+Between the wire and your `conn.Read` there is a surprising amount of machinery: a network interface card, a DMA engine, descriptor rings, PCIe transactions, interrupts, a kernel network stack, socket buffers, and the Go runtime's network poller. Each layer can be the reason a service is fast, slow, or inexplicably uneven under load. You do not need to read a NIC datasheet to write a good server, but you do need a mental model of where the packet spends its time.
+
+This chapter follows one packet from the PHY to a Go goroutine and then back out. Along the way it explains the hardware offloads that change what your code actually sees, the kernel queues that decide which CPU handles a connection, and the Go runtime behavior that determines whether a blocking read costs a scheduler slot or a thread.
+
+### The NIC Is a Small Computer
+
+A modern network interface card is not a dumb connector. It has a **PHY** that speaks the physical layer, a **MAC** that handles framing and addressing, and a DMA engine that moves packets between the wire and host memory without the CPU copying every byte.
+
+The usual structure is a pair of **descriptor rings**:
+
+```
+RX ring: [desc 0][desc 1][desc 2] ...  →  DMA writes packet buffers
+TX ring: [desc 0][desc 1][desc 2] ...  →  DMA reads packet buffers
+```
+
+Each descriptor points at a buffer in host memory and carries status flags. The NIC writes received frames into the buffers and updates the descriptor; the driver hands the completed descriptors to the kernel. On transmit, the driver fills buffers, updates the tail of the ring, and the NIC reads them. The rings are the interface between hardware and software, and their size is a latency/throughput trade-off: a deeper ring absorbs bursts but adds queueing delay.
+
+Modern NICs have many rings and many queues. **RSS** (Receive Side Scaling) hashes the packet's 4-tuple — source and destination IP and port — to select a queue, so different connections land on different CPUs and their processing scales across cores. **MSI-X** gives each queue its own interrupt vector, which avoids a single interrupt handler becoming the bottleneck. On the transmit side, **XPS** can steer a flow to a queue associated with the CPU that is sending it, improving cache locality.
+
+### Interrupts, NAPI, and the Cost of Being Polite
+
+The naive design is one interrupt per packet. At 10 Gbps and small frames, that is millions of interrupts per second, and the CPU spends all its time entering and leaving interrupt context. Linux uses **NAPI**: the first packet triggers an interrupt, the driver disables further interrupts for that queue, and the kernel polls the ring in a softirq with a bounded budget. When the budget is exhausted, the queue is rescheduled, so a flood cannot starve the rest of the system.
+
+This is why **interrupt coalescing** exists: the NIC waits a few microseconds or accumulates a few packets before raising an interrupt. It dramatically improves throughput and reduces CPU usage, at the cost of added latency. A latency-sensitive service may want coalescing reduced or disabled; a bulk transfer service wants it on.
+
+The kernel then runs the packet through the network stack: it validates the frame, applies **GRO** (Generic Receive Offload) to merge related packets, runs netfilter and routing, and places the payload in the socket's receive buffer. The socket wakeup is what eventually makes a blocked `Read` return.
+
+### Offloads: What the Hardware Does for You
+
+Several offloads change the relationship between your code and the wire:
+
+- **Checksum offload** lets the NIC compute or verify TCP/UDP checksums, so the kernel does not have to.
+- **TSO/GSO** (TCP Segmentation Offload / Generic Segmentation Offload) lets the kernel hand the NIC a large buffer and have it split into MSS-sized segments, instead of the stack doing the splitting.
+- **LRO** (Large Receive Offload) merges incoming packets; it is less common than GRO because it can confuse forwarding and latency measurements.
+- **SR-IOV** exposes virtual functions of a NIC directly to virtual machines, bypassing the host network stack.
+- **AF_XDP** and **DPDK** go further: they let a user-space program poll the NIC directly, bypassing most of the kernel stack. They can reach millions of packets per second, at the cost of dedicating cores, managing memory, and giving up most of the kernel's networking features.
+
+Offloads are not free latency-wise. A large TSO burst can sit in the NIC queue; coalescing delays interrupts; a deep ring adds queueing. The right configuration depends on whether the workload is throughput-bound or latency-bound, and those two often want opposite settings.
+
+### The Go Runtime's Side
+
+Go does not expose the NIC directly. It uses the kernel's sockets and its own **network poller**, which is built on `epoll` on Linux, `kqueue` on BSD/macOS, and IOCP on Windows. When a goroutine calls `conn.Read` and no data is available, the runtime registers the file descriptor with the poller and parks the goroutine. The OS thread is free to run other goroutines. When the poller reports readiness, the goroutine is made runnable again.
+
+That design is why a Go server can hold tens of thousands of idle connections without a thread per connection. It is also why the cost of a syscall matters: every `Read`/`Write` that actually moves data crosses into the kernel, and batching those calls is often the difference between a fast server and a busy one. `bufio.Reader`/`bufio.Writer` reduce syscall count; `io.Copy` can use `sendfile` for file-to-socket transfers, avoiding a copy through user space.
+
+A few Go-specific knobs matter in practice:
+
+- **`GOMAXPROCS`** controls how many OS threads can execute Go code at once; it does not limit goroutines, and it should usually match the CPUs available to the process.
+- **`SO_REUSEPORT`** lets multiple listeners bind the same port, so the kernel can distribute incoming connections across them. It is a common way to scale accept loops without a single lock.
+- **`TCP_NODELAY`** disables Nagle's algorithm for latency-sensitive small writes; it is a trade-off, not a default improvement.
+- **Deadlines** (`SetReadDeadline`, `SetWriteDeadline`) are how a Go server avoids a stalled peer holding a goroutine forever.
+- **Buffer sizes** should match the workload. A 4 KB read buffer on a 10 Gbps stream creates far more syscalls than a 64 KB buffer; a 1 MB buffer per idle connection wastes memory.
+
+<DeepDive title="Why one fast connection can still be slow">A single TCP connection is limited by the congestion window and the receive window, not just by the link speed. On a long path, the bandwidth-delay product can require megabytes in flight to fill the pipe, and a small window caps throughput regardless of how fast the NIC is. This is the same limit from the performance chapter, now visible in the kernel's socket buffers and the NIC's ring. More bandwidth does not fix it; window scaling, a larger receive buffer, and avoiding unnecessary copies do.</DeepDive>
+
+<Warning title="Offloads can hide the packet you are trying to measure">A packet capture taken on the host may show large "packets" that were never on the wire, because TSO/GSO had not segmented them yet. Receive-side coalescing can merge packets that arrived separately. When latency or packet-size measurements matter, disable the relevant offloads on the interface or capture at the NIC/physical tap, and say which vantage point the numbers came from.</Warning>
+
+### What to Measure
+
+When a Go network service is slower than expected, measure the layers in order:
+
+- **NIC and driver:** `ethtool -S` for drops, errors, and queue statistics; `ethtool -k` for offload state; ring sizes with `ethtool -g`.
+- **Kernel:** `/proc/net/softnet_stat` for dropped packets and time squeezed; `ss -ti` for socket queues, retransmits, and congestion window; `nstat`/`netstat -s` for protocol counters.
+- **Go:** `pprof` CPU and heap profiles; `runtime/metrics` for goroutines and GC; `GODEBUG=gctrace=1` when allocation is the suspect.
+- **Hardware:** `perf` for cache misses and cycles; a physical tap or mirror port when the host capture disagrees with the wire.
+
+The most common finding is not a mysterious kernel bug. It is a buffer that is too small, a syscall per byte, a blocked goroutine without a deadline, or a queue pinned to one CPU.
+
+<Axiom>A packet is only as fast as the slowest queue it crosses. Measure the queue, not the average.</Axiom>
+
+## Frequently Asked Questions
+
+**Does Go use one thread per connection?**
+No. Goroutines are multiplexed onto OS threads by the scheduler, and blocked network reads are handled by the runtime's network poller. A goroutine waiting on a socket does not hold a thread.
+
+**Why does `GOMAXPROCS` not fix my throughput problem?**
+It controls parallel Go execution, not the kernel's per-queue processing or the NIC's capacity. If one RSS queue or one socket is the bottleneck, adding Ps will not help. Check queue distribution and socket windows first.
+
+**Should I disable Nagle's algorithm?**
+Only for latency-sensitive small writes. For bulk transfers, leaving it on reduces packet count. Measure both; do not assume `TCP_NODELAY` is always faster.
+
+**Is DPDK or AF_XDP worth it for a normal Go API server?**
+Almost never. They are for workloads that need millions of packets per second and can dedicate cores and manage their own protocol stack. A normal `net/http` server benefits far more from fewer allocations, larger buffers, and proper timeouts.
+
+### Further Reading
+
+- Linux kernel documentation: *Networking* (NAPI, GRO, RSS, XDP) and *Scaling* sections.
+- [DPDK — Data Plane Development Kit](https://www.dpdk.org/) documentation, for kernel-bypass architecture.
+- Intel Ethernet controller datasheets (RX/TX descriptor rings, MSI-X, RSS).
+- The Go `net` package documentation and the runtime source for `netpoll` (`runtime/netpoll.go`).
+- Brendan Gregg, *Systems Performance*, chapters on network and CPU analysis.
+
+### Fun Facts and Notes
+
+- At 64-byte frames, a 10GbE link tops out around 14.88 million packets per second. The frame rate, not the bit rate, is often the real limit.
+- Interrupt coalescing can cut CPU usage dramatically and add hundreds of microseconds of latency. The right setting depends on the workload, not on a universal default.
+- `io.Copy` from a file to a TCP connection can use `sendfile`, keeping the data in the kernel and avoiding a user-space copy.
+- A packet capture on the host is not the same as a capture on the wire: offloads change what the host sees before and after the NIC.

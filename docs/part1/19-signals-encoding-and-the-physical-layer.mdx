@@ -1,0 +1,83 @@
+---
+id: "[1.19.0]"
+title: "Signals, Encoding, and the Physical Layer"
+---
+
+# Signals, Encoding, and the Physical Layer
+
+> "The fundamental problem of communication is that of reproducing at one point either exactly or approximately a message selected at another point."
+> — Claude Shannon, *A Mathematical Theory of Communication* (1948)
+
+Every abstraction in this book eventually becomes a physical event. A byte in a Go program is, at the bottom of the stack, a voltage on a copper pair, a pulse of light in glass, or a modulation of a radio wave. You do not need to design a transceiver to write good network code, but you do need to understand what the physical layer can and cannot promise, because those limits show up as latency, packet loss, link flapping, and bugs that no amount of application code can fix.
+
+This chapter is about the part of networking that happens before a single frame exists: how bits are represented, how a receiver recovers a clock from a signal that carries no explicit clock, why twisted pairs and differential signaling exist, and what an eye diagram tells you about a link that is *almost* working. It is the electrical foundation under the frames from the previous chapters.
+
+### Bits Are Analog
+
+A digital signal is an abstraction imposed on an analog reality. A transmitter drives a voltage high or low, or switches a laser on and off, or shifts a carrier's phase. A receiver samples that continuous waveform at the right moments and decides whether each sample was a zero or a one. The decision is not binary in the physical world: there is a threshold, a noise margin, and a probability that the receiver guesses wrong.
+
+That probability is the **bit error rate**. A clean copper link might run at one error in a trillion bits; a marginal fiber or a long, noisy cable might be orders of magnitude worse. Ethernet does not retransmit at Layer 2, so a bad bit becomes a dropped frame, and the recovery is left to TCP or to the application. This is why a link can "work" for ping and fail for large transfers: the error rate is low enough that small packets usually survive and high enough that a full-size frame eventually does not.
+
+### Line Coding: Sending a Clock Without a Clock Wire
+
+The receiver needs to know *when* to sample. Sending a separate clock wire is expensive and impractical over long distances, so practical links embed the clock in the data. The simplest scheme, **NRZ** (non-return-to-zero), holds the line high for a 1 and low for a 0. It is efficient, but a long run of identical bits produces no transitions, and the receiver's clock can drift. Real links therefore use line codes that guarantee transitions:
+
+- **Manchester encoding** represents each bit with a transition in the middle of the bit period. It is self-clocking and simple, but it doubles the required bandwidth. Classic 10BASE-T Ethernet used it.
+- **4B/5B** maps four data bits to five transmitted bits chosen to avoid long runs of zeros. 100BASE-TX used it.
+- **8B/10B** maps eight bits to ten, maintains **DC balance** (the running disparity of ones and zeros), and provides enough transitions for clock recovery. It carried 1G and 10G Ethernet over fiber and backplanes for years.
+- **64B/66B** adds a two-bit sync header to sixty-four bits of data. It is the basis of 10G, 40G, and 100G Ethernet; the overhead is tiny compared with 8B/10B.
+
+The trade-off is always the same: more encoding overhead buys easier clock recovery and better electrical behavior. A 10 Gbps link with 64B/66B actually runs its serial line at 10.3125 Gbps, because sixty-six bits are transmitted for every sixty-four of payload.
+
+### Differential Signaling and Twisted Pairs
+
+A single wire measured against ground is vulnerable: any noise coupled onto the wire changes the voltage the receiver sees. **Differential signaling** solves this by sending the signal as the difference between two wires that carry opposite versions of it. Noise couples onto both wires roughly equally, and the receiver subtracts the two, so the noise cancels. This is **common-mode rejection**, and it is why Ethernet, USB, CAN, and RS-485 all use pairs rather than single-ended signals.
+
+The pairs are twisted to make the coupling symmetrical and to reduce the loop area that would otherwise act as an antenna. Different twist rates in a cable bundle reduce **crosstalk** between pairs. Shielding adds a ground-connected foil or braid around the pairs, which helps in electrically noisy environments but adds cost, weight, and grounding complexity.
+
+### Transmission Lines, Reflections, and Termination
+
+At low frequencies a wire is just a wire. At hundreds of megabits and above, it is a **transmission line**: the signal propagates as an electromagnetic wave, and the wire has a characteristic **impedance** — 100 ohms for Ethernet twisted pairs, 50 ohms for many coax and RF systems. If the impedance changes abruptly — a connector, a sharp bend, a badly terminated end — part of the signal reflects back. Reflections arrive delayed and can reinforce or cancel the intended signal, producing **intersymbol interference**.
+
+The standard fix is **termination**: a resistor at the end of the line that matches the characteristic impedance and absorbs the wave instead of reflecting it. Ethernet transceivers include termination and magnetics inside the PHY or the connector, which is why you cannot simply splice a cable or use any random passive.
+
+Attenuation also grows with distance and frequency. A long cable acts as a low-pass filter: high-frequency components of sharp edges are weakened, the eye closes, and the receiver makes mistakes. This is why Ethernet has distance limits — 100 meters for twisted-pair copper — and why higher speeds impose shorter limits or require better cable categories.
+
+### The Eye Diagram
+
+The cleanest way to see whether a link is healthy is an **eye diagram**: the received waveform is sliced into bit periods and overlaid. A good link shows a wide-open eye, with clear space between the voltage levels at the sampling instant. A marginal link shows a partially closed eye, jitter on the edges, and noise thickening the traces.
+
+The eye is a summary of everything electrical: attenuation, reflections, crosstalk, jitter, and noise. When a link "flaps" under load, an eye diagram or a cable test often explains why faster than any log. **Jitter** — variation in when edges arrive — matters as much as voltage margin, because the receiver samples at a fixed time and a late edge can be read as the wrong bit.
+
+<DeepDive title="Why faster Ethernet needs more than a faster clock">Doubling the bit rate halves the time available for each symbol, which makes every electrical imperfection matter more. Engineers compensate with better line codes, equalization at the receiver, echo cancellation, and modulation that packs multiple bits into one symbol. 1000BASE-T sends two bits per symbol on each of four pairs using PAM-5; 10GBASE-T uses PAM-16 with sophisticated DSP. The cable is still copper, but the electronics do far more work to recover the bits.</DeepDive>
+
+<Axiom>The physical layer does not know about packets, addresses, or reliability. It moves symbols, and every guarantee above it is built on the assumption that most symbols arrive intact.</Axiom>
+
+## Frequently Asked Questions
+
+**Why can a cable work for small transfers but fail for large ones?**
+Because the bit error rate is probabilistic. A marginal link may pass most small frames and drop a fraction of full-size ones. The symptom looks like an application bug; the cause is electrical margin.
+
+**Why is Ethernet cable limited to 100 meters?**
+Attenuation and crosstalk grow with distance and frequency. Beyond about 100 meters, the signal-to-noise ratio at the receiver drops below what the standard requires for reliable decoding. Higher speeds reduce the limit further on older cable categories.
+
+**What is the difference between Cat5e and Cat6?**
+Both are twisted-pair copper, but Cat6 has tighter twist and crosstalk specifications and supports higher frequencies. Cat6 handles 10GBASE-T up to about 55 meters; Cat6a reaches 100 meters. The connector is the same RJ45, but the cable and installation quality matter.
+
+**Does a fiber link have latency limits too?**
+Yes, but for a different reason: light in glass travels at roughly two-thirds of the speed of light in vacuum. Distance still costs time, no matter how much bandwidth the fiber carries.
+
+### Further Reading
+
+- Claude Shannon, "A Mathematical Theory of Communication," *Bell System Technical Journal*, 1948.
+- [IEEE 802.3 — Ethernet](https://standards.ieee.org/ieee/802.3/7071/), especially the physical-layer clauses.
+- William Stallings, *Data and Computer Communications*, chapters on signal encoding and transmission media.
+- Behrouz Forouzan, *Data Communications and Networking*, chapters on line coding and transmission media.
+- TIA-568 — Commercial Building Telecommunications Cabling Standard.
+
+### Fun Facts and Notes
+
+- A 10GBASE-T link uses all four pairs in both directions at once, with echo cancellation separating transmit from receive on the same pair.
+- Fiber is not automatically lower latency than copper per meter, but it avoids electrical noise and supports far greater distance and bandwidth.
+- The 64B/66B line code runs a "10G" Ethernet link at 10.3125 Gbps on the wire; the extra bits are the sync header.
+- An eye diagram is one of the few diagnostic tools that can show a problem before it becomes a visible packet loss.
