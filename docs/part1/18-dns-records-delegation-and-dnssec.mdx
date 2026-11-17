@@ -5,15 +5,18 @@ title: "DNS Records, Delegation, and DNSSEC"
 
 # DNS Records, Delegation, and DNSSEC
 
+> "The primary goal is a consistent name space which will be used for referring to resources."
+> — RFC 1034, *Domain Names — Concepts and Facilities* (1987)
+
 Chapter 1.9 introduced DNS as the internet's phone book: a name goes in, an address comes out. That is the right first mental model and a poor final one. DNS is a distributed database with delegation, caching, and a security model of its own. The phone book does not just map names to numbers; it decides who is allowed to answer for a name, how long the answer may be cached, and — if DNSSEC is in use — whether the answer is authentic.
 
-This chapter is about that machinery. It is the layer where a single wrong record can take down email, a stale TTL can keep it down, and a missing signature can let an attacker answer in your place.
+This chapter is about that machinery. It is the layer where a single wrong record can take down email, a stale TTL can keep it down, and a missing signature can let an attacker answer in your place. By the end you should be able to follow a query from the root to an authoritative server, read a zone file, explain why a CNAME at the apex breaks mail, and describe what DNSSEC does and does not protect.
 
 ### Zones and Authority
 
 DNS data is organized into **zones**. A zone is a portion of the namespace that one organization is responsible for — `example.com`, for instance, including everything below it unless a subdomain is delegated elsewhere. The servers that hold the authoritative copy of a zone are its **authoritative name servers**.
 
-The **SOA** record at the top of every zone is the zone's metadata: the primary server, the responsible mailbox, a serial number, and timers for refresh, retry, expire, and negative caching. The serial number is how secondary servers know a zone changed. The timers are how caching resolvers know how long to remember a "no such name" answer.
+The **SOA** record at the top of every zone is the zone's metadata: the primary server, the responsible mailbox, a serial number, and timers for refresh, retry, expire, and negative caching. The serial number is how secondary servers know a zone changed — often a date like `2026111701`. The timers are how caching resolvers know how long to remember a "no such name" answer.
 
 Authority is delegated downward. The root zone does not contain a record for `www.example.com`; it contains a delegation to the `.com` servers. The `.com` zone contains a delegation to `example.com`'s name servers. Those servers hold the actual records.
 
@@ -42,6 +45,8 @@ The common record types are not interchangeable, and a few rules trip people up 
 | `NS` | Delegation | Must point at a name, not an IP |
 | `SRV` | Service location with port and priority | Used by SIP, XMPP, some service discovery |
 | `CAA` | Which CAs may issue certificates | A missing CAA means any CA may |
+| `PTR` | Reverse lookup (IP to name) | Lives in `in-addr.arpa` or `ip6.arpa` |
+| `SVCB`/`HTTPS` | Service binding and hints | How modern clients discover HTTP/3 and alternative endpoints ([RFC 9460](https://www.rfc-editor.org/rfc/rfc9460)) |
 
 The CNAME-at-apex rule deserves its own warning. A CNAME says "this entire name is an alias; look over there for everything." If `example.com` were a CNAME, it could not also have MX or NS records, because those would be shadowed. The usual workaround is a provider-specific ALIAS/ANAME record, which resolves at query time and returns an A/AAAA record instead of a CNAME.
 
@@ -53,9 +58,11 @@ Every record carries a **TTL**. Resolvers may cache the answer for that many sec
 
 Negative answers are cached too. The SOA's minimum TTL controls how long a resolver remembers "this name does not exist." That is why a newly created record can appear dead for a while even after you add it: resolvers are still holding the negative answer.
 
+Two protocol details make modern DNS workable. **EDNS0** ([RFC 6891](https://www.rfc-editor.org/rfc/rfc6891)) extends the original 512-byte UDP limit, advertises the resolver's buffer size, and carries DNSSEC data. Without it, a large answer is marked truncated and the resolver retries over TCP. **Zone transfers** — AXFR for a full copy and IXFR for an incremental one — are how secondary servers stay in sync; they run over TCP and should be restricted to known secondaries.
+
 ### DNSSEC: Signatures, Not Encryption
 
-DNS was designed without authentication. An attacker who can answer before the real server — on a shared Wi-Fi, at a compromised resolver, or through cache poisoning — can return any address they like. **DNSSEC** adds cryptographic signatures to records so a validating resolver can tell whether an answer really came from the zone that owns the name.
+DNS was designed without authentication. An attacker who can answer before the real server — on a shared Wi-Fi, at a compromised resolver, or through cache poisoning — can return any address they like. **DNSSEC** ([RFC 4033](https://www.rfc-editor.org/rfc/rfc4033), [4034](https://www.rfc-editor.org/rfc/rfc4034), [4035](https://www.rfc-editor.org/rfc/rfc4035)) adds cryptographic signatures to records so a validating resolver can tell whether an answer really came from the zone that owns the name.
 
 The mechanism is a chain of trust:
 
@@ -64,9 +71,9 @@ The mechanism is a chain of trust:
 - The parent zone publishes a **DS** record containing a hash of that key.
 - The root's key is the trust anchor, distributed out of band with resolvers.
 
-A validating resolver walks the chain from the root down, checking each DS/DNSKEY pair. If a signature is missing or wrong, the answer is marked bogus and refused. If a zone is unsigned, the resolver can prove that too, using **NSEC/NSEC3** records that enumerate which names do not exist.
+A validating resolver walks the chain from the root down, checking each DS/DNSKEY pair. If a signature is missing or wrong, the answer is marked bogus and refused. If a zone is unsigned, the resolver can prove that too, using **NSEC** records that enumerate which names do not exist. **NSEC3** ([RFC 5155](https://www.rfc-editor.org/rfc/rfc5155)) hashes the names instead, so the denial-of-existence proof does not reveal the zone's contents.
 
-DNSSEC provides **integrity and authenticity**, not confidentiality. It does not encrypt queries; anyone on the path can still see which name you asked for. That is what **DNS over TLS** (port 853) and **DNS over HTTPS** (port 443) address, by encrypting the transport between the client and the resolver. They are complementary: DoT/DoH protect the conversation, DNSSEC protects the answer itself.
+DNSSEC provides **integrity and authenticity**, not confidentiality. It does not encrypt queries; anyone on the path can still see which name you asked for. That is what **DNS over TLS** (DoT, port 853, [RFC 7858](https://www.rfc-editor.org/rfc/rfc7858)), **DNS over HTTPS** (DoH, port 443, [RFC 8484](https://www.rfc-editor.org/rfc/rfc8484)), and DNS over QUIC (DoQ, UDP 853, [RFC 9250](https://www.rfc-editor.org/rfc/rfc9250)) address, by encrypting the transport between the client and the resolver. They are complementary: DoT/DoH protect the conversation, DNSSEC protects the answer itself.
 
 <DeepDive title="Why DNSSEC is not everywhere yet">DNSSEC is operationally demanding. Keys rotate, signatures expire, and a misconfiguration can make an entire domain unresolvable for validating resolvers. It also does not hide queries, so it solves only one threat. Adoption is highest at the root, the TLDs, and large providers; many ordinary domains still run unsigned. The result is a mixed internet where validation is useful but not guaranteed, which is why applications still rely on TLS certificates even when DNSSEC is present.</DeepDive>
 
@@ -85,6 +92,15 @@ Long enough to cut query volume and latency, short enough that a change propagat
 
 **What is the difference between an authoritative server and a resolver?**
 An authoritative server holds the real records for a zone and answers from them. A resolver asks other servers, caches the answers, and returns them to clients. Most clients talk to a resolver; the resolver talks to authoritative servers.
+
+### Further Reading
+
+- [RFC 1034 — Domain Names: Concepts and Facilities](https://www.rfc-editor.org/rfc/rfc1034) and [RFC 1035 — Domain Names: Implementation and Specification](https://www.rfc-editor.org/rfc/rfc1035)
+- [RFC 4033](https://www.rfc-editor.org/rfc/rfc4033), [RFC 4034](https://www.rfc-editor.org/rfc/rfc4034), and [RFC 4035](https://www.rfc-editor.org/rfc/rfc4035) — DNSSEC
+- [RFC 5155 — DNSSEC Hashed Authenticated Denial of Existence (NSEC3)](https://www.rfc-editor.org/rfc/rfc5155)
+- [RFC 6891 — Extension Mechanisms for DNS (EDNS0)](https://www.rfc-editor.org/rfc/rfc6891)
+- [RFC 7858 — DNS over TLS](https://www.rfc-editor.org/rfc/rfc7858) and [RFC 8484 — DNS over HTTPS](https://www.rfc-editor.org/rfc/rfc8484)
+- Cricket Liu and Paul Albitz, *DNS and BIND* (O'Reilly), for zone files and operational practice.
 
 ### Fun Facts and Notes
 

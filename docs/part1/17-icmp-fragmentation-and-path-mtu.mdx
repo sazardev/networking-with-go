@@ -5,13 +5,16 @@ title: "ICMP, Fragmentation, and Path MTU"
 
 # ICMP, Fragmentation, and Path MTU
 
+> "Be liberal in what you accept, and conservative in what you send."
+> — RFC 1122 (1989), stating Postel's robustness principle
+
 IP promises to deliver a packet on a best-effort basis. It does not promise that the packet fits, that it will arrive, or that anyone will tell you why it did not. The protocol that fills that last gap is **ICMP**, the Internet Control Message Protocol. It is not a transport protocol, it does not carry application data, and it has no ports. It is the network's way of saying "that did not work, and here is roughly why."
 
-Most people meet ICMP through `ping`. That is a shame, because the same protocol is what makes `traceroute` work, what lets a sender discover the largest packet a path can carry, and what silently breaks when a firewall blocks it. This chapter covers all three.
+Most people meet ICMP through `ping`. That is a shame, because the same protocol is what makes `traceroute` work, what lets a sender discover the largest packet a path can carry, and what silently breaks when a firewall blocks it. This chapter covers all three, plus the IPv6 control protocol that replaced ARP and added router discovery: Neighbor Discovery.
 
 ### A Control Protocol, Not a Data Protocol
 
-An ICMP message is carried directly inside an IP packet, with protocol number 1 for ICMPv4 and 58 for ICMPv6. The message has a type, a code, a checksum, and a payload that depends on the type.
+An ICMP message is carried directly inside an IP packet, with protocol number 1 for ICMPv4 ([RFC 792](https://www.rfc-editor.org/rfc/rfc792)) and 58 for ICMPv6 ([RFC 4443](https://www.rfc-editor.org/rfc/rfc4443)). The message has a type, a code, a checksum, and a payload that depends on the type.
 
 The common types are worth knowing by number, because packet captures and firewall rules use the numbers:
 
@@ -25,13 +28,19 @@ The common types are worth knowing by number, because packet captures and firewa
 
 Type 3 carries a **code** that narrows the reason: code 0 is network unreachable, code 1 host unreachable, code 3 port unreachable, and code 4 is the one this chapter cares about most — **fragmentation needed, but the Don't Fragment bit was set**.
 
+### ICMPv6 and Neighbor Discovery
+
+IPv6 keeps the same idea but folds much more into ICMPv6. **Neighbor Discovery** ([RFC 4861](https://www.rfc-editor.org/rfc/rfc4861)) replaces ARP with four message types: **Router Solicitation** (133) and **Router Advertisement** (134) let hosts find routers and learn prefixes; **Neighbor Solicitation** (135) and **Neighbor Advertisement** (136) resolve an IPv6 address to a link-layer address. **Duplicate Address Detection** uses a Neighbor Solicitation before a host claims an address, and **SLAAC** builds an address from the advertised prefix without a DHCP server.
+
+ICMPv6 also carries the errors IPv6 needs because routers never fragment: **Packet Too Big** (type 2) is the IPv6 equivalent of ICMPv4's fragmentation-needed message, and it is mandatory for Path MTU Discovery. An IPv6 network that blocks ICMPv6 is not hardened; it is broken for large packets and often for address configuration itself.
+
 ### TTL, Ping, and Traceroute
 
 Every IP packet carries a **TTL** field. Each router decrements it by one; a router that reaches zero drops the packet and sends back an ICMP Time Exceeded message to the source. The field exists to stop packets from looping forever if routing tables are wrong.
 
 `ping` sends an Echo Request and waits for an Echo Reply. It measures round-trip time and reports loss. That is genuinely all it does. It does not test a web server, a database, or a port — only whether ICMP can make the round trip.
 
-`traceroute` abuses the TTL mechanism deliberately. It sends a packet with TTL 1, receives Time Exceeded from the first router, then sends TTL 2, receives it from the second, and so on. Each router that drops an expired packet reveals its address. The result is a hop-by-hop map of the path, built entirely out of error messages.
+`traceroute` abuses the TTL mechanism deliberately. It sends a packet with TTL 1, receives Time Exceeded from the first router, then sends TTL 2, receives it from the second, and so on. Each router that drops an expired packet reveals its address. The result is a hop-by-hop map of the path, built entirely out of error messages. Some routers rate-limit those replies or refuse to send them, which is why a hop can show `* * *` while the path beyond it still works.
 
 <Warning title="A blocked ping does not mean a dead host">Many servers and firewalls drop ICMP while serving HTTPS perfectly. Others answer ping while the service behind them is down. Ping tests one thing: ICMP reachability. If you need to know whether a service is reachable, test the actual port with `curl`, `nc`, or a small connection attempt. This is one of the most common false conclusions in troubleshooting.</Warning>
 
@@ -39,7 +48,7 @@ Every IP packet carries a **TTL** field. Each router decrements it by one; a rou
 
 Every link has a **Maximum Transmission Unit**, the largest frame payload it can carry. Ethernet's default is 1500 bytes. A packet larger than the MTU cannot cross the link in one piece, so IPv4 gives routers two options: fragment it, or drop it and tell the sender.
 
-Fragmentation splits the payload into pieces, each with its own IP header, a shared **identification** field, a **fragment offset**, and the **More Fragments** flag. The destination reassembles them. The pieces can take different paths and arrive out of order; the receiver uses the identification and offset to rebuild the original packet.
+Fragmentation splits the payload into pieces, each with its own IP header, a shared 16-bit **identification** field, a 13-bit **fragment offset** measured in 8-byte units, and the **More Fragments** flag. The destination reassembles them. The pieces can take different paths and arrive out of order; the receiver uses the identification and offset to rebuild the original packet.
 
 ```
 Original packet:  [IP hdr][        3500 bytes of payload        ]
@@ -48,13 +57,15 @@ Fragments:        [IP hdr][ 1480 B ][MF=1][offset 0]
                   [IP hdr][  540 B ][MF=0][offset 370]
 ```
 
-Fragmentation works, but it is expensive: more headers, more packets, more chances to lose a piece. Losing one fragment loses the whole datagram, because IP has no retransmission. It also puts reassembly work on the receiver, which is a denial-of-service vector if an attacker sends many incomplete fragments.
+Fragmentation works, but it is expensive: more headers, more packets, more chances to lose a piece. Losing one fragment loses the whole datagram, because IP has no retransmission. It also puts reassembly work on the receiver, which is a denial-of-service vector if an attacker sends many incomplete fragments. Overlapping fragments were the basis of the **teardrop** attack and several firewall-evasion techniques; modern stacks and middleboxes drop ambiguous overlaps.
 
 ### Path MTU Discovery
 
-The better approach is to avoid fragmentation entirely. A sender can set the **Don't Fragment (DF)** bit and let the network tell it when a packet is too large. When a router cannot forward a DF packet because the next link's MTU is smaller, it sends back ICMP type 3 code 4 with the MTU it can handle. The sender lowers its packet size and retries. This is **Path MTU Discovery**, and it is how TCP chooses a segment size that fits the whole path.
+The better approach is to avoid fragmentation entirely. A sender can set the **Don't Fragment (DF)** bit and let the network tell it when a packet is too large. When a router cannot forward a DF packet because the next link's MTU is smaller, it sends back ICMP type 3 code 4 with the MTU it can handle ([RFC 1191](https://www.rfc-editor.org/rfc/rfc1191)). The sender lowers its packet size and retries. This is **Path MTU Discovery**, and it is how TCP chooses a segment size that fits the whole path.
 
-TCP's **MSS** is the MTU minus the IP and TCP headers: 1500 − 20 − 20 = 1460 bytes for ordinary Ethernet. That is why a TCP segment is usually 1460 bytes, not 1500. The MSS option is negotiated during the handshake so both sides agree on a size that fits.
+TCP's **MSS** is the MTU minus the IP and TCP headers: 1500 − 20 − 20 = 1460 bytes for ordinary IPv4 over Ethernet (1440 over IPv6, whose header is 40 bytes). That is why a TCP segment is usually 1460 bytes, not 1500. The MSS option is negotiated during the handshake so both sides agree on a size that fits. Routers on the path sometimes rewrite the MSS value — **MSS clamping** — to compensate for hosts that ignore PMTUD.
+
+For UDP and other datagram protocols, the modern answer is **DPLPMTUD** ([RFC 8899](https://www.rfc-editor.org/rfc/rfc8899)), which probes the path with increasingly large packets and backs off on loss, without depending on ICMP at all. It is what QUIC uses.
 
 <DeepDive title="Why blocking ICMP breaks the internet">Path MTU Discovery depends on ICMP. If a firewall drops all ICMP "fragmentation needed" messages, the sender never learns that its packet is too large. It keeps retrying the same size, the router keeps dropping it, and the connection hangs — a **PMTUD black hole**. The symptom is maddening: small requests work, large ones stall, and nothing in the logs says why. This is why network engineers say "don't block all ICMP"; you can rate-limit it, but you need the error types to get through. The same logic applies to IPv6, where routers never fragment and ICMPv6 Packet Too Big is mandatory.</DeepDive>
 
@@ -79,6 +90,14 @@ It is not evil, but it is a sign that the sender and the path disagree about siz
 
 **What is the difference between MTU and MSS?**
 MTU is the largest IP packet a link can carry. MSS is the largest TCP payload a connection can send, derived from the MTU minus the IP and TCP headers. MTU is a link property; MSS is a TCP negotiation.
+
+### Further Reading
+
+- [RFC 792 — Internet Control Message Protocol](https://www.rfc-editor.org/rfc/rfc792)
+- [RFC 1191 — Path MTU Discovery](https://www.rfc-editor.org/rfc/rfc1191) and [RFC 8899 — Packetization Layer Path MTU Discovery](https://www.rfc-editor.org/rfc/rfc8899)
+- [RFC 4443 — ICMPv6](https://www.rfc-editor.org/rfc/rfc4443) and [RFC 4861 — Neighbor Discovery for IPv6](https://www.rfc-editor.org/rfc/rfc4861)
+- [RFC 8200 — Internet Protocol, Version 6 (IPv6) Specification](https://www.rfc-editor.org/rfc/rfc8200)
+- W. Richard Stevens, *TCP/IP Illustrated, Volume 1*, chapters on ICMP and IP fragmentation.
 
 ### Fun Facts and Notes
 

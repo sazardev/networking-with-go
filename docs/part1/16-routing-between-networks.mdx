@@ -5,13 +5,16 @@ title: "Routing Between Networks: Longest Prefix, OSPF, and BGP"
 
 # Routing Between Networks: Longest Prefix, OSPF, and BGP
 
+> "Good, Fast, Cheap: Pick any two (you can't have all three)."
+> — RFC 1925, *The Twelve Networking Truths* (1996)
+
 A switch forwards frames inside one network. A router forwards packets *between* networks, and it does so with no map of the whole internet. Each router knows only a table of destinations and next hops, and every packet is decided one hop at a time. The internet is what emerges when thousands of those local decisions agree well enough to get a packet across the planet.
 
-This chapter is about how those tables are built: the rule routers use to choose a path, the protocols that let routers tell each other what they know, and the difference between the routing inside one organization and the routing that holds the internet together.
+Routing is where networking stops being a wiring problem and becomes a policy problem. The shortest path is rarely the whole answer: a network may prefer a cheaper provider, a longer path with better latency, or a route that keeps traffic inside a region. This chapter builds the vocabulary to read those decisions: the longest-prefix rule every router uses, the protocols that populate the table inside an organization, and BGP, the protocol that stitches organizations together.
 
 ### Longest Prefix Wins
 
-Every router has a **routing table**. Each row says: to reach this network, send the packet to this next hop. When a packet arrives, the router compares the destination IP against every row and picks the most specific match — the **longest prefix**.
+Every router has a **routing table**, also called the **RIB** (Routing Information Base). Each row says: to reach this network, send the packet to this next hop. When a packet arrives, the router compares the destination IP against every row and picks the most specific match — the **longest prefix**.
 
 ```
 Destination          Next hop        Interface
@@ -23,7 +26,13 @@ Destination          Next hop        Interface
 
 A packet to `10.1.2.55` matches all four rows, so the `/24` wins: it is the most specific statement the router has. A packet to `10.9.9.9` matches only `/8` and the default; `/8` wins. A packet to `8.8.8.8` matches only the default route, which is how most homes reach the internet: "if you know nothing more specific, send it upstream."
 
-That is the entire forwarding decision. It is also why a more specific route always beats a less specific one, no matter what metric the routing protocol attached to it. **Prefix length is king.**
+That is the entire forwarding decision. The router compiles the RIB into a **FIB** (Forwarding Information Base), a hardware-friendly structure — often a TCAM or a compressed trie — that can answer "longest match" at line rate without scanning a million rows. A more specific route always beats a less specific one, no matter what metric the routing protocol attached to it. **Prefix length is king.**
+
+### Metrics, Administrative Distance, and Trust
+
+When two protocols offer a route to the same prefix, a router needs a tiebreaker before it even compares metrics. Cisco devices call this **administrative distance**: connected routes win over static routes, static routes win over OSPF, OSPF wins over RIP, and so on. The values are vendor-specific, but the idea is universal: a router trusts some sources more than others. Metrics only compare routes from the same protocol.
+
+This is why a static route can override a dynamic one, and why a floating static route — a static route with a deliberately worse administrative distance — is a common backup path. It is also why "the route exists but traffic goes the other way" is usually not a bug: it is policy expressed as preference.
 
 ### Static, Default, and Dynamic
 
@@ -38,17 +47,17 @@ A **default route** (`0.0.0.0/0`) is a special static route meaning "everything 
 
 ### OSPF: A Shared Map of the Area
 
-OSPF is a **link-state** protocol. Every router floods information about its own links — who it is connected to, and at what cost — and every router builds the same map of the area. Each then runs Dijkstra's algorithm on that map to compute the shortest path to every destination.
+OSPF ([RFC 2328](https://www.rfc-editor.org/rfc/rfc2328) for IPv4, [RFC 5340](https://www.rfc-editor.org/rfc/rfc5340) for IPv6) is a **link-state** protocol. Every router floods information about its own links — who it is connected to, and at what cost — and every router builds the same map of the area. Each then runs Dijkstra's algorithm on that map to compute the shortest path to every destination.
 
-Cost is derived from bandwidth: `cost = reference bandwidth / interface bandwidth`. With the common 100 Mbps reference, a 100 Mbps link costs 1 and a 10 Mbps link costs 10; with a 1 Gbps reference, a 1 Gbps link costs 1 and a 100 Mbps link costs 10. The reference is an implementation choice, so check it before comparing costs across vendors. The result is a tree rooted at each router, with the lowest total cost to each network.
+Cost is derived from bandwidth: `cost = reference bandwidth / interface bandwidth`. With the common 100 Mbps reference, a 100 Mbps link costs 1 and a 10 Mbps link costs 10; with a 1 Gbps reference, a 1 Gbps link costs 1 and a 100 Mbps link costs 10. The reference is an implementation choice, so check it before comparing costs across vendors.
 
-OSPF scales by splitting a large network into **areas**. Area 0 is the backbone; other areas connect to it through **area border routers**. Routers inside an area only need the map of that area, not the whole organization, which keeps the database and the computation manageable.
+OSPF scales by splitting a large network into **areas**. Area 0 is the backbone; other areas connect to it through **area border routers**. Routers inside an area only need the map of that area, not the whole organization, which keeps the database and the computation manageable. On a multi-access segment, routers elect a **designated router** and a backup to reduce the number of adjacencies and the amount of flooding.
 
 <DeepDive title="Why link-state protocols flood, and why that is fine">A distance-vector protocol tells its neighbors "I can reach network X at cost N" and trusts whatever they tell it. A link-state protocol tells everyone "here is my own link to Y, with cost N" and lets every router build the map itself. Flooding sounds expensive, but it happens only when something changes, and it gives every router a consistent, loop-free view. The trade-off is memory and CPU: link-state routers store the whole area's topology, which is why areas exist.</DeepDive>
 
 ### BGP: The Protocol That Holds the Internet Together
 
-BGP is different in kind. It runs between **autonomous systems** — networks owned by an ISP, a cloud provider, a university, a company — and its job is not to find the shortest path. Its job is to exchange **reachability** and let each network apply **policy**.
+BGP ([RFC 4271](https://www.rfc-editor.org/rfc/rfc4271)) is different in kind. It runs between **autonomous systems** — networks owned by an ISP, a cloud provider, a university, a company — and its job is not to find the shortest path. Its job is to exchange **reachability** and let each network apply **policy**.
 
 An autonomous system is identified by an **AS number**. BGP speakers establish a TCP session on port 179, exchange routes, and attach an **AS path** to each announcement: the list of autonomous systems a route has traversed. When a router sees its own AS in the path, it rejects the route — that is the loop-prevention mechanism.
 
@@ -59,14 +68,16 @@ AS path: 64500 64510 64520
 
 BGP chooses among routes using a long list of attributes: weight, local preference, AS path length, origin, MED, and so on. The first attributes are local policy, not distance. A network can prefer a route through a longer AS path because it is cheaper, or because a provider is preferred for business reasons. **BGP is policy-first, shortest-path second**, and that is exactly why it can hold a global network together without a central authority.
 
+Two refinements are worth knowing. **BGP communities** are tags attached to routes that let networks signal policy to each other — "no export," "prepend to this peer," "this is a customer route." **RPKI** (Resource Public Key Infrastructure) adds signed **ROAs** that say which AS is authorized to originate a prefix; routers that perform **route origin validation** can reject hijacks. Neither is universal, which is why route leaks still happen.
+
 <Warning title="A BGP mistake can be global">A misconfigured router that announces a prefix it does not own can attract traffic from much of the internet — a **route leak** or **hijack**. The famous 2008 Pakistan Telecom outage, the 2021 Facebook withdrawal, and countless smaller incidents all came from BGP announcements, not from broken cables. The defenses are route filtering, RPKI origin validation, and maximum-prefix limits. BGP trusts announcements by default; that trust is the vulnerability.</Warning>
 
 ### Where MPLS, VXLAN, and Anycast Fit
 
 Three ideas show up constantly in modern networks and are worth naming even before you meet them in detail:
 
-- **MPLS** attaches a short label to each packet and forwards by label instead of by IP lookup. It is how many carriers build traffic-engineered paths and VPNs.
-- **VXLAN** wraps a Layer 2 frame inside a UDP packet, creating a virtual Layer 2 network across a Layer 3 underlay. It is how large data centers build tenant networks without VLAN limits.
+- **MPLS** attaches a short label to each packet and forwards by label instead of by IP lookup. The label stack makes traffic engineering and VPNs practical for carriers; **segment routing** keeps the same idea but encodes the path in the packet's label stack or IPv6 header.
+- **VXLAN** wraps a Layer 2 frame inside a UDP packet (destination port 4789 by default), with a 24-bit VNI that identifies the tenant network. It is how large data centers build virtual Layer 2 networks across a Layer 3 underlay without the 4,094-VLAN limit.
 - **Anycast** announces the same IP prefix from many locations. BGP routes each user to the nearest one. It is how root DNS servers, CDNs, and DDoS scrubbing centers work.
 
 <Axiom>Routing is not one algorithm. It is a stack of local decisions: longest prefix inside a router, a shared map inside an organization, and policy between organizations.</Axiom>
@@ -84,6 +95,15 @@ A switch forwards by MAC inside one broadcast domain. A router forwards by IP be
 
 **Does a default route always mean "the internet"?**
 No. It means "when no more specific route matches, send it here." On a home router that is the ISP. On a server it might be a firewall or a VPN gateway. The meaning depends on what is on the other side.
+
+### Further Reading
+
+- [RFC 4271 — A Border Gateway Protocol 4 (BGP-4)](https://www.rfc-editor.org/rfc/rfc4271)
+- [RFC 2328 — OSPF Version 2](https://www.rfc-editor.org/rfc/rfc2328) and [RFC 5340 — OSPF for IPv6](https://www.rfc-editor.org/rfc/rfc5340)
+- [RFC 6480 — An Infrastructure to Support Secure Internet Routing (RPKI)](https://www.rfc-editor.org/rfc/rfc6480)
+- Sam Halabi, *Internet Routing Architectures* (Cisco Press), for BGP policy and design.
+- Jeff Doyle and Jennifer Carroll, *Routing TCP/IP, Volume 1*, for OSPF and interior routing in depth.
+- Radia Perlman, *Interconnections*, chapters on routing and bridges.
 
 ### Fun Facts and Notes
 
