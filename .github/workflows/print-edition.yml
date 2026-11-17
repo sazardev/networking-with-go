@@ -30,6 +30,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "stable"
+          cache: false # nothing to cache: this repo has no go.sum for Folio
 
       # The statically linked musl build needs no system libraries.
       - name: Install Tectonic
