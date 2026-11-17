@@ -1,0 +1,92 @@
+---
+id: "[1.14.0]"
+title: "Ethernet, MAC Addresses, and ARP"
+---
+
+# Ethernet, MAC Addresses, and ARP
+
+Every chapter so far has treated the network below IP as a vague cloud that somehow carries packets. This is the chapter where that cloud gets a shape. Before a packet can be routed across the internet, it has to survive one much smaller journey: from your machine, through a switch, to the next device on the same local network. That journey is Ethernet's job, and the addresses it uses are not IP addresses at all.
+
+The distinction matters because it explains a whole class of problems that look mysterious from the IP layer. Two machines can have perfectly valid IP addresses on the same subnet and still fail to talk, because the thing that actually moves the frame — the MAC address and the ARP lookup that discovers it — is broken, stale, or being impersonated.
+
+### Frames, Not Packets
+
+IP deals in **packets**. Ethernet deals in **frames**. A frame is the envelope Ethernet builds around an IP packet so it can cross one physical link: a length of copper, a strand of fiber, or a radio channel. The frame carries the packet as its payload, plus the addressing and error-checking information that link needs.
+
+A classic Ethernet frame looks like this:
+
+```
++----------+---------+---------+----------+-------------+-----+
+| Preamble | Dst MAC | Src MAC | EtherType|   Payload   | FCS |
+|  7 bytes | 6 bytes | 6 bytes |  2 bytes | 46-1500 B   | 4 B |
++----------+---------+---------+----------+-------------+-----+
+```
+
+The **destination MAC** and **source MAC** are 48-bit hardware addresses. The **EtherType** says what is inside — `0x0800` for IPv4, `0x86DD` for IPv6, `0x0806` for ARP. The **FCS** is a checksum: if the frame arrived corrupted, the receiver drops it silently. Ethernet detects errors; it does not retransmit them. That job belongs to TCP, or to whatever protocol above decided it cared.
+
+The payload limit is the famous **MTU**, 1500 bytes by default. That single number explains a surprising amount of network behavior, including why TCP segments are sized the way they are and why Path MTU Discovery exists.
+
+### MAC Addresses Are Flat on Purpose
+
+An IP address is hierarchical: a router can look at `192.168.1.0/24` and know which direction the network lives, without knowing anything about the individual hosts. A MAC address has no such structure. It is a flat 48-bit identifier, usually written as six hex pairs — `3c:22:fb:1a:2b:3c`.
+
+The first 24 bits are an **Organizationally Unique Identifier**, assigned to a manufacturer. The last 24 bits are assigned by that manufacturer. In practice, that is a registry, not a route: no switch can infer where a device is from its MAC alone. A switch learns location by watching traffic, which is the next piece of the story.
+
+Because MAC addresses are flat, they work only inside one **broadcast domain** — the set of devices that receive each other's broadcasts. The moment traffic has to cross a router into another network, the MAC addresses are stripped off and replaced. Your laptop's MAC never crosses the internet; it only ever travels one hop at a time.
+
+<DeepDive title="Why the same frame gets a new envelope at every hop">A common early misconception is that a packet travels from your laptop to a server with your MAC address attached the whole way. It does not. At each router, the old frame is discarded, the IP packet is examined, a new frame is built for the next link, and that frame carries the router's MAC as the source and the next hop's MAC as the destination. IP addresses are end-to-end; MAC addresses are hop-by-hop. This is exactly why an IP packet can cross technologies that have nothing in common — Ethernet, Wi-Fi, fiber, a cellular link — because each link only has to solve its own local delivery problem.</DeepDive>
+
+### How a Switch Learns
+
+A switch is a Layer 2 device. It has a table that maps MAC addresses to physical ports, and it fills that table by watching source addresses:
+
+1. A frame arrives on port 3 with source MAC `AA`.
+2. The switch records: "AA is on port 3."
+3. It looks up the destination MAC. If the destination is known, the frame goes out that one port. If it is unknown, the frame is **flooded** out every port except the one it arrived on.
+4. Entries age out after a few minutes of silence, so a device that moves is relearned.
+
+That is the entire magic of switching. No configuration, no protocol negotiation at the forwarding level — just learning, looking up, and flooding when unsure. It is also why a switch is not a router: it forwards by hardware address inside one broadcast domain and has no concept of an IP network.
+
+### ARP: Finding the MAC for an IP
+
+Here is the gap ARP fills. Your machine knows the destination IP — say `192.168.1.20` — but Ethernet needs a MAC address to build the frame. ARP, the Address Resolution Protocol, asks the local network a simple question: *who has this IP?*
+
+```
+Laptop -> broadcast: "Who has 192.168.1.20? Tell 192.168.1.10"
+Printer -> unicast:  "192.168.1.20 is at 3c:22:fb:aa:bb:cc"
+```
+
+The request is broadcast to every device in the broadcast domain. The owner answers directly. The result goes into the **ARP cache**, where it lives for a few minutes. Every outbound packet to a local destination triggers this lookup if the cache has no entry; traffic to another network asks ARP for the **default gateway's** MAC instead, because that is the next hop the frame must reach.
+
+ARP is deliberately simple, and that simplicity is also its weakness. There is no authentication: any device can answer "that IP is at my MAC" and the cache will believe it. This is **ARP spoofing**, the mechanism behind many man-in-the-middle attacks on shared Wi-Fi. The defense is not a better ARP; it is encryption and identity verification above it (TLS), plus switch features like Dynamic ARP Inspection on networks that can enforce them.
+
+<Warning title="A stale ARP entry can look like a dead server">If a machine's IP moves to a new NIC, or a router is replaced, clients can keep sending frames to the old MAC until the ARP entry expires. The symptom is brutal: `ping` to the IP fails, the IP looks reachable from another host, and nothing in the IP configuration is wrong. Clearing the ARP cache, or waiting out the entry, fixes it. This is one of the most common "the network is haunted" problems on a LAN.</Warning>
+
+### Broadcast, Multicast, and the Limits of the Domain
+
+Ethernet has three destination types. **Unicast** goes to one MAC. **Broadcast** (`ff:ff:ff:ff:ff:ff`) goes to every device in the broadcast domain. **Multicast** goes to a group that has joined a specific MAC range.
+
+Broadcast is how ARP works, and it is also why broadcast domains have to stay small: every broadcast interrupts every device on the segment. A flat network with thousands of hosts spends a measurable amount of its capacity just announcing itself. That is the problem VLANs exist to solve, and the subject of the next chapter.
+
+<Axiom>IP addresses decide where a packet is going. MAC addresses decide which wire it takes to get there. Confusing the two is the root of most Layer 2 troubleshooting.</Axiom>
+
+## Frequently Asked Questions
+
+**Why does my laptop's MAC address never appear at the server I am talking to?**
+Because MAC addresses are local to each link. Your router strips your frame, keeps the IP packet, and builds a new frame with its own MAC as the source. The server only ever sees the MAC of its own next hop, not yours.
+
+**What happens if two devices have the same MAC address?**
+The switch's table flaps between two ports, traffic is delivered to the wrong device or dropped, and the network behaves erratically. Duplicate MACs are rare with real hardware but common with clones, VMs, and manually configured interfaces. Modern switches can detect and block the port.
+
+**Is ARP used on IPv6?**
+No. IPv6 uses Neighbor Discovery, built on ICMPv6, to do the same job: resolve an IPv6 address to a link-layer address. The idea is identical; the protocol is different, and it includes protections ARP never had.
+
+**Why is the default MTU 1500 bytes?**
+It is a historical compromise from the era of shared Ethernet, large enough for efficient transfers and small enough to keep worst-case latency low on a shared medium. It stuck because changing it breaks assumptions everywhere. Jumbo frames (9000 bytes) exist in data centers, but only when every link on the path agrees.
+
+### Fun Facts and Notes
+
+- The 48-bit MAC space is about 281 trillion addresses. Manufacturers burn through it slowly because each network card needs only one.
+- The first three bytes of a MAC are the OUI. Looking one up is a quick way to identify a device's vendor from a packet capture.
+- Ethernet was invented at Xerox PARC in 1973. Its original shared-cable design is why the frame format still carries a preamble, even though modern switched links do not need one.
+- ARP has no port number and no connection. It is one of the last widely used protocols that is simply a broadcast question and a polite answer.

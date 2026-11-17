@@ -1,0 +1,83 @@
+---
+id: "[1.15.0]"
+title: "VLANs, Trunking, and Spanning Tree"
+---
+
+# VLANs, Trunking, and Spanning Tree
+
+A switch does exactly one thing well: it forwards frames inside a broadcast domain. That is a feature until the domain grows too large. Every ARP request, every DHCP discover, every broadcast from a chatty printer interrupts every device on the segment. The standard fix is not a bigger switch or a faster link; it is to build several logical networks on top of the same physical one. That is a **VLAN**.
+
+### One Switch, Several Networks
+
+A VLAN, or Virtual LAN, is a broadcast domain implemented in software. Ports can be assigned to different VLANs, and the switch keeps their traffic separate even though the ports share the same hardware. A frame belonging to VLAN 10 is never flooded to ports in VLAN 20.
+
+This is the same isolation subnetting gives you at Layer 3, moved down to Layer 2. A company can put engineering, guest Wi-Fi, and IP cameras on three VLANs, each with its own subnet, while using the same physical switches. A compromised camera cannot broadcast into the engineering segment, and a broadcast storm in one VLAN does not reach the others.
+
+### The 802.1Q Tag
+
+The obvious question is how a frame tells the switch which VLAN it belongs to. The answer is a small tag inserted into the Ethernet header by the IEEE 802.1Q standard:
+
+```
++------+------+------+---------+------------+---------+------+
+| Dst  | Src  | TPID |  TCI    | EtherType  | Payload | FCS  |
+| 6 B  | 6 B  | 2 B  | 2 B     | 2 B        | ...     | 4 B  |
++------+------+------+---------+------------+---------+------+
+                    VLAN ID (12 bits, 1-4094)
+```
+
+The tag is four bytes: a type field (`0x8100`) that says "a VLAN tag follows", then a control field carrying a 12-bit VLAN ID and a priority value. Twelve bits allow IDs 1 through 4094; 0 and 4095 are reserved.
+
+A port configured as an **access port** belongs to one VLAN and usually sends untagged frames — the devices plugged into it know nothing about VLANs. A **trunk port** carries many VLANs between switches or to a router, and every frame on it carries a tag. That is how one cable between two switches can carry the whole campus.
+
+The **native VLAN** is the one VLAN whose frames are sent untagged on a trunk. It exists for compatibility, and it is a classic source of trouble: if the two ends disagree about which VLAN is native, frames silently land in the wrong network.
+
+```
+[Switch A] === trunk (tags 10, 20, 30) === [Switch B]
+   |                  |                        |
+ access 10        access 20                access 30
+```
+
+### Routing Between VLANs
+
+A VLAN is a Layer 2 boundary, so devices in different VLANs cannot reach each other without a router. There are two common designs. **Router-on-a-stick** uses one physical link to the router, configured as a trunk with a subinterface per VLAN; the router tags and untags traffic as it routes between subnets. A **Layer 3 switch** does the same thing internally, routing between VLAN interfaces at wire speed, which is what most campuses and data centers use today.
+
+Either way, the rule is the same: VLANs create the separation, and a Layer 3 device decides what is allowed to cross it. The separation is only as good as the router's rules.
+
+<DeepDive title="VLANs are not a security boundary by themselves">VLANs keep ordinary traffic apart, but they are not a firewall. **VLAN hopping** attacks exist: a device can sometimes negotiate a trunk, double-tag a frame, or exploit a misconfigured native VLAN to reach another VLAN. Treat VLANs as segmentation for manageability and blast-radius reduction, and put a real firewall or ACL between segments that must be isolated for security. The VLAN is the wall; the ACL is the lock.</DeepDive>
+
+### Spanning Tree: Keeping the Loop From Eating the Network
+
+Redundancy creates a new problem. Connect two switches with two cables, and a broadcast frame has two paths. Ethernet has no TTL, so the frame loops forever, multiplying every time it crosses a switch. Within seconds, the network is saturated and unusable. This is a **broadcast storm**, and it is one of the fastest ways to take down a LAN.
+
+**Spanning Tree Protocol** solves it by turning a looped physical topology into a loop-free logical tree. Switches exchange **BPDUs** (Bridge Protocol Data Units), elect one **root bridge**, and then every other switch chooses the best path to that root. Ports that would create a loop are put into a blocking state, so they carry no data. If a link fails, spanning tree reconverges and unblocks an alternate path.
+
+Classic STP is slow — convergence can take 30 to 50 seconds. **RSTP** (Rapid Spanning Tree) cuts that to a few seconds, and modern networks often use **MSTP** to run one tree per group of VLANs. Data centers sometimes avoid spanning tree altogether with MLAG or EVPN/VXLAN fabrics, but the underlying problem — a loop is free, and Ethernet has no TTL — is the same one they are designing around.
+
+<Warning title="A loop you did not know you created">The most common cause of a broadcast storm is a cable plugged into two ports of the same switch, or a desk switch connected twice into the wall. Spanning tree usually catches it, but only if it is enabled and the ports are not configured to bypass it. A storm looks like this: every link light blinks at full speed, every device loses the network at once, and the CPU on the switches pegs at 100%. If you suspect a loop, unplug first and diagnose second.</Warning>
+
+### What to Remember
+
+VLANs let one physical switch act like several. Trunks let several VLANs share one cable. STP keeps redundant Layer 2 paths from becoming loops. None of these ideas changes what a frame is; they are all ways of controlling where that frame is allowed to go.
+
+<Axiom>Layer 3 scales by routing; Layer 2 scales by dividing. VLANs and spanning tree are the tools that keep the divided part from collapsing into one big loop.</Axiom>
+
+## Frequently Asked Questions
+
+**Can two devices in different VLANs talk without a router?**
+No. They are in different broadcast domains and different subnets. A Layer 3 device — a router or a Layer 3 switch — must route between them, and its ACLs decide whether that traffic is allowed.
+
+**Why do I need a trunk instead of just one cable per VLAN?**
+A trunk carries many VLANs over one link, which is what makes VLANs practical between switches. One cable per VLAN would work but defeats the purpose of sharing infrastructure.
+
+**If spanning tree blocks a port, is that link wasted?**
+It is on standby, not gone. If the active path fails, STP reconverges and the blocked port takes over. That is the point of paying for redundant cabling.
+
+**Is a VLAN the same thing as a subnet?**
+Not exactly. A VLAN is Layer 2; a subnet is Layer 3. In practice they are usually mapped one-to-one, but a VLAN can carry multiple subnets and a subnet can span VLANs in unusual designs. The common, clean design is one VLAN per subnet.
+
+### Fun Facts and Notes
+
+- The 12-bit VLAN ID gives 4,094 usable VLANs, which is why large providers invented Q-in-Q: stacking two tags to extend the space.
+- Spanning tree was invented by Radia Perlman in the 1980s. Her poem about it, "Algorhyme," is one of the few pieces of protocol documentation written in verse.
+- A broadcast storm can saturate a gigabit link in well under a second. This is why "just add another cable for redundancy" without STP is a gamble, not a design.
+- The native VLAN exists mostly for backward compatibility with devices that do not understand tags. On a well-run network it is often changed to an unused VLAN and left alone.
