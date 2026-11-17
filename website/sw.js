@@ -6,7 +6,7 @@
 
 importScripts('sw-precache.js');
 
-var CACHE = 'nwg-v3';
+var CACHE = 'nwg-v4';
 var CORE = (typeof PRECACHE_URLS !== 'undefined') ? PRECACHE_URLS : [];
 
 self.addEventListener('install', function (e) {
@@ -40,6 +40,28 @@ self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
 
+  // Navigations are network-first: a deploy must be visible on the next page
+  // load, not one reload later. The cache is the offline fallback.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(function (res) {
+        if (res && res.status === 200 && res.type === 'basic') {
+          var clone = res.clone();
+          caches.open(CACHE).then(function (cache) { cache.put(e.request, clone); });
+        }
+        return res;
+      }).catch(function () {
+        return caches.match(e.request).then(function (cached) {
+          return cached || caches.match('read/index.html');
+        });
+      })
+    );
+    return;
+  }
+
+  // Everything else is cache-first with a background refresh. reader.css and
+  // reader.js carry a content hash in the query string (see buildreader), so
+  // a changed asset always misses the cache instead of serving an old build.
   e.respondWith(
     caches.match(e.request).then(function (cached) {
       var fetchPromise = fetch(e.request).then(function (res) {

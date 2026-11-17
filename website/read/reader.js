@@ -776,10 +776,48 @@
   });
 })();
 
-/* Save-current-chapter-as-PDF (browser print). */
+/* PDF button: point at the actual release asset, not the releases page and
+   not window.print(). Asset names are versioned (networking-with-go-v1.1.0.pdf),
+   so the URL comes from the GitHub API; the static href is the releases page
+   and stays usable if the API call fails or is rate-limited. Cached for six
+   hours because every reader page asks for it. */
 (function () {
   var btn = document.getElementById('print-pdf');
-  if (btn) btn.addEventListener('click', function () { window.print(); });
+  if (!btn) return;
+  var KEY = 'latestPdf';
+  var TTL = 6 * 60 * 60 * 1000;
+
+  function use(url, version) {
+    if (!url) return;
+    btn.href = url;
+    if (version) btn.title = 'Download the book PDF (' + version + ')';
+  }
+
+  try {
+    var cached = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (cached && cached.url && Date.now() - cached.at < TTL) {
+      use(cached.url, cached.version);
+      return;
+    }
+  } catch (e) {}
+
+  fetch('https://api.github.com/repos/sazardev/networking-with-go/releases/latest')
+    .then(function (res) { return res.ok ? res.json() : null; })
+    .then(function (data) {
+      if (!data || !data.assets) return;
+      var asset = null;
+      for (var i = 0; i < data.assets.length; i++) {
+        if (/\.pdf$/i.test(data.assets[i].name)) { asset = data.assets[i]; break; }
+      }
+      if (!asset) return;
+      use(asset.browser_download_url, data.tag_name);
+      try {
+        localStorage.setItem(KEY, JSON.stringify({
+          url: asset.browser_download_url, version: data.tag_name, at: Date.now()
+        }));
+      } catch (e) {}
+    })
+    .catch(function () {});
 })();
 
 /* Copy canonical link from the chapter share bar. */

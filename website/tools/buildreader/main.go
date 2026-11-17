@@ -14,6 +14,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -176,8 +178,15 @@ type searchEntry struct {
 	Excerpt string `json:"excerpt"`
 }
 
+// readerAssetStamp is a content hash of the reader's CSS and JS, appended to
+// their URLs. Without it the service worker and the browser disk cache keep
+// serving the previous build after a deploy, which is how a shipped change can
+// look like it never happened.
+var readerAssetStamp string
+
 func main() {
 	log.SetFlags(0)
+	readerAssetStamp = computeReaderAssetStamp()
 
 	outDir := "website/read"
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -759,7 +768,7 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 	}
 
 	b.WriteString("<style>\n" + theme + "\n</style>\n")
-	fmt.Fprintf(&b, `<link rel="stylesheet" href="%sreader.css">`+"\n", ctx.toRead)
+	fmt.Fprintf(&b, `<link rel="stylesheet" href="%sreader.css?v=%s">`+"\n", ctx.toRead, readerAssetStamp)
 	b.WriteString(`<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>` + "\n")
 	b.WriteString(`<script>mermaid.initialize({startOnLoad:false});addEventListener('DOMContentLoaded',function(){document.querySelectorAll('code.language-mermaid').forEach(function(c){var p=c.closest('pre');p.className='mermaid';p.textContent=c.textContent});mermaid.run()})</script>` + "\n")
 	// Syntax highlighting for the book's code blocks. The autoloader fetches
@@ -795,7 +804,7 @@ func pageHeader(ctx linkCtx) string {
     <button id="focus-toggle" type="button">Focus</button>
     <button id="search-open" type="button">Search <kbd>Ctrl K</kbd></button>
     <button id="notes-toggle" type="button">Notes</button>
-    <button id="print-pdf" type="button">PDF</button>
+    <a id="print-pdf" href="https://github.com/sazardev/networking-with-go/releases/latest" title="Download the book PDF" rel="noopener">PDF</a>
   </div>
 </header>
 <div id="prefs-panel" class="prefs-panel" role="dialog" aria-label="Reading settings" tabindex="-1" hidden>
@@ -942,8 +951,8 @@ func paletteMarkup(ctx linkCtx) string {
   </div>
 </div>
 <script>window.READER_BASE = "%s";</script>
-<script src="%sreader.js"></script>
-`, ctx.toRead, ctx.toRead)
+<script src="%sreader.js?v=%s"></script>
+`, ctx.toRead, ctx.toRead, readerAssetStamp)
 }
 
 func renderChapterPage(ch chapterEntry, p part, prev, next *flatRef, globalPos int, sidebar, theme string) string {
@@ -1302,12 +1311,26 @@ func writeFeed(results []partResult) {
 // site scope). Chapters themselves are runtime-cached by sw.js; only the app
 // shell, the landing/part index pages and the shared assets are precached so
 // the initial offline install stays small.
+// computeReaderAssetStamp hashes the reader's static assets so their URLs
+// change exactly when their contents do.
+func computeReaderAssetStamp() string {
+	h := sha256.New()
+	for _, path := range []string{"website/read/reader.css", "website/read/reader.js"} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatalf("hash %s: %v", path, err)
+		}
+		h.Write(data)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:10]
+}
+
 func writePrecache(results []partResult) {
 	paths := []string{
 		"index.html",
 		"read/index.html",
-		"read/reader.css",
-		"read/reader.js",
+		"read/reader.css?v=" + readerAssetStamp,
+		"read/reader.js?v=" + readerAssetStamp,
 		"read/search-index.json",
 		"read/topics/index.html",
 		"assets/og-card.png",
