@@ -93,7 +93,7 @@ Walk the extremes to feel it properly. A `/8` reserves only 8 bits for the netwo
 | /16 | 255.255.0.0 | 65,536 | 65,534 | Large corporate network |
 | /8 | 255.0.0.0 | 16,777,216 | 16,777,214 | ISP-scale allocation |
 
-Notice the pattern running down that table: every step from one row to the next roughly multiplies the address count by 256, because each step is trading one entire octet — eight bits — from network back to host. Subnetting, in other words, does not carve networks into arbitrary sizes; it slices them the way you would slice a pizza along strict fold lines — always into a half, a quarter, an eighth, a sixteenth of the whole, because every available cut point is a power of two, never an arbitrary in-between number.
+Notice the pattern: every bit you move from network to host doubles the number of addresses, so moving a full octet (eight bits) multiplies the count by 256. The rows are not all one octet apart — /30 to /29 doubles, /29 to /24 multiplies by 32, /24 to /16 and /16 to /8 each multiply by 256 — but every cut is a power of two. Subnetting, in other words, does not carve networks into arbitrary sizes; it slices them the way you would slice a pizza along strict fold lines — always into a half, a quarter, an eighth, a sixteenth of the whole, because every available cut point is a power of two, never an arbitrary in-between number.
 
 ### Watching Your Own Home Network Do This Quietly
 

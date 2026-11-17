@@ -63,7 +63,7 @@ The words "client" and "server" describe a relationship, not a technology, and n
 |---|---|---|
 | How it comes into being | Reaches outward to an address it already knows | Sits and waits for someone else to reach it |
 | Port choice | Usually ephemeral, assigned by the operating system on the spot | Usually fixed and well-known, chosen in advance so it can be found |
-| Who initiates | The client always speaks first | The server never speaks first — it only answers |
+| Who initiates | The client opens the connection | The server waits for connections; at the application layer either side may speak first (SMTP servers greet first, for example) |
 | How many at once | One socket exists per single outgoing connection | One listening socket can spawn a fresh, distinct connected socket for every incoming visitor, while continuing to listen for the next one |
 
 That last row is worth lingering on, because it resolves what feels, at first glance, like a contradiction: how can a server "listen on port 443" and also be "connected to" thousands of different clients on that same port at once? The answer is that a listening socket and a connected socket are two different things, even when they share a port number. The listening socket is really more like a doorbell than a conversation — its only job is to notice someone arriving and hand them off. Each time it does, a brand-new connected socket is created just for that one visitor, uniquely pinned down by the 4-tuple described earlier, while the original listening socket goes right back to waiting for the next knock.
