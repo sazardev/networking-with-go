@@ -11,7 +11,7 @@ title: "QUIC and HTTP/3 in Go"
 
 HTTP/2, covered in the HTTP chapter, multiplexes many requests over a single TCP connection to avoid opening a new connection per request. That fixed HTTP/1.1's connection overhead, but it exposed a problem TCP itself creates: **head-of-line blocking at the transport layer**. TCP guarantees bytes arrive in order, so if one packet is lost, every stream multiplexed on that connection stalls waiting for the retransmit — even streams that have nothing to do with the lost packet's data. A single dropped packet on a bad Wi-Fi connection can freeze an entire page load, not just the one image that was mid-transfer.
 
-QUIC (the name is not an acronym) solves this by moving multiplexing below the point where a single lost packet can block everything. It runs over UDP and reimplements the reliability, ordering, and congestion control TCP normally provides, but per-stream instead of per-connection — a lost packet only stalls the one stream it belonged to.
+QUIC (the name is not an acronym) solves this by moving multiplexing below the point where a single lost packet can block everything. It runs over UDP and reimplements TCP's reliability and ordering per stream, with stream-level flow control, while congestion control stays per connection. A lost packet can carry frames for several streams, so it may stall more than one, but it no longer blocks every stream on the connection.
 
 <Axiom>QUIC didn't remove TCP's guarantees — it moved them up a layer, so one lost packet no longer holds every other stream hostage.</Axiom>
 
@@ -21,7 +21,7 @@ QUIC merges three things that TCP + TLS + HTTP/2 handle as separate layers and s
 
 - **Transport-layer reliability and ordering**, per stream rather than per connection — the fix for head-of-line blocking described above.
 - **Encryption by default.** Every QUIC connection is encrypted with TLS 1.3; there is no plaintext QUIC in practice, unlike TCP where TLS is an optional layer on top.
-- **A single combined handshake.** A fresh TCP + TLS 1.3 connection costs two round trips before the first application byte moves (one for the TCP handshake, one for TLS). QUIC folds both into one, and a client that has connected to a server recently can often send application data in its very first packet — **0-RTT** resumption, at the cost of those very first bytes being replayable by an attacker who captures them, which is why 0-RTT is reserved for idempotent requests.
+- **A single combined handshake.** A fresh TCP + TLS 1.3 connection costs two round trips before the first application byte moves (one for the TCP handshake, one for TLS). QUIC folds both into one, and a client that has connected to a server recently can often send application data in its very first packet — **0-RTT** resumption, at the cost of those very first bytes being replayable by an attacker who captures them, which is why 0-RTT is reserved for safe methods such as GET, HEAD, and OPTIONS.
 
 <DeepDive title="Connection IDs and migration">A TCP connection is identified by a 4-tuple: source IP, source port, destination IP, destination port. Change any of them — switch from Wi-Fi to cellular, for instance — and the connection breaks, forcing a fresh handshake. QUIC instead identifies a connection by a connection ID chosen by the endpoints themselves, independent of IP and port. A client whose network changes mid-connection can keep using the same QUIC connection on a new path, without renegotiating anything — the server recognizes the connection ID and picks up where it left off.</DeepDive>
 
@@ -29,7 +29,7 @@ QUIC merges three things that TCP + TLS + HTTP/2 handle as separate layers and s
 
 HTTP/3 is HTTP's familiar request/response model — methods, headers, status codes, all unchanged from HTTP/1.1 and HTTP/2 — carried over QUIC instead of TCP. From an application's perspective, an HTTP/3 handler looks identical to the `http.Handler` interface from the HTTP chapter; the protocol difference is entirely below that interface.
 
-<Warning title="Go's standard library does not implement HTTP/3">Unlike HTTP/1.1 and HTTP/2, which `net/http` supports natively, the standard library has no QUIC or HTTP/3 implementation as of this writing. Every example in this chapter depends on `github.com/quic-go/quic-go`, the de facto standard third-party implementation — install it with `go get github.com/quic-go/quic-go` before running any of the code below.</Warning>
+<Warning title="Go's standard library has no public HTTP/3 API">Unlike HTTP/1.1 and HTTP/2, which `net/http` supports natively, the standard library exposes no public QUIC or HTTP/3 API as of this writing. Every example in this chapter depends on `github.com/quic-go/quic-go`, the de facto standard third-party implementation — install it with `go get github.com/quic-go/quic-go` before running any of the code below.</Warning>
 
 ## Go Implementation: A Raw QUIC Echo Server
 
@@ -48,7 +48,12 @@ import (
 )
 
 func main() {
-	tlsConf := generateTLSConfig() // see the TLS chapter for a real cert
+	cert, err := tls.LoadX509KeyPair(
+		"server.crt", "server.key") // generated in the TLS chapter
+	if err != nil {
+		panic(err)
+	}
+	tlsConf := &tls.Config{Certificates: []tls.Certificate{cert}}
 	tlsConf.NextProtos = []string{"echo-quic"}
 
 	ln, err := quic.ListenAddr("localhost:9700", tlsConf, nil)
@@ -160,7 +165,7 @@ func main() {
 }
 ```
 
-Nothing about `client.Get`, reading `resp.Body`, or checking `resp.Proto` differs from the plain HTTP client code in the HTTP chapter — swapping `http3.Transport` in for the default `http.Transport` is the entire integration point.
+Nothing about `client.Get`, reading `resp.Body`, or checking `resp.Proto` differs from the plain HTTP client code in the HTTP chapter — swapping `http3.Transport` in for the default `http.Transport` is the entire integration point. The client above trusts the system roots, so against the self-signed certificate from the server example it will fail; load `server.crt` into an `x509.CertPool` and set it as `TLSClientConfig.RootCAs` for local testing.
 
 ## When HTTP/3 Actually Helps
 

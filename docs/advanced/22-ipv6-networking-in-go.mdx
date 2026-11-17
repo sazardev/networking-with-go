@@ -46,9 +46,9 @@ func main() {
 }
 ```
 
-<DeepDive title="Why net/netip over net.IP for new code">`net.IP` is a `[]byte` slice that can be either 4 or 16 bytes long, and — this is the sharp edge — a 4-byte IPv4 address and its 16-byte "IPv4-in-IPv6" equivalent (`::ffff:192.0.2.1`) can compare as unequal with `bytes.Equal` even though they represent the same address, depending on which form each value happens to be in. `netip.Addr` is a small, comparable value type (usable as a map key directly, unlike a `[]byte` slice) that normalizes this distinction and exposes it explicitly via `Is4In6()`, rather than leaving it as a bug waiting to happen in a byte-slice comparison.</DeepDive>
+<DeepDive title="Why net/netip over net.IP for new code">`net.IP` is a `[]byte` slice that can be either 4 or 16 bytes long, and — this is the sharp edge — a 4-byte IPv4 address and its 16-byte "IPv4-in-IPv6" equivalent (`::ffff:192.0.2.1`) can compare as unequal with `bytes.Equal` even though they represent the same address, depending on which form each value happens to be in. `netip.Addr` is a small, comparable value type (usable as a map key directly, unlike a `[]byte` slice) that makes the distinction explicit via `Is4In6()` and `Unmap()`; it does not silently treat `192.0.2.1` and `::ffff:192.0.2.1` as equal, so call `Unmap()` before comparing if you want that behavior.</DeepDive>
 
-<Warning title="Brackets are mandatory for IPv6 host:port strings">An IPv6 address already contains colons, which is exactly the character `host:port` strings use to separate the port. `net.Dial("tcp", "2001:db8::1:443")` doesn't fail — it just parses wrong, since Go can't tell where the address ends and the port begins. The fix is the bracket notation from the URL and HTTP chapters: `net.Dial("tcp", "[2001:db8::1]:443")`, or build the string safely with `net.JoinHostPort(host, port)` rather than concatenating it by hand.</Warning>
+<Warning title="Brackets are mandatory for IPv6 host:port strings">An IPv6 address already contains colons, which is exactly the character `host:port` strings use to separate the port. `net.Dial("tcp", "2001:db8::1:443")` fails with `too many colons in address`, because `net.SplitHostPort` cannot tell where the address ends and the port begins. The fix is the bracket notation from the URL and HTTP chapters: `net.Dial("tcp", "[2001:db8::1]:443")`, or build the string safely with `net.JoinHostPort(host, port)` rather than concatenating it by hand.</Warning>
 
 ## Dual-Stack Listening
 
@@ -85,7 +85,7 @@ func main() {
 
 Force a single address family explicitly with `"tcp4"` or `"tcp6"` instead of `"tcp"` when dual-stack behavior isn't what you want — for example, a service that must never accept legacy IPv4 traffic at all.
 
-<Warning title="tcp6 with a bare port can still surprise you">`net.Listen("tcp6", ":8080")` binds only the IPv6 wildcard address — but on a system with `net.ipv6.bindv6only=0` (the historical Linux default, still common), an IPv6 socket bound to the wildcard address silently also accepts IPv4-mapped connections unless the application explicitly opts out via a raw socket option. Don't assume `"tcp6"` guarantees IPv4 clients are rejected without testing on your actual target platform — the guarantee is enforced by the OS, and OS defaults vary.</Warning>
+<Warning title="tcp6 is IPv6-only in Go">`net.Listen("tcp6", ":8080")` is IPv6-only: Go sets `IPV6_V6ONLY=1` for any network whose name ends in `6`, regardless of the host's `net.ipv6.bindv6only` default. The OS default matters for raw sockets or other languages, not for Go's `tcp6`. If you need both families, use `"tcp"`; if you need to reject IPv4, `"tcp6"` already does it.</Warning>
 
 ## Happy Eyeballs: Dialing Dual-Stack Hosts Without the Slow Path
 
@@ -173,12 +173,12 @@ Because an IPv6 address already contains colons, which collide with the colon `h
 For new code, yes — `netip.Addr` is a small, comparable value type that avoids the specific bug where an IPv4 address and its IPv4-in-IPv6 form can compare unequal as raw byte slices even though they're the same address. Existing, working `net.IP` code doesn't need an urgent rewrite, but `net/netip` (added in Go 1.18) is the standard library's own recommended direction going forward.
 
 **My server only listens on `tcp6` but IPv4 clients still connect — why?**
-Because on many systems, an IPv6 socket bound to the wildcard address still accepts IPv4-mapped connections unless the OS is explicitly configured otherwise (`net.ipv6.bindv6only` on Linux) — this is an operating-system-level default, not something `"tcp6"` alone guarantees from inside Go. Test the actual behavior on your deployment target rather than assuming the network string enforces it.
+In Go it should not: `"tcp6"` sets `IPV6_V6ONLY=1`, so the socket is IPv6-only regardless of the host's `net.ipv6.bindv6only` default. If IPv4 clients are still connecting, check that the listener is really using `"tcp6"` and that no proxy or dual-stack `"tcp"` listener is in front of it. The OS default matters for raw sockets and other languages, not for Go's `tcp6`.
 
 ## Key Takeaways
 
 - Go's `net` package handles IPv4 and IPv6 through the same API — most application code needs zero IPv6-specific branches.
 - Bracket notation (`[addr]:port`) or `net.JoinHostPort` is required for IPv6 addresses in host:port strings, since raw colons are ambiguous.
-- `net/netip` is the modern, comparable address type for new code, fixing a real IPv4-in-IPv6 comparison bug that `net.IP` byte slices have.
+- `net/netip` is the modern, comparable address type for new code; it exposes `Is4In6()`/`Unmap()` so the IPv4-in-IPv6 distinction is explicit instead of a byte-slice surprise.
 - `net.Dialer`'s Happy Eyeballs behavior automatically races IPv4 and IPv6 attempts for dual-stack hosts — no extra code needed.
 - Link-local addresses require a zone ID (`%eth0`) naming the interface, and that zone ID is only meaningful on the machine that has it.

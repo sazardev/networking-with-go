@@ -42,15 +42,16 @@ title: "UDP in Depth: Protocol Theory and Go Implementation"
 (No ACKs, no order, just speed)
 ```
 
-<DeepDive title="Datagrams vs. streams, at the socket level">A TCP socket hands you an undifferentiated stream of bytes: the kernel is free to deliver whatever it has buffered on any given `Read`, regardless of how many `Write` calls produced it. A UDP socket works differently — the kernel keeps datagram boundaries intact from the sender's single `Write`/`WriteTo` call all the way to the receiver's single `Read`/`ReadFrom` call. This is why Go's UDP APIs use `ReadFrom`/`WriteTo` instead of the plain stream-oriented `Read`/`Write`: each call maps to exactly one packet on the wire, and if that packet doesn't fit your buffer, the excess is silently discarded rather than held over for the next call.</DeepDive>
+<DeepDive title="Datagrams vs. streams, at the socket level">A TCP socket hands you an undifferentiated stream of bytes: the kernel is free to deliver whatever it has buffered on any given `Read`, regardless of how many `Write` calls produced it. A UDP socket works differently — the kernel keeps datagram boundaries intact from the sender's single `Write`/`WriteTo` call all the way to the receiver's single `Read`/`ReadFrom` call. This is why unconnected UDP sockets in Go use `ReadFrom`/`WriteTo` rather than the stream-oriented `Read`/`Write`: each call maps to exactly one datagram, and if that datagram doesn't fit your buffer, the excess is silently discarded rather than held over for the next call. A **connected** UDP socket — one created with `net.Dial`/`net.DialUDP` — also implements plain `Read`/`Write`, because it already knows its single peer.</DeepDive>
 
 <Warning title="A short buffer truncates, it does not queue the rest">If a datagram is larger than the buffer you pass to `ReadFrom`, the extra bytes are dropped — there is no "read the rest next time" like there is with a TCP stream. Always size your receive buffer for the largest datagram your protocol can produce, and treat `n == len(buf)` as a signal that truncation may have happened.</Warning>
 
 ### MTU, Fragmentation, and Packet Loss
 
 Ethernet's typical MTU (maximum transmission unit) is 1500 bytes,
-which after IP and UDP headers leaves roughly 1472 bytes of usable
-payload before the network layer has to step in. A UDP datagram can
+which after the IPv4 and UDP headers leaves roughly 1472 bytes of usable
+payload (1452 over IPv6, whose header is larger). Past that, the network
+layer has to step in. A UDP datagram can
 legally be larger than that — up to about 65507 bytes of payload over
 IPv4 — but anything above the path's MTU forces IP to fragment it
 into several IP packets that get reassembled at the destination.
@@ -238,12 +239,18 @@ func main() {
   - `net.Dial` with a broadcast address targets every device on the
     local network.
   - `fmt.Fprintf` sends the message.
+  - Go already enables `SO_BROADCAST` for UDP sockets, so the write is
+    allowed without extra socket options.
 
 [Exercise: UDP Broadcast](../../exercises/part2/06-udp-broadcast/main.go)
 
-<Warning title="Broadcast needs SO_BROADCAST">This snippet compiles and runs, but on most systems the write fails with something like `sendto: permission denied`. The kernel refuses broadcast traffic on a socket unless the `SO_BROADCAST` option has been explicitly enabled, and Go's plain `net.Dial` does not set it for you. To actually send broadcast packets you need to reach into the raw socket — for example with `net.ListenConfig.Control` or the `golang.org/x/net/ipv4` helpers — and set `SO_BROADCAST` before the first write.</Warning>
+<Warning title="Broadcast still depends on the network">Broadcasting is allowed out of the box here because Go enables `SO_BROADCAST` for UDP sockets; the kernel refuses broadcast writes only when that option is off, which is the default in a raw C socket. What can still block the example is the network itself: a firewall, a VLAN boundary, or a Wi-Fi access point that drops broadcast traffic. If the write fails, check those before reaching for `net.ListenConfig.Control` to set socket options by hand.</Warning>
 
 ---
+
+## The UDP Header
+
+A UDP datagram starts with a fixed 8-byte header: source port, destination port, length, and checksum. That is the entire protocol. The checksum is optional in IPv4 and mandatory in IPv6; a checksum of zero in IPv4 means "not computed." Everything else — reliability, ordering, congestion control, message framing above the datagram — is left to the application.
 
 ## What Go Does Behind the Scenes
 
@@ -312,7 +319,7 @@ Chances are your read loop is falling behind and the kernel's receive buffer for
 Because `ReadFrom` reuses the same backing array on every call, and nothing stops the loop from calling it again the instant a goroutine is spawned — the new goroutine and the next read would then be racing over the same bytes. Copying the payload into its own slice first, as shown in the scaling-up example, is the cheap fix; `go run -race` will catch you if you forget.
 
 **I tried the broadcast example and got a permission error — is the code wrong?**
-No, the code is fine, the socket just isn't configured for it: the kernel refuses broadcast traffic unless `SO_BROADCAST` is explicitly set, and plain `net.Dial` never sets it. You have to drop down to a raw socket option, via `net.ListenConfig.Control` or the `golang.org/x/net/ipv4` helpers, before that first write will succeed.
+The code is fine, and Go does set `SO_BROADCAST` for UDP sockets. A permission error usually means the network path is dropping or rejecting broadcast traffic — a firewall, a VLAN boundary, or a Wi-Fi access point — rather than the socket missing an option. Check the path first; only reach for raw socket options if you are using a socket type Go did not create for you.
 
 **If UDP is this unreliable, why does anything serious use it?**
 Because for some workloads a late packet is worse than a lost one — a stale video frame or a delayed voice sample isn't worth waiting for. That tradeoff is exactly what the "Try It Yourself" reliability layer above is meant to teach: protocols like QUIC and TFTP start from UDP's speed and bolt on only the guarantees they actually need, rather than accepting TCP's all-or-nothing bundle.

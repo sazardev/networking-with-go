@@ -46,11 +46,18 @@ title: "TCP in Depth: Protocol Theory and Go Implementation"
 (Data flows)
 [Client] --FIN--> [Server]
 [Client] <--ACK-- [Server]
+[Server] --FIN--> [Client]
+[Client] --ACK--> [Server]
+[Client enters TIME_WAIT]
 ```
 
-<DeepDive title="What the kernel does during the handshake">`net.Dial("tcp", ...)` asks the OS to create a socket (`socket(2)`) and connect it (`connect(2)`); the kernel sends the SYN and blocks your goroutine until the handshake completes, entirely in kernel space, before `Dial` returns. `Accept` does not perform the handshake either: the kernel keeps a SYN queue for half-open connections and an accept queue for connections that already finished it, and `Accept` just pops one off the accept queue. If that queue fills up faster than your program calls `Accept`, the kernel drops new SYNs and clients see connection timeouts.</DeepDive>
+<DeepDive title="What the kernel does during the handshake">`net.Dial("tcp", ...)` asks the OS to create a socket (`socket(2)`) and connect it (`connect(2)`); the kernel sends the SYN and blocks your goroutine until the handshake completes, entirely in kernel space, before `Dial` returns. `Accept` does not perform the handshake either: the kernel keeps a SYN queue for half-open connections and an accept queue for connections that already finished it, and `Accept` just pops one off the accept queue. If the accept queue overflows, the kernel drops the final ACK (or resets the connection, depending on `tcp_abort_on_overflow`); if the SYN queue overflows, it may fall back to syncookies. Either way, clients see timeouts or resets under load.</DeepDive>
 
 <Warning title="Dial can block far longer than you expect">`net.Dial` has no default timeout. If the remote host is unreachable in a way that produces no immediate RST (a firewall silently dropping SYN packets), your goroutine can block for the OS's default connect timeout, often over a minute. Use `net.DialTimeout` or a context-aware `net.Dialer{}.DialContext` for hosts you don't fully control.</Warning>
+
+### The TCP Header
+
+Every TCP segment starts with a 20-byte header, which grows to 60 bytes when options are present: source and destination ports, a 32-bit sequence number, a 32-bit acknowledgment number, a data-offset field, the control flags (SYN, ACK, FIN, RST, PSH, URG), a 16-bit receive window, a checksum, and an urgent pointer. Options carry the MSS, window scaling, selective acknowledgment (SACK), and timestamps. Sequence numbers count bytes, not segments, and acknowledgments are cumulative: one ACK can cover several segments at once, which is why a single ACK does not mean a single packet arrived.
 
 ### Flow Control and Congestion Control
 
@@ -78,9 +85,10 @@ A clean TCP close is a negotiation, not a single event: each side
 sends a FIN when it has no more data to write, and the other side
 ACKs it, so either half can close independently (a "half-close").
 Either side can also send an RST (reset) instead, which aborts the
-connection immediately and discards any unread data — this is what
-you get if you write to a connection after the peer already closed
-its side.
+connection immediately and discards any unread data. A peer that
+sends only a FIN has half-closed: it can still read, and writing to it
+is legal. An RST is what you get when the peer has fully closed or
+aborted the connection.
 
 <DeepDive title="TIME_WAIT and SO_REUSEADDR">After the side that initiates the close sends its final ACK, its socket lingers in `TIME_WAIT` for typically twice the maximum segment lifetime (often around 60 seconds), so delayed duplicate packets from the old connection get discarded instead of confused with a new one reusing the same port. This is why restarting a Go TCP server quickly can fail with "address already in use." The OS-level fix is `SO_REUSEADDR`; Go's `net` package already sets it for you on Unix-like systems in `net.Listen`, which is why most Go servers can restart on the same port almost immediately.</DeepDive>
 
@@ -259,6 +267,7 @@ func main() {
                 // gets disconnected after 30s of silence instead of
                 // holding the goroutine open forever.
                 c.SetReadDeadline(time.Now().Add(30 * time.Second))
+                c.SetWriteDeadline(time.Now().Add(30 * time.Second))
                 n, err := c.Read(buf) // Read data from the client
                 if n > 0 {
                     // Write can be short: check its error, since
@@ -308,7 +317,7 @@ func main() {
 - The `net` package is cross-platform: the same code runs unchanged
   on Windows, Linux, and macOS.
 
-<DeepDive title="Kernel buffers and backpressure">Every socket has a send and a receive buffer inside the kernel. `Write` only blocks your goroutine when the send buffer is full, which happens when the receiver's advertised window is small — it isn't reading fast enough. This is TCP's built-in backpressure: a slow reader naturally slows down the writer, with neither side implementing flow control itself. It also means `Write` returning without error only proves the kernel accepted the bytes into its own buffer, not that the peer received or processed them.</DeepDive>
+<DeepDive title="Kernel buffers and backpressure">Every socket has a send and a receive buffer inside the kernel. `Write` only blocks your goroutine when the send buffer is full. That can happen because the receiver's advertised window is small (it isn't reading fast enough), or because the congestion window is limiting how much unacknowledged data the network will accept. This is TCP's built-in backpressure: a slow reader naturally slows down the writer, with neither side implementing flow control itself. It also means `Write` returning without error only proves the kernel accepted the bytes into its own buffer, not that the peer received or processed them.</DeepDive>
 
 ---
 

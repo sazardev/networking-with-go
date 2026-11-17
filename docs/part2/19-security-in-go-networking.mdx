@@ -19,7 +19,7 @@ Every TCP connection you've built so far has sent bytes in the clear. TLS (Trans
 
 Under the hood, the TLS handshake uses asymmetric cryptography (public/private key pairs) to safely agree on a shared symmetric key, then switches to fast symmetric encryption for the actual data — asymmetric crypto is too slow to encrypt an entire stream, but it's exactly what's needed to establish trust and exchange a key in the first place.
 
-<DeepDive title="Anatomy of the Handshake">A TLS 1.2 handshake takes two round trips before the first application byte moves: the client sends a `ClientHello` listing supported versions and cipher suites; the server answers with its chosen suite, its certificate, and a key-exchange message; both sides derive the same symmetric session key without ever sending it over the wire, typically via ECDHE (elliptic-curve Diffie-Hellman with a fresh, ephemeral key pair generated just for that handshake); then each side sends a `Finished` message, encrypted under the new key, proving nothing was tampered with. TLS 1.3 collapses this to one round trip. The "ephemeral" part of ECDHE is what gives modern TLS **forward secrecy**: since the key-exchange keypair is discarded right after the handshake, an attacker who later steals the server's long-term private key still cannot decrypt session traffic recorded in the past.</DeepDive>
+<DeepDive title="Anatomy of the Handshake">A TLS 1.2 handshake takes two round trips before the first application byte moves: the client sends a `ClientHello` listing supported versions and cipher suites, plus an ALPN list of application protocols (HTTP/2, HTTP/1.1); the server answers with its chosen suite, its certificate, and a key-exchange message; both sides derive the same symmetric session key without ever sending it over the wire, typically via ECDHE (elliptic-curve Diffie-Hellman with a fresh, ephemeral key pair generated just for that handshake); then each side sends a `Finished` message, encrypted under the new key, proving nothing was tampered with. TLS 1.3 collapses this to one round trip. The "ephemeral" part of ECDHE is what gives modern TLS **forward secrecy**: since the key-exchange keypair is discarded right after the handshake, an attacker who later steals the server's long-term private key still cannot decrypt session traffic recorded in the past.</DeepDive>
 
 <Axiom>A certificate proves who signed a public key; a fresh ephemeral key exchange on top of it is what keeps yesterday's captured traffic safe even if tomorrow's private key leaks.</Axiom>
 
@@ -108,7 +108,8 @@ For local testing, you can generate a self-signed certificate and key with the O
 
 ```
 openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout server.key -out server.crt -days 365 -subj "/CN=localhost"
+  -keyout server.key -out server.crt -days 365 -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost"
 ```
 
 ---
@@ -190,7 +191,7 @@ With `ClientAuth: tls.RequireAndVerifyClientCert`, the handshake fails outright 
 
 ## Best Practices
 
-- **Pin a minimum version:** Set `MinVersion: tls.VersionTLS12` (or `TLS13`) explicitly; don't rely on defaults that may allow older, weaker protocol versions.
+- **Pin a minimum version:** Set `MinVersion: tls.VersionTLS12` (or `TLS13`) explicitly. Go's current default is already TLS 1.2, but stating it documents intent and keeps the guarantee if defaults change.
 - **Let Go choose cipher suites:** Go's default cipher suite selection for TLS 1.2+ is already conservative and well-maintained; only override `CipherSuites` if you have a specific compliance requirement.
 - **Rotate certificates before they expire:** Automate renewal (e.g., with ACME/Let's Encrypt tooling) rather than tracking expiry dates manually.
 - **Never log private keys or full certificates with keys attached.**

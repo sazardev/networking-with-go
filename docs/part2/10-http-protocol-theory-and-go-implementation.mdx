@@ -50,14 +50,16 @@ almost the same, but starts with a status line instead.
 | 2xx | Success | 200 OK, 201 Created, 204 No Content |
 | 3xx | Redirection | 301 Moved Permanently, 304 Not Modified |
 | 4xx | Client error | 400 Bad Request, 404 Not Found, 429 Too Many Requests |
-| 5xx | Server error | 500 Internal Server Error, 503 Unavailable |
+| 5xx | Server error | 500 Internal Server Error, 503 Service Unavailable |
 
 **Headers** carry metadata about the message: `Content-Type` and
 `Content-Length` describe the body, `Host` identifies the target
 virtual server, `Authorization` carries credentials, and countless
 custom `X-`-prefixed headers carry application-specific data.
 
-<DeepDive title="HTTP/1.1, HTTP/2, and HTTP/3 in Go">HTTP/1.0 opened a new TCP connection per request — slow and wasteful. HTTP/1.1 added persistent ("keep-alive") connections and pipelining, so one TCP connection can serve many requests in sequence. HTTP/2 goes further: it multiplexes many requests over a *single* connection using a binary framing layer, so a slow response no longer head-of-line blocks the others, and it compresses headers with HPACK. Go's `net/http` negotiates HTTP/2 automatically over TLS (via ALPN) with no code changes on your part — `http.ListenAndServeTLS` gets it for free. HTTP/3 replaces TCP with QUIC over UDP to avoid TCP-level head-of-line blocking entirely; the standard library doesn't speak it yet, so you'd reach for a third-party module like `quic-go` if you need it.</DeepDive>
+HTTP/1.1 has two ways to frame a body. `Content-Length` states the exact size up front. **Chunked transfer encoding** streams a body of unknown length: each chunk is a hexadecimal length, CRLF, the bytes, CRLF, and a final zero-length chunk marks the end. A response cannot use both at once, and a proxy that mishandles the difference is a classic request-smuggling bug. HTTP/2 and HTTP/3 replace this with length-prefixed frames, but the semantics of the body are the same.
+
+<DeepDive title="HTTP/1.1, HTTP/2, and HTTP/3 in Go">HTTP/1.0 opened a new TCP connection per request — slow and wasteful. HTTP/1.1 added persistent ("keep-alive") connections and pipelining, so one TCP connection can serve many requests in sequence. HTTP/2 goes further: it multiplexes many requests over a *single* connection using a binary framing layer, so a slow response no longer blocks the others at the HTTP layer, and it compresses headers with HPACK. A lost TCP segment still stalls every stream on the connection, which is exactly the problem HTTP/3 moves to QUIC to solve. Go's `net/http` negotiates HTTP/2 automatically over TLS (via ALPN) with no code changes on your part — `http.ListenAndServeTLS` gets it for free. HTTP/3 replaces TCP with QUIC over UDP to avoid TCP-level head-of-line blocking entirely; the standard library has no public HTTP/3 API yet, so you'd reach for a third-party module like `quic-go` if you need it.</DeepDive>
 
 ---
 
@@ -133,7 +135,7 @@ func main() {
 }
 ```
 
-<DeepDive title="What Each Server Timeout Actually Bounds">`ReadHeaderTimeout` bounds only the time to read the request line and headers — cheap protection against a client that opens a connection and sends headers one byte at a time. `ReadTimeout` bounds reading the entire request, headers plus body; set it generously if you accept file uploads. `WriteTimeout` bounds the time from when the request is fully read to when the response is fully written — including slow handler logic. `IdleTimeout` bounds how long a keep-alive connection can sit between requests before the server closes it, freeing file descriptors that an idle client would otherwise hold forever.</DeepDive>
+<DeepDive title="What Each Server Timeout Actually Bounds">`ReadHeaderTimeout` bounds only the time to read the request line and headers — cheap protection against a client that opens a connection and sends headers one byte at a time. `ReadTimeout` bounds reading the entire request, headers plus body; set it generously if you accept file uploads. `WriteTimeout` starts when the request headers are read and covers the response write, including slow handler logic — so a handler that spends a long time reading a slow request body can hit it before it ever writes. `IdleTimeout` bounds how long a keep-alive connection can sit between requests before the server closes it, freeing file descriptors that an idle client would otherwise hold forever.</DeepDive>
 
 ---
 
@@ -165,7 +167,7 @@ func main() {
 
 <Warning title="defer resp.Body.Close() Is Not Optional">Every successful `http.Get`, `http.Post`, or `client.Do` returns a response whose `Body` must be closed, even if you don't read it. Skip `Close()` and the underlying TCP connection can't be returned to the client's connection pool — under load this leaks sockets and eventually exhausts file descriptors. Always pair the call with `defer resp.Body.Close()` right after checking the error.</Warning>
 
-<Warning title="Don't Build a New http.Client Per Request">`http.Get` uses `http.DefaultClient`, which is fine for one-off scripts, but the zero-value client also has **no timeout** — a request to a server that never responds hangs forever. The fix isn't to allocate a fresh `&http.Client{}` on every call either: each `http.Client` owns its own connection pool (`Transport`), so creating one per request throws away keep-alive reuse and re-does a TCP/TLS handshake every time. Instead, create **one** `http.Client` with an explicit `Timeout` and reuse it across your program.</Warning>
+<Warning title="Don't Build a New http.Client Per Request">`http.Get` uses `http.DefaultClient`, which is fine for one-off scripts, but the zero-value client also has **no timeout** — a request to a server that never responds hangs forever. Allocating a fresh `&http.Client{}` per call does not create a new pool: with a nil `Transport`, the client uses the shared `http.DefaultTransport` and its keep-alive cache. It is still the wrong shape, because it tempts you to set a different timeout or transport on each one; create **one** `http.Client` with an explicit `Timeout` and reuse it. If you give each client its own `&http.Transport{}`, then you really do lose the pool and pay for a new handshake every time.</Warning>
 
 **Extending the example with a reusable, timeout-bound client:**
 
@@ -197,7 +199,7 @@ func main() {
 }
 ```
 
-<DeepDive title="Why Reusing a Client Matters">An `http.Client` caches idle TCP connections per host inside its `Transport` so a second request to the same server can skip the handshake entirely. Throwing away the client after every call throws away that cache, forcing a fresh DNS lookup, TCP handshake, and (for HTTPS) TLS handshake on every single request — measurably slower under any real load. `client.Timeout` also bounds the *entire* round trip (connect, headers, body), unlike a context deadline on just one part of the request, making it the simplest blanket protection against a hung server.</DeepDive>
+<DeepDive title="Why Reusing a Client Matters">An `http.Client` caches idle TCP connections per host inside its `Transport` so a second request to the same server can skip the handshake entirely. A zero-value client shares `http.DefaultTransport`, so throwing the *client* away is harmless; throwing away a client that owns its own `Transport` discards the cache and forces a fresh DNS lookup, TCP handshake, and (for HTTPS) TLS handshake on every request. `client.Timeout` bounds the entire round trip — connect, headers, body — unlike a context deadline aimed at one part of the request, which makes it the simplest blanket protection against a hung server.</DeepDive>
 
 ---
 
@@ -233,7 +235,7 @@ func main() {
 
 [Exercise: HTTP Server Routing](../../exercises/part2/10-http-server-routing/main.go)
 
-<DeepDive title="HandlerFunc, Handler, and ServeMux">Under the hood, `http.HandleFunc` wraps your plain function in the `http.HandlerFunc` type, which is just a function type that implements the single-method `http.Handler` interface (`ServeHTTP(w, r)`). That's why anything with a `ServeHTTP` method — including middleware you write yourself — can be dropped in wherever a `Handler` is expected. `http.DefaultServeMux` (used implicitly when you pass `nil` as the handler) matches incoming paths by longest-prefix routing: a registration for `/hello/` matches `/hello/world`, while `/hello` (no trailing slash) matches only that exact path. For anything beyond simple prefix routing — path parameters, method-based dispatch — most real projects reach for a third-party router, but the interface-based design means they still just plug into `http.Handler`.</DeepDive>
+<DeepDive title="HandlerFunc, Handler, and ServeMux">Under the hood, `http.HandleFunc` wraps your plain function in the `http.HandlerFunc` type, which is just a function type that implements the single-method `http.Handler` interface (`ServeHTTP(w, r)`). That's why anything with a `ServeHTTP` method — including middleware you write yourself — can be dropped in wherever a `Handler` is expected. `http.DefaultServeMux` (used implicitly when you pass `nil` as the handler) matches incoming paths by longest-prefix routing: a registration for `/hello/` matches `/hello/world`, while `/hello` (no trailing slash) matches only that exact path. For anything beyond simple prefix routing — path parameters, method-based dispatch — Go 1.22's enhanced `ServeMux` patterns (`GET /items/{id}`) cover a lot of ground; when you need middleware chains, route groups, or parameter binding, most real projects reach for a third-party router, but the interface-based design means they still just plug into `http.Handler`.</DeepDive>
 
 **Example: Concurrent HTTP Server**
 
@@ -315,6 +317,7 @@ import (
     "net/http"
     "os"
     "os/signal"
+    "syscall"
     "time"
 )
 
@@ -333,8 +336,9 @@ func main() {
         WriteTimeout: 10 * time.Second,
     }
 
-    // Cancel ctx when the process receives an interrupt signal.
-    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+    // Cancel ctx on Ctrl+C or on the SIGTERM an orchestrator sends.
+    ctx, stop := signal.NotifyContext(
+        context.Background(), os.Interrupt, syscall.SIGTERM)
     defer stop()
 
     go func() {
@@ -360,7 +364,7 @@ func main() {
 }
 ```
 
-<DeepDive title="What Shutdown Does and Doesn't Wait For">`Shutdown` closes all open listeners so no new connection can start, then waits for handlers that are already running to return, checking back roughly every 500 milliseconds until the context deadline. If the deadline passes first, `Shutdown` returns the context's error and any still-running handlers are left to finish or be killed when the process exits — the deadline is your safety valve against one handler that hangs forever. Note that `Shutdown` does **not** track hijacked connections such as WebSockets; if your server upgrades connections, you're responsible for closing those yourself, typically by fanning out your own cancellation signal to each connection's goroutine.</DeepDive>
+<DeepDive title="What Shutdown Does and Doesn't Wait For">`Shutdown` closes all open listeners so no new connection can start, then waits for handlers that are already running to return, polling with a short interval that backs off to a 500 ms maximum until the context deadline. If the deadline passes first, `Shutdown` returns the context's error and any still-running handlers are left to finish or be killed when the process exits — the deadline is your safety valve against one handler that hangs forever. Note that `Shutdown` does **not** track hijacked connections such as WebSockets; if your server upgrades connections, you're responsible for closing those yourself, typically by fanning out your own cancellation signal to each connection's goroutine.</DeepDive>
 
 <Axiom>A server without a shutdown path doesn't stop — it just gets killed mid-sentence.</Axiom>
 
@@ -393,7 +397,7 @@ Because `http.ListenAndServe(":8080", nil)` builds an `http.Server` with every t
 Yes, every time, with no exceptions — skipping `resp.Body.Close()` means the underlying TCP connection can never be returned to the client's connection pool, and under sustained load that quietly leaks sockets until you run out of file descriptors. Pair every successful `http.Get`/`client.Do` call with `defer resp.Body.Close()` immediately after checking the error, exactly like the basic HTTP client example does.
 
 **Is it better to create a fresh `http.Client` for each request so nothing gets shared between calls?**
-No, and this is a common overcorrection: each `http.Client` owns its own connection pool through its `Transport`, so a new client per request throws away keep-alive reuse and forces a fresh DNS lookup plus TCP (and TLS, for HTTPS) handshake every single time. Create one `http.Client` with an explicit `Timeout` at package level and reuse it across your whole program, the way the reusable-client example does.
+No, and this is a common overcorrection in both directions. A zero-value `&http.Client{}` shares `http.DefaultTransport`, so creating one per request does not by itself create a new pool; but if each client owns a fresh `&http.Transport{}`, you do throw away keep-alive reuse and force a new DNS lookup, TCP handshake, and TLS handshake every time. Either way, create one `http.Client` with an explicit `Timeout` at package level and reuse it across your program.
 
 **What's the actual difference between a context deadline on a request and `Server.Shutdown`'s context?**
 A request-scoped context (like `r.Context()` in the cancellation example) governs one in-flight request and fires when that specific client disconnects or its deadline passes. `Server.Shutdown(ctx)`'s context is different: it bounds how long the *whole server* will wait for every currently running handler to finish before giving up and returning, acting as a safety valve on the shutdown process itself rather than on any single request.
