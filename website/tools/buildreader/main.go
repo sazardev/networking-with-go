@@ -791,18 +791,52 @@ func pageHeader(ctx linkCtx) string {
   <div class="reader-top-actions">
     <a href="%sindex.html">All Parts</a>
     <a href="%smarketing.html">Marketing</a>
-    <div class="font-size-control">
-      <button id="font-dec" type="button" aria-label="Decrease text size">A&minus;</button>
-      <button id="font-inc" type="button" aria-label="Increase text size">A+</button>
-    </div>
-    <button id="justify-toggle" type="button">Justify</button>
+    <button id="prefs-toggle" type="button" aria-expanded="false" aria-controls="prefs-panel" aria-label="Reading settings" title="Reading settings">Aa</button>
     <button id="focus-toggle" type="button">Focus</button>
     <button id="search-open" type="button">Search <kbd>Ctrl K</kbd></button>
     <button id="notes-toggle" type="button">Notes</button>
     <button id="print-pdf" type="button">PDF</button>
-    <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
   </div>
 </header>
+<div id="prefs-panel" class="prefs-panel" role="dialog" aria-label="Reading settings" tabindex="-1" hidden>
+  <div class="prefs-head">
+    <span>Reading</span>
+    <button id="prefs-close" type="button" aria-label="Close reading settings">&times;</button>
+  </div>
+  <div class="prefs-group">
+    <span class="prefs-label">Typeface</span>
+    <div class="prefs-seg" id="prefs-font" role="group" aria-label="Typeface">
+      <button type="button" data-value="sans">Sans</button>
+      <button type="button" data-value="serif">Serif</button>
+      <button type="button" data-value="mono">Mono</button>
+    </div>
+  </div>
+  <label class="prefs-range">
+    <span>Size</span><output id="prefs-size-out">16 px</output>
+    <input id="prefs-size" type="range" min="13" max="30" step="1" value="16">
+  </label>
+  <label class="prefs-range">
+    <span>Line height</span><output id="prefs-leading-out">1.70</output>
+    <input id="prefs-leading" type="range" min="1.3" max="2.2" step="0.05" value="1.7">
+  </label>
+  <label class="prefs-range">
+    <span>Line width</span><output id="prefs-measure-out">72 ch</output>
+    <input id="prefs-measure" type="range" min="50" max="95" step="1" value="72">
+  </label>
+  <div class="prefs-checks">
+    <label><input id="prefs-bold" type="checkbox"> Bold text</label>
+    <label><input id="prefs-justify" type="checkbox"> Justify</label>
+  </div>
+  <div class="prefs-group">
+    <span class="prefs-label">Theme</span>
+    <div class="prefs-seg" id="prefs-theme" role="group" aria-label="Theme">
+      <button type="button" data-value="light">Light</button>
+      <button type="button" data-value="sepia">Sepia</button>
+      <button type="button" data-value="dark">Dark</button>
+    </div>
+  </div>
+  <button id="prefs-reset" class="prefs-reset" type="button">Reset text settings</button>
+</div>
 <div class="sidebar-scrim"></div>
 <div id="notes-panel" class="notes-panel" hidden>
   <div class="notes-panel-head">

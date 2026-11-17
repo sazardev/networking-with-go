@@ -1,9 +1,6 @@
 (function () {
   var root = document.documentElement;
-  var toggle = document.getElementById('theme-toggle');
-
-  var LABELS = { light: 'Light mode', sepia: 'Sepia mode', dark: 'Dark mode' };
-  var ORDER = { light: 'sepia', sepia: 'dark', dark: 'light' };
+  var group = document.getElementById('prefs-theme');
   var MODES = ['light', 'sepia', 'dark'];
 
   function effectiveTheme() {
@@ -13,9 +10,13 @@
   }
 
   function render() {
-    var eff = effectiveTheme();
-    toggle.textContent = LABELS[eff] || 'Theme';
-    toggle.setAttribute('aria-pressed', String(eff === 'dark'));
+    if (!group) return;
+    var current = effectiveTheme();
+    Array.prototype.forEach.call(group.querySelectorAll('button[data-value]'), function (b) {
+      var on = b.getAttribute('data-value') === current;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
   }
 
   var saved = localStorage.getItem('theme');
@@ -24,8 +25,11 @@
   }
   render();
 
-  toggle.addEventListener('click', function () {
-    var next = ORDER[effectiveTheme()];
+  if (!group) return;
+  group.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-value]');
+    if (!btn) return;
+    var next = btn.getAttribute('data-value');
     root.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
     render();
@@ -352,48 +356,116 @@
 })();
 
 (function () {
-  var toggle = document.getElementById('justify-toggle');
-  if (!toggle) return;
   var root = document.documentElement;
+  var panel = document.getElementById('prefs-panel');
+  var toggle = document.getElementById('prefs-toggle');
+  if (!panel || !toggle) return;
 
-  function render() {
-    var on = root.classList.contains('justify-text');
-    toggle.classList.toggle('active', on);
-    toggle.textContent = on ? 'Justify' : 'Justify';
+  var DEFAULTS = { font: 'sans', size: 16, leading: 1.7, measure: 72, bold: false, justify: false };
+  var FONTS = {
+    sans: 'var(--sans)',
+    serif: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Liberation Serif", serif',
+    mono: 'var(--mono)'
+  };
+
+  var els = {
+    font: document.getElementById('prefs-font'),
+    size: document.getElementById('prefs-size'),
+    sizeOut: document.getElementById('prefs-size-out'),
+    leading: document.getElementById('prefs-leading'),
+    leadingOut: document.getElementById('prefs-leading-out'),
+    measure: document.getElementById('prefs-measure'),
+    measureOut: document.getElementById('prefs-measure-out'),
+    bold: document.getElementById('prefs-bold'),
+    justify: document.getElementById('prefs-justify'),
+    reset: document.getElementById('prefs-reset')
+  };
+
+  function clamp(n, lo, hi) { return Math.min(hi, Math.max(lo, n)); }
+
+  function load() {
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem('readerPrefs') || '{}') || {}; } catch (e) {}
+    var p = Object.assign({}, DEFAULTS, saved);
+    // One-time migration from the old A-/A+ scale and the Justify button.
+    if (saved.size == null) {
+      var legacyScale = parseFloat(localStorage.getItem('readerFontScale'));
+      if (!isNaN(legacyScale)) p.size = Math.round(14 * legacyScale);
+    }
+    if (saved.justify == null && localStorage.getItem('justifyText') === '1') p.justify = true;
+    p.size = clamp(p.size, 13, 30);
+    p.leading = clamp(p.leading, 1.3, 2.2);
+    p.measure = clamp(p.measure, 50, 95);
+    return p;
   }
 
-  if (localStorage.getItem('justifyText') === '1') root.classList.add('justify-text');
-  render();
+  var prefs = load();
 
-  toggle.addEventListener('click', function () {
-    var on = !root.classList.contains('justify-text');
-    root.classList.toggle('justify-text', on);
-    localStorage.setItem('justifyText', on ? '1' : '0');
-    render();
-  });
-})();
-
-(function () {
-  var dec = document.getElementById('font-dec');
-  var inc = document.getElementById('font-inc');
-  if (!dec || !inc) return;
-  var root = document.documentElement;
-  var MIN = 0.8, MAX = 1.6, STEP = 0.1;
-
-  function apply(scale) {
-    scale = Math.min(MAX, Math.max(MIN, scale));
-    root.style.setProperty('--reader-font-scale', scale.toFixed(2));
-    localStorage.setItem('readerFontScale', scale.toFixed(2));
+  function save() {
+    try { localStorage.setItem('readerPrefs', JSON.stringify(prefs)); } catch (e) {}
   }
 
-  var saved = parseFloat(localStorage.getItem('readerFontScale'));
-  apply(isNaN(saved) ? 1 : saved);
+  function apply() {
+    root.style.setProperty('--reader-font', FONTS[prefs.font] || FONTS.sans);
+    root.style.setProperty('--reader-font-size', prefs.size + 'px');
+    root.style.setProperty('--reader-leading', String(prefs.leading));
+    root.style.setProperty('--reader-measure', prefs.measure + 'ch');
+    root.style.setProperty('--reader-weight', prefs.bold ? '600' : '400');
+    root.classList.toggle('justify-text', !!prefs.justify);
+    sync();
+  }
 
-  dec.addEventListener('click', function () {
-    apply((parseFloat(localStorage.getItem('readerFontScale')) || 1) - STEP);
+  function sync() {
+    if (els.size) { els.size.value = prefs.size; els.sizeOut.textContent = prefs.size + ' px'; }
+    if (els.leading) { els.leading.value = prefs.leading; els.leadingOut.textContent = Number(prefs.leading).toFixed(2); }
+    if (els.measure) { els.measure.value = prefs.measure; els.measureOut.textContent = prefs.measure + ' ch'; }
+    if (els.bold) els.bold.checked = !!prefs.bold;
+    if (els.justify) els.justify.checked = !!prefs.justify;
+    if (els.font) Array.prototype.forEach.call(els.font.querySelectorAll('button[data-value]'), function (b) {
+      var on = b.getAttribute('data-value') === prefs.font;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  }
+
+  function changed() { apply(); save(); }
+  apply();
+
+  if (els.size) els.size.addEventListener('input', function () { prefs.size = parseInt(this.value, 10) || DEFAULTS.size; changed(); });
+  if (els.leading) els.leading.addEventListener('input', function () { prefs.leading = parseFloat(this.value) || DEFAULTS.leading; changed(); });
+  if (els.measure) els.measure.addEventListener('input', function () { prefs.measure = parseInt(this.value, 10) || DEFAULTS.measure; changed(); });
+  if (els.bold) els.bold.addEventListener('change', function () { prefs.bold = this.checked; changed(); });
+  if (els.justify) els.justify.addEventListener('change', function () { prefs.justify = this.checked; changed(); });
+  if (els.font) els.font.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-value]');
+    if (!btn) return;
+    prefs.font = btn.getAttribute('data-value');
+    changed();
   });
-  inc.addEventListener('click', function () {
-    apply((parseFloat(localStorage.getItem('readerFontScale')) || 1) + STEP);
+  if (els.reset) els.reset.addEventListener('click', function () {
+    prefs = Object.assign({}, DEFAULTS);
+    changed();
+  });
+
+  function setOpen(open) {
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    if (open) panel.focus({ preventScroll: true });
+  }
+
+  toggle.addEventListener('click', function (e) {
+    e.stopPropagation();
+    setOpen(panel.hidden);
+  });
+  var close = document.getElementById('prefs-close');
+  if (close) close.addEventListener('click', function () { setOpen(false); toggle.focus(); });
+  document.addEventListener('click', function (e) {
+    if (panel.hidden) return;
+    if (panel.contains(e.target) || toggle.contains(e.target)) return;
+    setOpen(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !panel.hidden) { setOpen(false); toggle.focus(); }
   });
 })();
 

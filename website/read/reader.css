@@ -7,7 +7,13 @@
   --card: #fafafa;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --reader-font-scale: 1;
+  /* Reader preferences (see the Aa panel). JS overrides these five inline on
+     :root; these are the defaults a first visit and the Reset button use. */
+  --reader-font: var(--sans);
+  --reader-font-size: 16px;
+  --reader-leading: 1.7;
+  --reader-measure: 72ch;
+  --reader-weight: 400;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -163,9 +169,8 @@ a { color: inherit; }
   font-size: 12px;
   text-decoration: none;
 }
-#search-open, #theme-toggle, #focus-toggle, #justify-toggle, #sidebar-toggle,
-#notes-toggle, #print-pdf,
-.font-size-control button {
+#search-open, #prefs-toggle, #focus-toggle, #sidebar-toggle,
+#notes-toggle, #print-pdf {
   font-family: var(--mono);
   font-size: 12px;
   background: transparent;
@@ -183,23 +188,119 @@ a { color: inherit; }
   margin-left: 4px;
   font-size: 10px;
 }
-.font-size-control { display: inline-flex; }
-.font-size-control button {
-  padding: 5px 9px;
+#prefs-toggle, #focus-toggle, #search-open, #sidebar-toggle,
+#notes-toggle, #print-pdf { transition: none; }
+#prefs-toggle:hover, #focus-toggle:hover, #search-open:hover, #sidebar-toggle:hover,
+#notes-toggle:hover, #print-pdf:hover { opacity: 0.7; }
+#focus-toggle.active, #notes-toggle.active { background: var(--fg); color: var(--bg); }
+#prefs-toggle[aria-expanded="true"] { background: var(--fg); color: var(--bg); }
+
+/* Reading settings popover. One small panel instead of a row of buttons:
+   typeface, exact size, line height, measure, weight, justification, theme. */
+.prefs-panel {
+  position: fixed;
+  top: 62px;
+  right: 20px;
+  z-index: 45;
+  width: 292px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-family: var(--mono);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
 }
-#theme-toggle, #focus-toggle, #justify-toggle, #search-open, #sidebar-toggle,
-#notes-toggle, #print-pdf,
-.font-size-control button { transition: none; }
-#theme-toggle:hover, #focus-toggle:hover, #justify-toggle:hover, #search-open:hover, #sidebar-toggle:hover,
-#notes-toggle:hover, #print-pdf:hover,
-.font-size-control button:hover { opacity: 0.7; }
-#focus-toggle.active, #justify-toggle.active, #notes-toggle.active { background: var(--fg); color: var(--bg); }
+.prefs-panel[hidden] { display: none; }
+.prefs-panel:focus { outline: none; }
+.prefs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.prefs-head button {
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.prefs-group { display: flex; flex-direction: column; gap: 6px; }
+.prefs-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.prefs-seg { display: grid; grid-auto-flow: column; gap: 0; }
+.prefs-seg button {
+  border: 1px solid var(--line-soft);
+  border-left-width: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+.prefs-seg button:first-child { border-left-width: 1px; }
+.prefs-seg button.active {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+}
+.prefs-range {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.prefs-range output {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.prefs-range input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--fg);
+}
+.prefs-checks { display: flex; gap: 16px; font-size: 11px; }
+.prefs-checks label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.prefs-checks input { accent-color: var(--fg); margin: 0; }
+.prefs-reset {
+  border: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 8px;
+  cursor: pointer;
+}
+.prefs-reset:hover { color: var(--fg); border-color: var(--fg); }
 
 .reader-layout {
   display: grid;
   grid-template-columns: 280px 1fr;
   min-height: calc(100vh - 56px);
 }
+/* Grid items default to min-width:auto, so a wide <pre> or an SVG used to
+   force the whole page sideways instead of scrolling inside its own box. */
+.reader-layout > * { min-width: 0; }
 html.sidebar-collapsed .reader-layout { grid-template-columns: 1fr; }
 html.sidebar-collapsed .reader-sidebar { display: none; }
 html.sidebar-collapsed .reader-content { margin: 0 auto; }
@@ -346,7 +447,7 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 
 /* Topics index page. */
 .topic-block { margin-bottom: 28px; }
-.topic-block h2 { font-size: calc(13pt * var(--reader-font-scale)); }
+.topic-block h2 { font-size: 1.15rem; }
 .topic-block > p { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
 .topic-list {
   list-style: none;
@@ -446,22 +547,48 @@ body[data-current-part] .toc-part[data-part] a { font-weight: 400; }
 
 .reader-content {
   padding: 40px clamp(16px, 2.5vw, 48px);
-  max-width: none;
   width: 100%;
-  font-size: calc(10.5pt * var(--reader-font-scale));
+  /* The measure cap is the main comfort control: ~72 characters is the
+     classic book line. ch resolves in the chosen typeface, so the cap moves
+     with it; the extra 96px is the horizontal padding (border-box). */
+  max-width: calc(var(--reader-measure) + 96px);
+  margin-inline: auto;
+  font-family: var(--reader-font);
+  font-size: var(--reader-font-size);
 }
 .reader-content :first-child { margin-top: 0; }
 
-/* Re-declare the theme's own heading sizes scaled by --reader-font-scale --
-   the theme hardcodes fixed pt values, which wouldn't otherwise respond to
-   the font-size control below. */
-.reader-content h1 { font-size: calc(18pt * var(--reader-font-scale)); }
-.reader-content h2 { font-size: calc(14pt * var(--reader-font-scale)); }
-.reader-content h3 { font-size: calc(12pt * var(--reader-font-scale)); }
-.reader-content h4 { font-size: calc(11pt * var(--reader-font-scale)); }
-.reader-content h5 { font-size: calc(10.5pt * var(--reader-font-scale)); }
+/* Body typography the Aa panel drives. Weight and line height are applied
+   to running text only, so headings keep their own tight leading and
+   emphasis (<strong>, <b>) still reads as emphasis. */
+.reader-content p,
+.reader-content li,
+.reader-content dd,
+.reader-content blockquote {
+  font-weight: var(--reader-weight);
+  line-height: var(--reader-leading);
+}
+
+/* Re-declare the theme's own heading sizes as em multiples of the chosen
+   reading size -- the theme hardcodes fixed pt values, and sets the pinned
+   monospace stack on headings, which would ignore the typeface control. */
+.reader-content h1,
+.reader-content h2,
+.reader-content h3,
+.reader-content h4,
+.reader-content h5 { font-family: var(--reader-font); }
+.reader-content h1 { font-size: 1.7em; }
+.reader-content h2 { font-size: 1.33em; }
+.reader-content h3 { font-size: 1.14em; }
+.reader-content h4 { font-size: 1.05em; }
+.reader-content h5 { font-size: 1em; }
 .reader-content pre,
-.reader-content code { font-size: calc(10.5pt * var(--reader-font-scale)); }
+.reader-content code { font-family: var(--mono); }
+.reader-content pre { font-size: 0.95em; }
+.reader-content code { font-size: 0.92em; }
+.reader-content pre code { font-size: 1em; }
+/* The Bold toggle is for prose; code keeps its own weight. */
+.reader-content code { font-weight: 400; }
 
 /* go-pretty-pdf's own stylesheet sets @page/print rules that are harmless
    on screen; only the print-oriented forced-page-break behavior on H1 is
@@ -743,9 +870,8 @@ h2:hover > .heading-link, h3:hover > .heading-link,
   .brand { font-size: 13px; }
   .reader-top-actions { gap: 6px; }
   .reader-top-actions a { font-size: 11px; }
-  #search-open, #theme-toggle, #focus-toggle, #justify-toggle, #sidebar-toggle,
-  #notes-toggle, #print-pdf,
-  .font-size-control button { font-size: 11px; padding: 4px 8px; }
+  #search-open, #prefs-toggle, #focus-toggle, #sidebar-toggle,
+  #notes-toggle, #print-pdf { font-size: 11px; padding: 4px 8px; }
   #sidebar-toggle { padding: 4px 6px; }
   #search-open kbd { display: none; }
 
@@ -781,11 +907,8 @@ h2:hover > .heading-link, h3:hover > .heading-link,
   }
   html.sidebar-open .reader-sidebar { display: block; }
 
-  .reader-content { padding: 24px 16px; font-size: calc(10pt * var(--reader-font-scale)); overflow-x: hidden; }
-  .reader-content pre { overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: calc(9pt * var(--reader-font-scale)); }
-  .reader-content h1 { font-size: calc(16pt * var(--reader-font-scale)); }
-  .reader-content h2 { font-size: calc(13pt * var(--reader-font-scale)); }
-  .reader-content h3 { font-size: calc(11pt * var(--reader-font-scale)); }
+  .reader-content { padding: 24px 16px; overflow-x: hidden; }
+  .reader-content pre { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .breadcrumb { font-size: 11px; margin-bottom: 18px; }
   .continue-reading { padding: 12px 14px; margin-bottom: 20px; }
   .continue-reading .cr-title { font-size: 13px; }
@@ -806,24 +929,22 @@ h2:hover > .heading-link, h3:hover > .heading-link,
 @media (max-width: 560px) {
   .reader-top { height: 48px; padding: 0 10px; }
   .brand { font-size: 12px; }
-  .reader-top-actions { gap: 4px; }
-  .reader-top-actions a { font-size: 10px; }
-  #search-open, #theme-toggle, #focus-toggle, #justify-toggle, #sidebar-toggle,
-  #notes-toggle, #print-pdf,
-  .font-size-control button { font-size: 10px; padding: 3px 6px; }
+  .reader-top-actions { gap: 4px; flex-wrap: nowrap; }
+  /* The two marketing links are the first thing to go when the bar has to
+     fit on a phone; the reading controls stay. */
+  .reader-top-actions a { display: none; }
+  #search-open, #prefs-toggle, #focus-toggle, #sidebar-toggle,
+  #notes-toggle, #print-pdf { font-size: 10px; padding: 3px 6px; }
   #sidebar-toggle { padding: 3px 5px; font-size: 14px; }
-  #focus-toggle, #justify-toggle { display: none; }
+  #focus-toggle { display: none; }
+  .prefs-panel { top: 54px; left: 10px; right: 10px; width: auto; }
 
   .reader-sidebar { top: 48px; width: min(280px, 88vw); padding: 12px 10px; }
   .notes-panel { top: 48px; }
 
-  .reader-content { padding: 20px 12px; font-size: calc(9.5pt * var(--reader-font-scale)); overflow-x: hidden; }
-  .reader-content pre { overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: calc(8.5pt * var(--reader-font-scale)); }
-  .reader-content h1 { font-size: calc(15pt * var(--reader-font-scale)); margin-top: 32px; padding-top: 32px; }
-  .reader-content h2 { font-size: calc(12pt * var(--reader-font-scale)); }
-  .reader-content h3 { font-size: calc(10.5pt * var(--reader-font-scale)); }
-  .reader-content pre,
-  .reader-content code { font-size: calc(9.5pt * var(--reader-font-scale)); }
+  .reader-content { padding: 20px 12px; overflow-x: hidden; }
+  .reader-content pre { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .reader-content h1 { margin-top: 32px; padding-top: 32px; }
 
   .breadcrumb { font-size: 10px; margin-bottom: 14px; }
   .continue-reading { flex-direction: column; align-items: flex-start; gap: 10px; padding: 10px 12px; }
@@ -860,10 +981,9 @@ h2:hover > .heading-link, h3:hover > .heading-link,
 @media (max-width: 380px) {
   .reader-top { padding: 0 8px; }
   .reader-top-actions { gap: 3px; }
-  #search-open, #theme-toggle, #sidebar-toggle, #notes-toggle, #print-pdf,
-  .font-size-control button { font-size: 9px; padding: 3px 5px; }
+  #search-open, #prefs-toggle, #sidebar-toggle, #notes-toggle, #print-pdf { font-size: 9px; padding: 3px 5px; }
   .reader-content { padding: 16px 10px; overflow-x: hidden; }
-  .reader-content pre { font-size: calc(8pt * var(--reader-font-scale)); }
+
   .continue-reading { padding: 8px 10px; }
 }
 
@@ -871,8 +991,8 @@ h2:hover > .heading-link, h3:hover > .heading-link,
    clean, single-chapter document. */
 @media print {
   .reader-top, .reader-sidebar, .sidebar-scrim, .notes-panel, .notes-scrim,
-  .palette, .reading-progress, .share-bar, .chapter-nav, .breadcrumb,
-  .heading-link, #copy-toast, .read-sentinel { display: none !important; }
+  .palette, .prefs-panel, .reading-progress, .share-bar, .chapter-nav,
+  .breadcrumb, .heading-link, #copy-toast, .read-sentinel { display: none !important; }
   body { background: #ffffff; color: #000000; }
   .reader-layout { display: block; }
   .reader-content {
