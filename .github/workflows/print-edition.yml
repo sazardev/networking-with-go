@@ -1,0 +1,89 @@
+name: Community Print Edition
+
+# Builds a typeset print edition from the same Markdown sources with Folio
+# (https://github.com/Oyetomi/folio). It is independent of the main PDF and
+# EPUB workflow and does not change it.
+#
+# The build uses only free fonts from Tectonic's TeX bundle, pins the Folio
+# and Tectonic versions, and fixes the timestamp to the commit time, so the
+# PDF can be rebuilt byte for byte from any commit.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  print-edition:
+    runs-on: ubuntu-latest
+    env:
+      FOLIO_VERSION: v0.1.0
+      TECTONIC_VERSION: 0.17.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      # The statically linked musl build needs no system libraries.
+      - name: Install Tectonic
+        run: |
+          curl -fsSL "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin tectonic
+          tectonic --version
+
+      # pdftotext, used by Folio's figure-overlap check.
+      - name: Install Poppler
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+
+      # Tectonic downloads the TeX files it needs on first use.
+      - name: Cache Tectonic files
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Tectonic
+          key: tectonic-${{ env.TECTONIC_VERSION }}-${{ env.FOLIO_VERSION }}
+
+      - name: Install Folio
+        run: go install "github.com/Oyetomi/folio/cmd/folio@${FOLIO_VERSION}"
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Reads go-pretty-pdf.yml for the title, author, sources and cover.
+      - name: Build print edition
+        run: |
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          folio build . --fonts open \
+            -o "networking-with-go-print-edition-${{ steps.version.outputs.version }}.pdf"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: networking-with-go-print-edition-${{ steps.version.outputs.version }}
+          path: networking-with-go-print-edition-*.pdf
+          retention-days: 90
+
+      # The main workflow creates the release for a tag; wait for it, then
+      # attach the print edition alongside the standard PDF and EPUB.
+      - name: Attach to release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in $(seq 1 30); do
+            gh release view "${{ github.ref_name }}" >/dev/null 2>&1 && break
+            sleep 20
+          done
+          gh release upload "${{ github.ref_name }}" networking-with-go-print-edition-*.pdf --clobber
