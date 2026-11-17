@@ -11,8 +11,10 @@ claims checkable against the repository.
 | --- | --- | --- |
 | Awesome Go Books (`dariubs/GoBooks`) | PR open | https://github.com/dariubs/GoBooks/pull/181 |
 | Free Programming Books (`EbookFoundation`) | PR open | https://github.com/EbookFoundation/free-programming-books/pull/13642 |
+| Awesome Networking (`facyber`) | PR open | https://github.com/facyber/awesome-networking/pull/75 |
 | GitHub topics | Done | `book`, `go`, `golang`, `networking`, `network-programming`, `tcp-ip`, `websockets`, `grpc`, `tls`, `http`, `cybersecurity`, `hacking`, `education`, `free` |
 | Marketing kit | Live | https://sazardev.github.io/networking-with-go/marketing.html |
+| dev.to article draft | Ready | `promotion/dev-to-article.md` (frontmatter has `published: false`) |
 | Homepage download | Live | Resolves the latest release asset through the GitHub API |
 
 ## Channels that need the author's account
