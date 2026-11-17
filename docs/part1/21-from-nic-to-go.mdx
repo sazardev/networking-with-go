@@ -76,6 +76,13 @@ When a Go network service is slower than expected, measure the layers in order:
 
 The most common finding is not a mysterious kernel bug. It is a buffer that is too small, a syscall per byte, a blocked goroutine without a deadline, or a queue pinned to one CPU.
 
+### The Formulas Behind the Numbers
+
+- **Packet rate:** `line rate / ((frame bytes + 20) × 8)`. The 20 bytes cover the preamble, SFD, and inter-frame gap. At 10 Gbps with 64-byte frames, that is about 14.88 million packets per second.
+- **Little's law:** `L = λW`. At 100,000 requests per second and 20 ms average time in the system, 2,000 requests are in flight on average.
+- **Per-flow ceiling:** `window / RTT`, the same limit as the transport chapter. More bandwidth does not help a flow whose window is too small.
+- **Per-core packet budget:** `packets per second / cores`. Compare that with the cost of a syscall and the driver's per-packet work before assuming the kernel is the bottleneck.
+
 <Axiom>A packet is only as fast as the slowest queue it crosses. Measure the queue, not the average.</Axiom>
 
 ## Frequently Asked Questions

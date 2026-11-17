@@ -74,7 +74,7 @@ First comment:
 
 ### Reddit r/golang
 
-Title: `I wrote a free, open-source book on networking and network programming in Go (159 chapters, TCP/IP to production APIs)`
+Title: `I wrote a free, open-source book on networking and network programming in Go (160 chapters, TCP/IP to production APIs)`
 
 Body:
 
@@ -109,7 +109,7 @@ free book link.
 ### LinkedIn
 
 > I published a free, open-source book on networking and network programming in
-> Go: 159 chapters, from TCP/IP fundamentals to production APIs and security
+> Go: 160 chapters, from TCP/IP fundamentals to production APIs and security
 > tooling. Theory first, then complete runnable programs. No paywall, no
 > signup, text CC BY-NC 4.0 and code MIT.
 >
@@ -125,7 +125,7 @@ free book link.
 2. Theory first: OSI/TCP-IP, addressing, ports, NAT, VPNs, then a Go crash
    course, then TCP, UDP, HTTP, WebSockets, DNS, TLS.
 3. Later parts: gRPC, WebRTC, MQTT, QUIC, security tooling, production APIs.
-   159 chapters, every example a complete program.
+   160 chapters, every example a complete program.
 4. Free online, PDF and EPUB. CC BY-NC 4.0 text, MIT code.
    https://sazardev.github.io/networking-with-go/
 

@@ -1,0 +1,190 @@
+---
+id: "[1.22.0]"
+title: "Reading Packets: Hex, Headers, and What the Wire Actually Says"
+---
+
+# Reading Packets: Hex, Headers, and What the Wire Actually Says
+
+> "It is more complicated than you think."
+> — RFC 1925, *The Twelve Networking Truths* (1996)
+
+Logs tell you what an application believed. A packet capture tells you what actually crossed the wire. When the two disagree — and they often do — the capture wins. Reading packets is the closest thing networking has to a debugger: it shows the handshake that failed, the retransmission that stalled a request, the TTL that expired, and the frame that was never acknowledged.
+
+This chapter is a practical decoder's guide. It starts with a hex dump and walks through the Ethernet, IPv4, TCP, and UDP headers field by field, with the formulas that connect lengths, offsets, and rates. It then turns the headers into a method for reading a whole conversation: handshake, sequence numbers, window, retransmissions, and teardown. No capture tool experience is assumed; the goal is that a wall of hex stops being opaque.
+
+### Why Hex
+
+Packet captures are bytes. A tool may render them as a tree of named fields, but underneath it is reading offsets and lengths. Learning to read the bytes yourself is what lets you trust the tree, spot a malformed packet, and understand why a filter that looked correct matched nothing.
+
+A hex dump groups bytes in rows, usually 16 per row, with an offset column on the left. Offsets are hexadecimal, not decimal, because the protocols are defined in powers of two. The first byte of a frame is offset `0x0000`; the fourteenth is `0x000d`.
+
+### The Ethernet Header
+
+An Ethernet frame begins with 14 bytes before the payload:
+
+```
+Offset  Size  Field
+0x00    6     Destination MAC
+0x06    6     Source MAC
+0x0c    2     EtherType
+0x0e    ...   Payload
+```
+
+The EtherType is the demultiplexer: `0x0800` means IPv4, `0x86DD` means IPv6, `0x0806` means ARP, `0x8100` means an 802.1Q VLAN tag follows. If the type is `0x8100`, the next four bytes are the VLAN tag, and the real EtherType comes after it. This is why a capture of a tagged frame appears to have an extra four bytes between the MAC addresses and the IP header.
+
+The frame check sequence (FCS) is four bytes at the end, but most capture tools strip it or report it separately. If your capture shows a frame shorter than 60 bytes without padding, the NIC or the capture point may have removed the padding.
+
+### The IPv4 Header
+
+IPv4 starts at offset `0x0e` in an untagged Ethernet frame. Its minimum header is 20 bytes:
+
+```
+0x00  Version (4) | IHL (4)
+0x01  DSCP (6)    | ECN (2)
+0x02  Total Length (16)
+0x04  Identification (16)
+0x06  Flags (3)   | Fragment Offset (13)
+0x08  TTL (8)     | Protocol (8)
+0x0a  Header Checksum (16)
+0x0c  Source Address (32)
+0x10  Destination Address (32)
+```
+
+The **IHL** counts 32-bit words, so the header length in bytes is `IHL × 4`. Five is the minimum (20 bytes); fifteen is the maximum (60 bytes) when options are present. The **Total Length** counts the IP header plus its payload, not the Ethernet header. Therefore:
+
+**Formula:** IP payload bytes = Total Length − (IHL × 4).
+
+The **Protocol** field says what is inside: 6 is TCP, 17 is UDP, 1 is ICMP, 58 is ICMPv6. The **TTL** is decremented by every router; a capture taken after several hops shows a smaller value than the sender set. The **flags** include Don't Fragment (DF) and More Fragments (MF); the 13-bit offset is in 8-byte units.
+
+### The TCP Header
+
+TCP starts after the IP header. Its minimum header is 20 bytes:
+
+```
+0x00  Source Port (16)      | Destination Port (16)
+0x04  Sequence Number (32)
+0x08  Acknowledgment Number (32)
+0x0c  Data Offset (4) | Reserved (3) | Flags (9)
+0x0e  Window (16)
+0x10  Checksum (16)         | Urgent Pointer (16)
+0x14  Options (variable)
+```
+
+The **Data Offset** counts 32-bit words, so the TCP header length is `Data Offset × 4`. The flags are the ones you already know: SYN, ACK, FIN, RST, PSH, URG, and the newer ECE/CWR for congestion notification. The **Window** is the receive window before scaling; if the handshake negotiated a window scale option, the effective window is `Window × 2^shift`.
+
+**Formula:** TCP payload bytes = IP payload − (Data Offset × 4).
+
+Sequence numbers count bytes, not packets. The first data byte after the SYN consumes sequence number `ISN + 1`. An ACK number is the next byte the sender expects, which makes acknowledgments cumulative: one ACK can cover many segments.
+
+### The UDP Header
+
+UDP is refreshingly small: eight bytes.
+
+```
+0x00  Source Port (16) | Destination Port (16)
+0x04  Length (16)      | Checksum (16)
+```
+
+The **Length** covers the UDP header plus payload, so the payload is `Length − 8`. The checksum is optional in IPv4 and mandatory in IPv6.
+
+### A Worked Decode
+
+Here is a hand-built Ethernet + IPv4 + TCP SYN. The checksum bytes are placeholders so the arithmetic stays readable; everything else is real.
+
+```
+3c 22 fb aa bb cc 3c 22 fb 11 22 33 08 00
+45 00 00 28 1c 46 40 00 40 06 00 00 c0 a8 01 0a c0 a8 01 14
+c8 3e 01 bb 00 00 00 01 00 00 00 00 50 02 20 00 00 00 00 00
+```
+
+Decode it in order:
+
+| Bytes | Field | Value |
+|---|---|---|
+| `3c 22 fb aa bb cc` | Destination MAC | `3c:22:fb:aa:bb:cc` |
+| `3c 22 fb 11 22 33` | Source MAC | `3c:22:fb:11:22:33` |
+| `08 00` | EtherType | IPv4 |
+| `45` | Version / IHL | IPv4, 5 words (20 bytes) |
+| `00` | DSCP / ECN | Default |
+| `00 28` | Total Length | 40 bytes |
+| `1c 46` | Identification | `0x1c46` |
+| `40 00` | Flags / Offset | Don't Fragment, offset 0 |
+| `40` | TTL | 64 |
+| `06` | Protocol | TCP |
+| `00 00` | Checksum | Placeholder |
+| `c0 a8 01 0a` | Source IP | `192.168.1.10` |
+| `c0 a8 01 14` | Destination IP | `192.168.1.20` |
+| `c8 3e` | Source Port | 51262 |
+| `01 bb` | Destination Port | 443 |
+| `00 00 00 01` | Sequence | 1 |
+| `00 00 00 00` | Acknowledgment | 0 |
+| `50` | Data Offset | 5 words (20 bytes) |
+| `02` | Flags | SYN |
+| `20 00` | Window | 8192 |
+| `00 00` | Checksum | Placeholder |
+| `00 00` | Urgent Pointer | 0 |
+
+Two arithmetic checks confirm the decode. The IP total length is 40, the IP header is 20, so the IP payload is 20 bytes. The TCP data offset is 5 words, so the TCP header is 20 bytes. The TCP payload is therefore zero — exactly what a SYN should carry.
+
+### Reading a Whole Conversation
+
+Headers are the vocabulary; a conversation is the sentence. Read a capture in this order:
+
+1. **Find the 5-tuple.** Source and destination IP, source and destination port, and protocol. Everything else is noise until you have the flow.
+2. **Find the handshake.** SYN, SYN-ACK, ACK. If the handshake never completes, the problem is before any application data.
+3. **Follow the sequence numbers.** A gap means loss; a repeated sequence number means retransmission; an ACK that never advances means the receiver is not getting data.
+4. **Watch the window.** A zero or shrinking window means the receiver is the bottleneck. A large window with a small amount in flight usually means the sender or the network is limiting.
+5. **Look at timing.** Time to first byte, time between request and response, and retransmission timeouts tell you whether the delay is the network, the server, or the client.
+6. **Read the teardown.** FIN/ACK on both sides is clean. RST is an abort; find out which side sent it and why.
+
+| Symptom | What it usually means |
+|---|---|
+| Repeated sequence numbers | Retransmission after loss or timeout |
+| Duplicate ACKs | Out-of-order delivery or a missing segment |
+| Zero window | Receiver application is not reading |
+| RST after SYN | Port closed or firewall rejecting |
+| ICMP unreachable | Routing or policy problem before the service |
+| Fragmented IP packets | MTU mismatch or a sender ignoring PMTUD |
+| Many small packets | Nagle disabled, or an application writing too often |
+
+### Capture Points and Filters
+
+Where you capture determines what you see. Capturing on the client shows the request leaving and the response arriving; capturing on the server shows the opposite; a mirror port or tap shows what is actually on the wire. Each vantage point can show a different truth, especially when NAT, TLS, or offloads are involved.
+
+Useful filters narrow by host, port, and protocol, then by TCP flags or sequence number. A capture filter (BPF, applied by the kernel) is cheaper than a display filter, but a display filter is easier to iterate. Keep the capture long enough to include the handshake and the teardown; a capture that starts mid-stream is much harder to read.
+
+**Formula:** throughput = bytes × 8 / seconds. A 10 MB response that takes 0.8 s is about 100 Mbps, regardless of what the link is rated at.
+
+<Warning title="Capture only traffic you are authorized to capture">Packet captures contain credentials, tokens, personal data, and the full content of unencrypted protocols. Capture on your own systems, in a lab, or with explicit authorization. Store captures securely and delete them when the investigation is over. "It was on the wire" is not a legal or ethical justification.</Warning>
+
+<Axiom>A capture is evidence, not a narrative. Read the fields, check the arithmetic, and let the packet tell you what happened.</Axiom>
+
+## Frequently Asked Questions
+
+**Why does my capture show a packet larger than the MTU?**
+Because the capture was taken on the host after segmentation offload. The NIC had not yet split the large buffer into wire-sized frames. Capture at the NIC or disable TSO/GSO to see the real packets.
+
+**Why do I see checksum errors on packets that work?**
+Checksum offload can leave the checksum field incomplete in the capture, with the NIC filling it in later. A checksum error in a host capture is often an artifact, not a real error.
+
+**How do I read a TLS conversation?**
+You can read the handshake metadata — versions, SNI, certificate sizes, alerts — without decrypting the application data. To see the plaintext, you need the session keys, which is only appropriate on systems you control.
+
+**What is the most common packet-reading mistake?**
+Assuming the capture point sees what the wire sees. NAT, proxies, offloads, and local firewalls all change the packet between the application and the physical link.
+
+### Further Reading
+
+- [RFC 791 — Internet Protocol](https://www.rfc-editor.org/rfc/rfc791) and [RFC 793 — Transmission Control Protocol](https://www.rfc-editor.org/rfc/rfc793)
+- [RFC 768 — User Datagram Protocol](https://www.rfc-editor.org/rfc/rfc768)
+- W. Richard Stevens, *TCP/IP Illustrated, Volume 1*, chapters on the IP, TCP, and UDP headers.
+- The Wireshark User's Guide and the `tshark` manual.
+- `tcpdump` manual page, especially capture filters and snapshot length.
+- Charles M. Kozierok, *The TCP/IP Guide*, for header diagrams and field-by-field explanations.
+
+### Fun Facts and Notes
+
+- A minimum-size Ethernet frame is 64 bytes including the FCS. At 10 Gbps, that works out to about 14.88 million frames per second — the packet rate, not the bit rate, is often the real limit.
+- TCP sequence numbers count bytes, not packets. A 1,460-byte segment advances the sequence number by 1,460.
+- The IPv4 checksum covers only the header, not the payload. TCP and UDP checksums cover a pseudo-header plus the payload.
+- Wireshark's three panes — packet list, detail tree, and bytes — are three views of the same offset space. Learning the offsets makes the other two panes faster to use.

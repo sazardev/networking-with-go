@@ -69,6 +69,15 @@ Put numbers on it: a 1 Gbps path with a 100 ms round trip has a BDP of 100,000,0
 
 There's a famous, only-half-joking observation from computer scientist Andrew Tanenbaum that captures the gap between bandwidth and latency better than any formula: "Never underestimate the bandwidth of a station wagon full of tapes hurtling down the highway." A car packed with hard drives has staggering bandwidth — you could move an entire data center's worth of storage in one trip — and catastrophic latency, because nothing arrives until the car physically completes its drive, however many hours that takes. It is, quite literally, all lanes and no reaction time, and it is exactly why the two metrics have to be judged independently rather than folded into one vague idea of "speed."
 
+### The Formulas Behind the Metrics
+
+- **Propagation delay:** `distance / speed in the medium`. Fiber is about 200,000 km/s, so 1 km costs about 5 microseconds one way.
+- **Serialization delay:** `packet bits / link rate`. A 1,500-byte packet at 1 Gbps takes about 12 microseconds to place on the wire.
+- **Bandwidth-delay product:** `bandwidth × RTT`. A 1 Gbps path with 100 ms RTT holds about 12.5 MB in flight.
+- **TCP throughput ceiling:** `window / RTT`. A 64 KB window over 100 ms is about 5.2 Mbps, no matter how fast the link.
+- **Packet rate:** `line rate / ((frame bytes + 20) × 8)`. At 10 Gbps with 64-byte frames, about 14.88 million packets per second.
+- **Goodput:** `application bytes × 8 / elapsed time`, which is always below the link rate once headers and retransmissions are counted.
+
 ## Jitter: The Bumpy Ride
 
 Jitter is like potholes on the road — sometimes your car bounces, sometimes it glides, even though the average speed over the whole trip looks perfectly fine on paper.

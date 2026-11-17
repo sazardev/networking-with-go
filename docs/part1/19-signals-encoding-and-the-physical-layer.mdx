@@ -43,6 +43,14 @@ The standard fix is **termination**: a resistor at the end of the line that matc
 
 Attenuation also grows with distance and frequency. A long cable acts as a low-pass filter: high-frequency components of sharp edges are weakened, the eye closes, and the receiver makes mistakes. This is why Ethernet has distance limits — 100 meters for twisted-pair copper — and why higher speeds impose shorter limits or require better cable categories.
 
+### The Two Formulas That Bound Every Link
+
+- **Nyquist, noiseless channel:** `C = 2B log2(M)`, where `B` is bandwidth in Hz and `M` is the number of signal levels. At 1 GHz with four levels, the ceiling is 4 Gbps.
+- **Shannon, noisy channel:** `C = B log2(1 + S/N)`. A 20 dB signal-to-noise ratio means `S/N = 100`, so at 1 GHz the ceiling is about 6.66 Gbps.
+- **Decibels:** `SNR_dB = 10 log10(S/N)`. Every 3 dB doubles the power ratio; every 10 dB multiplies it by ten.
+
+The two formulas explain why faster links need better media: you can add levels or bandwidth, but noise sets the ceiling.
+
 ### The Eye Diagram
 
 The cleanest way to see whether a link is healthy is an **eye diagram**: the received waveform is sliced into bit periods and overlaid. A good link shows a wide-open eye, with clear space between the voltage levels at the sampling instant. A marginal link shows a partially closed eye, jitter on the edges, and noise thickening the traces.

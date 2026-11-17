@@ -65,6 +65,12 @@ Most enterprise transceivers expose **digital optical monitoring** (DOM/DDM): tr
 
 <Warning title="A link that comes up is not a link that is healthy">Ethernet auto-negotiation can bring a link up even when the optical or copper margin is poor. The link light turns green, pings work, and then large transfers fail under load. Check FCS/CRC error counters, receive power, and cable test results before blaming the application. A link that is "up" is only a statement about the physical layer's ability to exchange enough symbols to negotiate.</Warning>
 
+### The Link Budget, With Numbers
+
+**Formula:** `P_rx = P_tx − (connector losses + splice losses + fiber attenuation × length)`.
+
+Example: 0 dBm transmit power, two connectors at 0.3 dB each, and 10 km of fiber at 0.35 dB/km. The loss is `0.6 + 3.5 = 4.1 dB`, so `P_rx = −4.1 dBm`. If the receiver's sensitivity is −20 dBm, the margin is 15.9 dB. A negative margin means the link cannot work, no matter what the software does.
+
 ### Duplex, Autonegotiation, and the Classic Mismatch
 
 Copper Ethernet negotiates speed and duplex with **auto-negotiation**. When one side is hard-coded to full duplex and the other is left on auto, the auto side may fall back to half duplex. The result is a **duplex mismatch**: collisions, late collisions, retransmissions, and terrible throughput on an otherwise "working" link. The rule is simple: leave both sides on auto, or hard-code both sides to the same speed and duplex. Never mix.

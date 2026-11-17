@@ -70,7 +70,7 @@ type part struct {
 
 var parts = []part{
 	{"front-matter", "About the Author", "A short introduction to the person behind this book and why it exists.", "docs/front-matter"},
-	{"networking-foundations", "Networking Foundations", "OSI & TCP/IP models, Ethernet and ARP, VLANs and spanning tree, IP addressing and subnetting, routing (OSPF/BGP), ICMP and MTU, DNS and DNSSEC, ports, sockets, firewalls, NAT, VPNs, and the physical layer: signals, copper, fiber, transceivers, and NIC-to-Go packet flow — theory only, no code, told through real history.", "docs/part1"},
+	{"networking-foundations", "Networking Foundations", "OSI & TCP/IP models, Ethernet and ARP, VLANs and spanning tree, IP addressing and subnetting, routing (OSPF/BGP), ICMP and MTU, DNS and DNSSEC, ports, sockets, firewalls, NAT, VPNs, the physical layer (signals, copper, fiber, transceivers, NIC-to-Go packet flow), and packet reading (hex, headers, captures) — theory only, no code, told through real history.", "docs/part1"},
 	{"go-fundamentals", "Go From Scratch", "A full Go language crash course before the networking code starts, capped by a flagship chapter on goroutines, channels, and concurrency.", "docs/go-fundamentals"},
 	{"core-go-networking", "Core Go Networking", "TCP, UDP, HTTP, JSON, WebSockets, DNS, proxies, chat apps, file transfer, NAT traversal, context, and TLS — theory paired with runnable Go every time.", "docs/part2"},
 	{"advanced-specialized", "Advanced & Specialized", "gRPC, WebRTC, MQTT/IoT, SDN, NFV, packet inspection, custom protocols, mesh networks, and real-time networking for games and blockchain.", "docs/advanced"},
