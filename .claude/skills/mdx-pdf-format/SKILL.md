@@ -167,8 +167,17 @@ chapter as incomplete, not just its exercise, until that promise holds:
 
 ```sh
 pretty-pdf check        # validate frontmatter, IDs, heading depth
-pretty-pdf build         # render docs/ -> the PDF configured in go-pretty-pdf.yml
+make pdf                # inline diagrams + render docs/ -> networking-with-go.pdf
+make epub               # same content as an EPUB 3 file
+make diagrams           # re-render changed Mermaid blocks (Node.js, authoring only)
 ```
 
 Run `pretty-pdf check` after adding or editing any `.mdx` file to catch
 format violations before they reach the build.
+
+Mermaid blocks are legal (and encouraged) in chapter content, but the print
+pipeline cannot render them at build time: `make pdf`/`make epub` inline the
+checked-in SVGs from `assets/diagrams/`, keyed by a hash of the block. After
+editing a diagram, run `make diagrams` and commit the new file it writes, or
+the PDF build stops with the hash it is missing. See
+`assets/diagrams/README.md`.

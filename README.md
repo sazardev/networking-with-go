@@ -237,10 +237,24 @@ Chapter numbers 104-149 below map to files `01-` through `46-` under `docs/part-
 The whole book compiles into a single PDF with [go-pretty-pdf](https://github.com/sazardev/go-pretty-pdf):
 
 ```sh
-go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@latest
+go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@v0.8.0
 pretty-pdf check   # validate every chapter's format
-pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
+make pdf           # render docs/ into networking-with-go.pdf
+make epub          # same content as an EPUB 3 file
 ```
+
+`make pdf` and `make epub` first run `tools/diagrams/main.go`, which inlines the
+pre-rendered diagrams from `assets/diagrams/` into a generated `build/docs/`
+tree. `pretty-pdf` v0.8.0 cannot render Mermaid itself (it prints a `mermaid`
+fence as literal text and blocks `file://` subresources), and the SVGs are what
+keep the printed figures vector, selectable, and inside the page margins. The
+step is Go-only and fails loudly if a chapter's diagram changed without a
+matching asset.
+
+Diagrams are authored as <code>```mermaid</code> blocks inside the chapters and
+regenerated with `make diagrams` after an edit; that is the only step that
+needs Node.js. See `assets/diagrams/README.md` for the pinned Mermaid CLI
+version and the optional Chrome path override.
 
 Prebuilt PDF and EPUB downloads are available on the [GitHub Releases page](https://github.com/sazardev/networking-with-go/releases) for every tagged version.
 

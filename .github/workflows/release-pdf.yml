@@ -36,6 +36,13 @@ jobs:
       - name: Validate chapters
         run: pretty-pdf check
 
+      # pretty-pdf v0.8.0 prints ```mermaid blocks as literal text and blocks
+      # both network and file:// subresources, so the SVGs in assets/diagrams
+      # have to be inlined before the build. This step is Go-only and fails if
+      # a chapter's diagram changed without a matching rendered SVG.
+      - name: Materialize diagrams
+        run: go run tools/diagrams/main.go
+
       - name: Determine version
         id: version
         run: |
@@ -46,10 +53,10 @@ jobs:
           fi
 
       - name: Build PDF
-        run: pretty-pdf build
+        run: pretty-pdf build --source build/docs --out networking-with-go.pdf
 
       - name: Build EPUB
-        run: pretty-pdf epub --out networking-with-go.epub
+        run: pretty-pdf epub --source build/docs --out networking-with-go.epub
 
       - name: Rename PDF with version
         run: mv networking-with-go.pdf "networking-with-go-${{ steps.version.outputs.version }}.pdf"

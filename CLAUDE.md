@@ -22,8 +22,14 @@ creating or editing any `docs/**/*.mdx` file.**
 
 ```sh
 pretty-pdf check   # validate all docs/**/*.mdx against the format rules
-pretty-pdf build   # render docs/ into the PDF configured in go-pretty-pdf.yml
+make pdf           # inline Mermaid diagrams, then render docs/ into the PDF
+make epub          # same content as an EPUB 3 file
 ```
+
+Chapters keep their diagrams as <code>```mermaid</code> blocks, but the print
+build needs them pre-rendered: `make pdf`/`make epub` run
+`tools/diagrams/main.go`, which inlines the SVG assets into `build/docs/` and
+fails if a diagram changed without `make diagrams` (Node.js; authoring only).
 
 ## Repository structure
 

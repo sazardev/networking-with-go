@@ -8,11 +8,16 @@ This is an educational book (`.mdx` chapters under `docs/`) plus standalone Go e
 
 ```sh
 pretty-pdf check                              # validate all docs/**/*.mdx format (run after any chapter edit)
-pretty-pdf build                              # render docs/ into networking-with-go.pdf
+make pdf                                      # inline diagrams + render docs/ into networking-with-go.pdf
+make epub                                     # same content as an EPUB 3 file
+make diagrams                                 # re-render changed Mermaid blocks (needs Node.js)
 GO111MODULE=off go vet ./exercises/part2/<dir>  # sanity-check one stdlib exercise
 ```
 
-Install the PDF tool once: `go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@latest`
+- `make pdf`/`make epub` run `tools/diagrams/main.go` first, which copies `docs/` to the generated `build/docs/` with each ```` ```mermaid ```` block replaced by the matching SVG in `assets/diagrams/`. Plain `pretty-pdf build` still works but prints the Mermaid source as text -- use the make targets for anything that ships.
+- `make diagrams` renders missing/changed diagrams with the pinned `@mermaid-js/mermaid-cli`; CI never runs it, so a diagram edit must commit its new `assets/diagrams/<hash>.svg` or the release build fails on purpose.
+
+Install the PDF tool once: `go install github.com/sazardev/go-pretty-pdf/cmd/pretty-pdf@v0.8.0`
 
 - The `GO111MODULE=off` flag is required because Go detects the parent `.git` directory with no `go.mod`. The plain form fails with "cannot find main module".
 - The same vet is enforced by CI on every push/PR touching `exercises/` (`.github/workflows/vet-exercises.yml`); it skips dirs with a `go.mod` (vets those in normal module mode) and dirs with no `.go` files at root.
@@ -37,3 +42,4 @@ The reader under `website/read/` is generated from `docs/**/*.mdx` by `website/t
 ## Tool versions
 
 - `pretty-pdf` is pinned to `@v0.8.0` in both `deploy-pages.yml` and `release-pdf.yml`. When upgrading, update both workflow files and this line.
+- `@mermaid-js/mermaid-cli` is pinned to `@12.2.0` in `tools/diagrams/main.go` (the `-render` path). Bumping it means re-rendering every diagram with `make diagrams` after deleting `assets/diagrams/*.svg`, then committing the new files.

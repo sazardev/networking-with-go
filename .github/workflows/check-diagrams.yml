@@ -1,0 +1,38 @@
+name: Check Diagrams
+
+# The print pipeline inlines pre-rendered SVGs from assets/diagrams/ into
+# build/docs, keyed by the SHA-256 of each ```mermaid block. Editing a diagram
+# without re-rendering it (make diagrams) leaves no matching asset, and the
+# release build fails on purpose rather than shipping a stale figure. This job
+# surfaces that in the PR instead of at tag time. Go-only: rendering itself
+# needs Node and is an authoring step, never CI.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs/**"
+      - "assets/diagrams/**"
+      - "tools/diagrams/**"
+      - ".github/workflows/check-diagrams.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "assets/diagrams/**"
+      - "tools/diagrams/**"
+      - ".github/workflows/check-diagrams.yml"
+  workflow_dispatch:
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Materialize diagrams
+        run: go run tools/diagrams/main.go -out "$RUNNER_TEMP/docs"
