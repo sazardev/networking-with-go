@@ -1,14 +1,17 @@
 # Networking with Go, Made Easy
 
-[![Go Version](https://img.shields.io/badge/Go-1.24-blue?logo=go)](https://golang.org/)
-[![Code License: MIT](https://img.shields.io/badge/Code-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Book License: CC BY-NC 4.0](https://img.shields.io/badge/Book%20text-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://makeapullrequest.com)
-[![Awesome](https://img.shields.io/badge/awesome-yes-orange)](https://github.com/sindresorhus/awesome)
-[![Website](https://img.shields.io/badge/website-sazardev.github.io%2Fnetworking--with--go-black)](https://sazardev.github.io/networking-with-go/)
+<p align="center">
+  <a href="https://sazardev.github.io/networking-with-go/">
+    <img src="assets/banner.png" alt="Networking with Go, Made Easy — free, open-source book on networking and network programming in Go" width="100%">
+  </a>
+</p>
 
 <p align="center">
-  <img src="assets/cover.jpg" alt="Networking with Go, Made Easy — book cover" width="320">
+  <a href="https://golang.org/"><img src="https://img.shields.io/badge/Go-1.24-blue?logo=go" alt="Go version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/Code-MIT-yellow.svg" alt="Code license: MIT"></a>
+  <a href="https://creativecommons.org/licenses/by-nc/4.0/"><img src="https://img.shields.io/badge/Book%20text-CC%20BY--NC%204.0-lightgrey.svg" alt="Book license: CC BY-NC 4.0"></a>
+  <a href="https://sazardev.github.io/networking-with-go/"><img src="https://img.shields.io/badge/website-net%2Fgo.book-black" alt="Website"></a>
+  <a href="https://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome"></a>
 </p>
 
 ---
