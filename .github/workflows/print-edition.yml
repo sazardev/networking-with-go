@@ -20,7 +20,7 @@ jobs:
   print-edition:
     runs-on: ubuntu-latest
     env:
-      FOLIO_VERSION: v0.1.0
+      FOLIO_VERSION: v0.1.1
       TECTONIC_VERSION: 0.17.0
     steps:
       - name: Checkout
@@ -43,11 +43,12 @@ jobs:
       - name: Install Poppler
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
 
-      # Tectonic downloads the TeX files it needs on first use.
+      # Tectonic downloads the TeX files it needs on first use. Its cache
+      # directory is pinned with TECTONIC_CACHE_DIR so it can be restored.
       - name: Cache Tectonic files
         uses: actions/cache@v4
         with:
-          path: ~/.cache/Tectonic
+          path: ${{ runner.temp }}/tectonic-cache
           key: tectonic-${{ env.TECTONIC_VERSION }}-${{ env.FOLIO_VERSION }}
 
       - name: Install Folio
@@ -64,6 +65,8 @@ jobs:
 
       # Reads go-pretty-pdf.yml for the title, author, sources and cover.
       - name: Build print edition
+        env:
+          TECTONIC_CACHE_DIR: ${{ runner.temp }}/tectonic-cache
         run: |
           export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           folio build . --fonts open \
