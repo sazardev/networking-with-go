@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -151,6 +152,7 @@ type headingInfo struct {
 
 type chapterEntry struct {
 	SectionID string
+	Source    string
 	Title     string
 	Slug      string
 	BodyHTML  string
@@ -226,6 +228,7 @@ func main() {
 			log.Fatalf("%s: no chapter sections found", p.Dir)
 		}
 
+		sources := sourceByID(p.Dir)
 		var chapters []chapterEntry
 		for i, om := range opens {
 			start := om[0]
@@ -250,6 +253,7 @@ func main() {
 
 			chapters = append(chapters, chapterEntry{
 				SectionID: sectionID,
+				Source:    sources[sectionID],
 				Title:     chapterTitle,
 				Slug:      chapterSlug,
 				BodyHTML:  bodyHTML,
@@ -323,8 +327,9 @@ func main() {
 	}
 	writeFile(filepath.Join(outDir, "search-index.json"), string(data))
 
-	writeSitemap(results)
-	writeFeed(results)
+	mods := lastModified()
+	writeSitemap(results, mods)
+	writeFeed(results, mods)
 	writePrecache(results)
 	writeLLMS(results)
 	writeLLMSFull(results)
@@ -719,6 +724,7 @@ func pageHead(m pageMeta, ctx linkCtx, theme string) string {
 	b.WriteString(`<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">` + "\n")
 	b.WriteString(`<meta name="bingbot" content="index, follow, max-image-preview:large">` + "\n")
 	fmt.Fprintf(&b, `<meta name="llms" content="%s/llms.txt">`+"\n", siteBase)
+	fmt.Fprintf(&b, `<link rel="alternate" type="text/plain" title="LLM context" href="%s/llms.txt">`+"\n", siteBase)
 	if m.Keywords != "" {
 		fmt.Fprintf(&b, `<meta name="keywords" content="%s">`+"\n", html.EscapeString(m.Keywords))
 	}
@@ -982,6 +988,7 @@ func renderChapterPage(ch chapterEntry, p part, prev, next *flatRef, globalPos i
 	b.WriteString(ch.BodyHTML)
 	b.WriteString(`<div class="read-sentinel" aria-hidden="true"></div>` + "\n")
 	b.WriteString("\n" + chapterNavHTML(ctxDepth1, prev, next) + "\n")
+	b.WriteString(siteFooter(ctxDepth1))
 	b.WriteString("</main>\n</div>\n")
 	b.WriteString(paletteMarkup(ctxDepth1))
 	b.WriteString("</body>\n</html>\n")
@@ -1014,6 +1021,7 @@ func renderPartIndexPage(r partResult, sidebar, theme string) string {
 		fmt.Fprintf(&b, `<li><a data-chapter-id="%s" href="%s.html"><span class="chapter-list-title">%s</span><span class="chapter-list-excerpt">%s</span></a></li>`+"\n",
 			ch.SectionID, ch.Slug, html.EscapeString(ch.Title), html.EscapeString(truncateRunes(ch.Excerpt, 160)))
 	}
+	b.WriteString(siteFooter(ctxDepth1))
 	b.WriteString("</ol>\n</main>\n</div>\n")
 	b.WriteString(paletteMarkup(ctxDepth1))
 	b.WriteString("</body>\n</html>\n")
@@ -1054,31 +1062,29 @@ func renderIndexPage(results []partResult, sidebar, theme string) string {
 			r.meta.Slug, i+1, html.EscapeString(r.meta.Title), html.EscapeString(r.meta.Desc), len(r.chapters))
 	}
 	b.WriteString("</div>\n")
-	b.WriteString(newsletterBox())
+	b.WriteString(newsletterBox(ctxDepth0))
+	b.WriteString(siteFooter(ctxDepth0))
 	b.WriteString("</main>\n</div>\n")
 	b.WriteString(paletteMarkup(ctxDepth0))
 	b.WriteString("</body>\n</html>\n")
 	return b.String()
 }
 
-// newsletterBox is the signup block shown on the reader index. Submissions go
-// through reader.js to window.SUBSCRIBE_ENDPOINT (set per-site); until a
-// provider endpoint is configured the form points readers to the RSS feed.
-func newsletterBox() string {
-	return `<div class="newsletter-box">
-  <h2>New chapters, straight to your inbox</h2>
-  <p>The book grows over time. Leave your email and get notified whenever a new part or chapter is published — no spam, ever.</p>
-  <form id="subscribe-form" class="subscribe-form" novalidate>
-    <input id="subscribe-email" type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
-    <button type="submit">Subscribe</button>
-  </form>
-  <p class="subscribe-status" id="subscribe-status" hidden></p>
-  <p class="subscribe-alt">Prefer RSS? <a href="feed.xml">Subscribe to the chapter feed</a>.</p>
+// newsletterBox is the subscribe block shown on the reader index. The email
+// providers all need an account and an endpoint, and a form that answers
+// "coming soon" is worse than no form: the Atom feed works today, so it is
+// the primary action.
+func newsletterBox(ctx linkCtx) string {
+	return fmt.Sprintf(`<div class="newsletter-box">
+  <h2>Follow the book</h2>
+  <p>New chapters and releases are announced in the Atom feed. No account, no email, no tracking.</p>
+  <p class="newsletter-actions"><a class="btn-rss" href="%sfeed.xml">Subscribe via RSS</a></p>
+  <p class="subscribe-alt">Prefer files? <a href="https://github.com/sazardev/networking-with-go/releases/latest">Download the PDF or EPUB</a>.</p>
 </div>
-`
+`, ctx.toSite)
 }
 
-func writeSitemap(results []partResult) {
+func writeSitemap(results []partResult, mods map[string]string) {
 	type urlEntry struct{ Loc, Lastmod, ChangeFreq, Priority, Img string }
 
 	now := time.Now().UTC().Format("2006-01-02")
@@ -1090,7 +1096,13 @@ func writeSitemap(results []partResult) {
 	for _, r := range results {
 		urls = append(urls, urlEntry{siteBase + "/read/" + r.meta.Slug + "/index.html", now, "monthly", "0.8", cardURLFor(r.meta.Slug)})
 		for _, ch := range r.chapters {
-			urls = append(urls, urlEntry{siteBase + "/read/" + r.meta.Slug + "/" + ch.Slug + ".html", now, "monthly", "0.7", cardURLFor(r.meta.Slug, ch.Slug)})
+			last := now
+			if d := mods[ch.Source]; d != "" {
+				if t, err := time.Parse(time.RFC3339, d); err == nil {
+					last = t.Format("2006-01-02")
+				}
+			}
+			urls = append(urls, urlEntry{siteBase + "/read/" + r.meta.Slug + "/" + ch.Slug + ".html", last, "monthly", "0.7", cardURLFor(r.meta.Slug, ch.Slug)})
 		}
 	}
 
@@ -1128,6 +1140,12 @@ func writeLLMS(results []partResult) {
 	fmt.Fprintf(&b, "- Latest release and PDF download: %s/releases/latest\n", "https://github.com/sazardev/networking-with-go")
 	fmt.Fprintf(&b, "- Source and full table of contents: %s\n", "https://github.com/sazardev/networking-with-go")
 	fmt.Fprintf(&b, "- Full sitemap of all chapter pages: %s/sitemap.xml\n\n", siteBase)
+	b.WriteString("## For AI assistants and agents\n")
+	b.WriteString("- Use this outline to pick a chapter, then fetch the canonical page. For grounding, `llms-full.txt` contains the full text of every chapter.\n")
+	b.WriteString("- Cite as: *Networking with Go, Made Easy* by Omar Flores Salazar, with the chapter URL. Do not cite a mirror.\n")
+	b.WriteString("- License: the text is CC BY-NC 4.0. Quoting with attribution and a link is allowed. Commercial use, paid redistribution, or training a model on this text requires permission. The example code is MIT.\n")
+	b.WriteString("- Prefer canonical URLs under " + siteBase + "/ over scraped copies.\n")
+	b.WriteString("- Corrections and questions: https://github.com/sazardev/networking-with-go/issues\n\n")
 	b.WriteString("## Chapters\n")
 	for _, r := range results {
 		fmt.Fprintf(&b, "### %s\n", r.meta.Title)
@@ -1275,36 +1293,133 @@ func renderTopicsPage(results []partResult, sidebar, theme string) string {
 		}
 		b.WriteString(`</ul></div>` + "\n")
 	}
+	b.WriteString(siteFooter(ctxDepth1))
 	b.WriteString("</main>\n</div>\n")
 	b.WriteString(paletteMarkup(ctxDepth1))
 	b.WriteString("</body>\n</html>\n")
 	return b.String()
 }
 
-// writeFeed emits an Atom feed of every chapter, so readers can subscribe and
-// get notified when the book gains chapters. Entries are ordered oldest part
-// first; all use the build time as their updated stamp (chapters have no
-// per-chapter timestamps in the repo).
-func writeFeed(results []partResult) {
-	now := time.Now().UTC().Format(time.RFC3339)
+// writeFeed emits an Atom feed of every chapter, newest first, using each
+// chapter's last git commit date when the history is available. Without real
+// dates every deploy would re-announce all 151 chapters as new.
+func writeFeed(results []partResult, mods map[string]string) {
+	now := time.Now().UTC()
+	type feedEntry struct {
+		title, url, date, summary, category string
+	}
+	var entries []feedEntry
+	for _, r := range results {
+		for _, ch := range r.chapters {
+			date := mods[ch.Source]
+			if date == "" {
+				date = now.Format(time.RFC3339)
+			}
+			entries = append(entries, feedEntry{
+				title:    ch.Title,
+				url:      fmt.Sprintf("%s/read/%s/%s.html", siteBase, r.meta.Slug, ch.Slug),
+				date:     date,
+				summary:  truncateWords(ch.Excerpt, 300),
+				category: r.meta.Title,
+			})
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].date > entries[j].date })
+	updated := now.Format(time.RFC3339)
+	if len(entries) > 0 {
+		updated = entries[0].date
+	}
 
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	fmt.Fprintf(&b, `<feed xmlns="http://www.w3.org/2005/Atom"><title>%s</title><id>%s/feed.xml</id><link rel="self" href="%s/feed.xml"/><link href="%s/"/><updated>%s</updated><author><name>Omar Flores Salazar</name></author>`+"\n",
-		html.EscapeString(bookName+" — New Chapters"), siteBase, siteBase, siteBase, now)
-
-	pos := 0
-	for _, r := range results {
-		for _, ch := range r.chapters {
-			pos++
-			url := fmt.Sprintf("%s/read/%s/%s.html", siteBase, r.meta.Slug, ch.Slug)
-			fmt.Fprintf(&b, "<entry><title>%s</title><link href=\"%s\"/><id>%s</id><updated>%s</updated><published>%s</published><summary type=\"html\">%s</summary><category term=\"%s\"/></entry>\n",
-				html.EscapeString(ch.Title), url, url, now, now, html.EscapeString(truncateWords(ch.Excerpt, 300)), html.EscapeString(r.meta.Title))
-		}
+	fmt.Fprintf(&b, `<feed xmlns="http://www.w3.org/2005/Atom"><title>%s</title><subtitle>%s</subtitle><id>%s/feed.xml</id><link rel="self" href="%s/feed.xml"/><link href="%s/"/><updated>%s</updated><author><name>Omar Flores Salazar</name><uri>%s/</uri></author><rights>Book text CC BY-NC 4.0; example code MIT.</rights><icon>%s/assets/icon-192.png</icon><logo>%s/assets/og-card.png</logo><generator>buildreader</generator>`+"\n",
+		html.EscapeString(bookName+" — New Chapters"),
+		html.EscapeString("A free, open-source book on networking and network programming in Go."),
+		siteBase, siteBase, siteBase, updated, siteBase, siteBase, siteBase)
+	for _, e := range entries {
+		fmt.Fprintf(&b, "<entry><title>%s</title><link href=\"%s\"/><id>%s</id><updated>%s</updated><published>%s</published><summary type=\"html\">%s</summary><category term=\"%s\"/></entry>\n",
+			html.EscapeString(e.title), e.url, e.url, e.date, e.date, html.EscapeString(e.summary), html.EscapeString(e.category))
 	}
 	b.WriteString("</feed>\n")
 	writeFile("website/feed.xml", b.String())
-	log.Printf("feed: %d entries", pos)
+	log.Printf("feed: %d entries", len(entries))
+}
+
+// sourceByID maps a rendered section id ("section-1.3.0") to the MDX file it
+// came from, so the feed and sitemap can use that file's git history.
+func sourceByID(dir string) map[string]string {
+	out := map[string]string{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return out
+	}
+	idRe := regexp.MustCompile(`(?m)^id:\s*"?\[?([0-9.]+)\]?"?\s*$`)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".mdx") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		if m := idRe.FindStringSubmatch(string(body)); m != nil {
+			out["section-"+m[1]] = filepath.Join(dir, e.Name())
+		}
+	}
+	return out
+}
+
+// lastModified returns the most recent commit date for each file under docs/,
+// from one git log pass. A shallow clone yields the checkout date for
+// everything, which is why the Pages workflow fetches full history.
+func lastModified() map[string]string {
+	out := map[string]string{}
+	cmd := exec.Command("git", "log", "--format=%x00%cI", "--name-only", "--", "docs")
+	raw, err := cmd.Output()
+	if err != nil {
+		log.Printf("feed: git history unavailable (%v); using build time", err)
+		return out
+	}
+	for _, chunk := range strings.Split(string(raw), "\x00") {
+		lines := strings.Split(strings.TrimSpace(chunk), "\n")
+		if len(lines) < 2 {
+			continue
+		}
+		date := strings.TrimSpace(lines[0])
+		t, err := time.Parse(time.RFC3339, date)
+		if err != nil {
+			continue
+		}
+		date = t.UTC().Format(time.RFC3339)
+		for _, f := range lines[1:] {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			if _, seen := out[f]; !seen {
+				out[f] = date
+			}
+		}
+	}
+	return out
+}
+
+// siteFooter is the shared footer: the feed, the agent context and the
+// license, on every page instead of only on the reader index.
+func siteFooter(ctx linkCtx) string {
+	return fmt.Sprintf(`<footer class="reader-footer">
+  <div class="reader-footer-inner">
+    <span>Free, open source &middot; text CC BY-NC 4.0 &middot; code MIT</span>
+    <nav class="reader-footer-links" aria-label="Site links">
+      <a href="%sfeed.xml">RSS</a>
+      <a href="%sllms.txt">llms.txt</a>
+      <a href="%sread/index.html">All chapters</a>
+      <a href="%smarketing.html">Press kit</a>
+      <a href="https://github.com/sazardev/networking-with-go">GitHub</a>
+    </nav>
+  </div>
+</footer>
+`, ctx.toSite, ctx.toSite, ctx.toSite, ctx.toSite)
 }
 
 // writePrecache emits the service-worker precache list (paths relative to the

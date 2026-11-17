@@ -15,6 +15,7 @@
 <link rel="canonical" href="https://sazardev.github.io/networking-with-go/">
 <link rel="alternate" type="application/rss+xml" title="Networking with Go — Releases" href="https://github.com/sazardev/networking-with-go/releases.atom">
 <link rel="alternate" type="application/atom+xml" title="Networking with Go, Made Easy — New Chapters" href="https://sazardev.github.io/networking-with-go/feed.xml">
+<link rel="alternate" type="text/plain" title="LLM context" href="https://sazardev.github.io/networking-with-go/llms.txt">
 <link rel="manifest" href="https://sazardev.github.io/networking-with-go/manifest.webmanifest">
 <link rel="apple-touch-icon" href="https://sazardev.github.io/networking-with-go/assets/icon-192.png">
 <meta name="mobile-web-app-capable" content="yes">
@@ -683,6 +684,18 @@
     cursor: pointer;
   }
   .subscribe-form button:disabled { opacity: 0.6; cursor: default; }
+  .btn-rss {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 18px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--fg);
+    color: var(--bg);
+    text-decoration: none;
+  }
+  .btn-rss:hover { opacity: 0.85; }
   .subscribe-status { font-family: var(--mono); font-size: 13px; min-height: 18px; }
   .subscribe-alt { font-family: var(--mono); font-size: 12px; }
   .subscribe-alt a { text-decoration: underline; }
@@ -1184,14 +1197,10 @@
 
 <section class="newsletter" id="newsletter">
   <div class="wrap">
-    <h2>Get notified when new chapters land</h2>
-    <p>The book is updated continuously. Leave your email and you will only hear from us when a new part or chapter is published — no spam, ever.</p>
-    <form id="subscribe-form" class="subscribe-form" novalidate>
-      <input id="subscribe-email" type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
-      <button type="submit">Subscribe</button>
-    </form>
-    <p class="subscribe-status" id="subscribe-status" hidden></p>
-    <p class="subscribe-alt">Prefer RSS? <a href="https://sazardev.github.io/networking-with-go/feed.xml">Subscribe to the chapter feed</a>.</p>
+    <h2>Follow the book</h2>
+    <p>New chapters and releases are announced in the Atom feed. No account, no email, no tracking.</p>
+    <p><a class="btn-rss" href="feed.xml">Subscribe via RSS</a></p>
+    <p class="subscribe-alt">Prefer files? <a href="https://github.com/sazardev/networking-with-go/releases/latest">Download the PDF or EPUB</a>.</p>
   </div>
 </section>
 
@@ -1199,6 +1208,8 @@
   <div class="wrap">
     <span>&copy; <span id="year"></span> Omar Flores Salazar &middot; Book: CC BY-NC 4.0 &middot; Code: MIT</span>
     <span>
+      <a href="feed.xml">RSS</a> &middot;
+      <a href="llms.txt">llms.txt</a> &middot;
       <a href="https://github.com/sazardev/networking-with-go">Repository</a> &middot;
       <a href="https://github.com/sazardev/networking-with-go/blob/master/.github/CONTRIBUTING.md">Contributing</a> &middot;
       <a href="https://github.com/sazardev/networking-with-go/issues">Issues</a> &middot;
@@ -1391,52 +1402,6 @@
       });
   })();
 
-  /* Newsletter signup. Set SUBSCRIBE_ENDPOINT to your provider's subscribe
-     URL (e.g. Buttondown: https://buttondown.email/<user>/api/subscribe, or
-     the action URL of a Mailchimp/ConvertKit form). Until then the form
-     points readers to the RSS feed instead. */
-  var SUBSCRIBE_ENDPOINT = '';
-  (function () {
-    var form = document.getElementById('subscribe-form');
-    var status = document.getElementById('subscribe-status');
-    if (!form || !status) return;
-
-    function show(msg, ok) {
-      status.textContent = msg;
-      status.hidden = false;
-      status.style.color = ok ? 'inherit' : '#c0392b';
-    }
-
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var email = document.getElementById('subscribe-email').value.trim();
-      if (!email) { show('Please enter your email.', false); return; }
-
-      if (!SUBSCRIBE_ENDPOINT) {
-        show('Newsletter coming soon — subscribe to the RSS feed for updates.', false);
-        return;
-      }
-
-      var btn = form.querySelector('button[type="submit"]');
-      btn.disabled = true;
-      btn.textContent = '...';
-
-      fetch(SUBSCRIBE_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email })
-      }).then(function (res) {
-        if (!res.ok) throw new Error('bad status');
-        show('You are subscribed! Check your inbox to confirm.', true);
-        form.reset();
-      }).catch(function () {
-        show('Could not subscribe right now — please try again or use the RSS feed.', false);
-      }).then(function () {
-        btn.disabled = false;
-        btn.textContent = 'Subscribe';
-      });
-    });
-  })();
 </script>
 
 </body>

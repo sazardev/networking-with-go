@@ -6,7 +6,7 @@ tags: go, mermaid, pdf, opensource
 cover_image: https://sazardev.github.io/networking-with-go/assets/og-card.png
 ---
 
-I maintain a free book, *Networking with Go, Made Easy*, that ships as a web reader, a PDF and an EPUB from the same Markdown sources. The web reader renders Mermaid diagrams in the browser. The PDF did not: it printed 25 blocks of `flowchart TB` and `sequenceDiagram` as literal source code.
+I maintain *[Networking with Go, Made Easy](https://sazardev.github.io/networking-with-go/)*, a free book that ships as a web reader, a PDF and an EPUB from the same Markdown sources. The web reader renders Mermaid diagrams in the browser. The PDF did not: it printed 25 blocks of `flowchart TB` and `sequenceDiagram` as literal source code.
 
 This is the story of the build step that fixed it, including the parts that were not obvious.
 
@@ -14,7 +14,7 @@ This is the story of the build step that fixed it, including the parts that were
 
 The PDF is produced by [go-pretty-pdf](https://github.com/sazardev/go-pretty-pdf), which composes the MDX into HTML and prints it with headless Chrome. Three details of that pipeline ruled out the obvious fixes:
 
-1. **It has no Mermaid support.** A ` ```mermaid ` fence becomes an ordinary code block.
+1. **It has no Mermaid support.** A `mermaid` code fence becomes an ordinary code block.
 2. **It blocks subresources by default.** Network *and* `file://` fetches are blocked, so an `<img src="diagram.svg">` inside the composed page never loads.
 3. **It prints immediately after the load event.** There is no wait for JavaScript, so pulling in `mermaid.js` and letting the browser draw the diagram does not work either.
 
@@ -26,7 +26,7 @@ The book keeps Mermaid blocks in the chapters. That is the source of truth, and 
 
 A small Go tool, `tools/diagrams`, does two things:
 
-1. It finds every ` ```mermaid ` block in `docs/`.
+1. It finds every `mermaid` block in `docs/`.
 2. It writes a copy of the book to `build/docs/` with each block replaced by the matching SVG from `assets/diagrams/`.
 
 The PDF build then runs against `build/docs` instead of `docs`:
@@ -54,7 +54,7 @@ Rendering itself uses the official `@mermaid-js/mermaid-cli`, pinned. It needs N
 
 The book is set in a monospace face, so the first render profile forced the same stack inside Mermaid. Flowcharts were fine. Sequence diagrams were not: actor boxes and note rectangles came out narrower than their labels.
 
-Mermaid measures those boxes with its own font metrics. Forcing a different family makes the measurement and the rendered text disagree, and the labels spill outside the shapes. The fix was to stop overriding the diagram font and let Mermaid measure what it renders. The figures ended up proportional while the prose stays monospace, which is a normal distinction in books.
+Mermaid measures those boxes with its own font metrics. Forcing a different family makes the measurement and the rendered text disagree, and the labels spill outside the shapes. The fix was to stop overriding the diagram font and let Mermaid measure what it renders. The figures ended up proportional while the prose stays monospace, a common distinction in book design.
 
 ### 2. HTML labels are not XHTML-friendly
 
@@ -66,13 +66,13 @@ The first PDF build had one diagram sitting flush against the top of the page, w
 
 ### 4. One diagram was 1144 px wide
 
-A `flowchart LR` with five nodes laid out in a single row is 1144 px wide. Scaled to a 649 px text column, its 15 px labels print at about 6.5 pt. It is legible, but it is the one diagram I would redraw vertically if I were editing content rather than tooling. The pipeline does not try to fix layout decisions.
+A `flowchart LR` with four nodes laid out in a single row is 1144 px wide. Scaled to a 649 px text column, its 15 px labels print at about 6.5 pt. It is legible, but it is the one diagram I would redraw vertically if I were editing content rather than tooling. The pipeline does not try to fix layout decisions.
 
 ## The check that keeps it honest
 
 A GitHub Actions job runs the materializer on every pull request touching `docs/` or `assets/diagrams/`. If someone edits a diagram and forgets to re-render it, the check fails with the hash it is missing. The release workflow runs the same step before building.
 
-The result: zero Mermaid blocks in the PDF, 25 diagrams printed as vectors, and the EPUB still valid. The only raster image left in the PDF is the cover.
+The result: zero raw Mermaid blocks in the PDF, 25 diagrams printed as vectors, and the EPUB still valid. The only raster image left in the PDF is the cover.
 
 ## What I would do differently
 

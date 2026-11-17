@@ -35,6 +35,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history so buildreader can date each chapter in the Atom
+          # feed and the sitemap from its last commit instead of the build.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
