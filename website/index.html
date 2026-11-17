@@ -1300,6 +1300,16 @@
   (function () {
     var REPO = 'sazardev/networking-with-go';
     var chapterCount = null;
+    var releaseVersion = null;
+
+    // The sitemap and the release API finish in either order; both call this
+    // so the byline never renders "chapters - vX" with the count missing.
+    function renderVersion() {
+      document.querySelectorAll('[data-version]').forEach(function (el) {
+        var countText = chapterCount ? chapterCount + ' chapters' : 'chapters';
+        el.textContent = releaseVersion ? countText + ' \u00b7 ' + releaseVersion : countText;
+      });
+    }
 
     fetch('sitemap.xml')
       .then(function (res) { if (!res.ok) throw new Error('sitemap fetch failed'); return res.text(); })
@@ -1322,6 +1332,7 @@
         document.querySelectorAll('[data-chapter-count-text]').forEach(function (el) {
           el.textContent = el.textContent.replace(/\d+(?=-chapter|\s+chapters)/g, count);
         });
+        renderVersion();
       })
       .catch(function (err) {
         console.warn('Could not load sitemap for chapter count.', err);
@@ -1337,10 +1348,8 @@
           ? new Date(data.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
           : null;
 
-        document.querySelectorAll('[data-version]').forEach(function (el) {
-          var countText = chapterCount ? chapterCount + ' chapters' : 'chapters';
-          el.textContent = countText + ' · ' + version;
-        });
+        releaseVersion = version;
+        renderVersion();
         if (updated) {
           document.querySelectorAll('[data-updated]').forEach(function (el) { el.textContent = updated; });
         }
