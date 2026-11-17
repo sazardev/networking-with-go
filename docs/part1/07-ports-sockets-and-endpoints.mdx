@@ -29,6 +29,8 @@ Not every number in that 0–65535 range is treated the same way, and the split 
 | 1024 - 49151 | Registered ports | Assigned to specific applications by IANA (e.g., many databases, game servers) but not requiring special privileges |
 | 49152 - 65535 | Ephemeral (dynamic) ports | Temporarily assigned by the operating system to the *client* side of an outgoing connection |
 
+That is the IANA dynamic/private range. Operating systems pick their own ephemeral ranges in practice — Linux defaults to 32768-60999, Windows to 49152-65535 — so the exact numbers vary by machine.
+
 The first neighborhood, below 1024, is the oldest and most prestigious address in the city — the ports every well-established service has agreed to answer on since the internet's earliest days, so nobody has to guess where to knock. For decades this list was maintained by one extraordinarily patient man, Jon Postel, who from the early 1970s kept the master list of assigned numbers by hand, deciding, RFC by RFC, which digit meant what, long before that job calcified into the formal organization known today as IANA. Because these doors carry so much implicit trust — if something answers on port 80, surely it was set up by someone with real authority over the machine — operating systems require special (root or administrator) privileges to open a program listening on one, a convention meant to raise the cost of impersonating a legitimate service.
 
 <Warning title="A common misconception">"Privileged" ports below 1024 requiring root access is a security convention, not a law of physics baked into TCP/IP itself—it's an operating-system-level restriction, historically meant to reassure a client that a service answering on port 80 was set up by an administrator rather than an arbitrary unprivileged user. It says nothing about whether the service behind that port is actually trustworthy or well-written.</Warning>
@@ -91,7 +93,7 @@ Every idea in this chapter — the numbered door, the four-number address that k
 
 ## Fun Facts and Notes
 
-- Port 666 earned the nickname "the doom port" from id Software's Doom, which used it for its original multiplayer sessions over modem and null-modem links — it has no official protocol meaning whatsoever, just reputation.
+- Port 666 earned the nickname "the doom port" from id Software's Doom, which registered it for its original TCP/IP multiplayer mode — it has no general protocol meaning, just reputation.
 - The word "socket" is older than TCP/IP itself: it appears in RFC 147, "The Definition of a Socket," written in 1971 to describe communication endpoints on the ARPANET's original Network Control Program, more than a decade before Berkeley's 4.2BSD turned the idea into the programming interface that most languages, Go included, still echo today.
 - Hacker culture left its own graffiti on the port list: port 31337 became an informal in-joke among some malicious tools in the 1990s, a nod to the leetspeak spelling of "elite" — a reminder that a port number is just a number, and nothing stops anyone from squatting on one that was never assigned to them.
 - The highest possible port number, 65535, is highest for a very unglamorous reason: it's the largest value that fits in the 16-bit field the original protocol designers set aside for it, decades before anyone could have known how many doors the busiest servers on Earth would eventually need.

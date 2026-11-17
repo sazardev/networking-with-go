@@ -16,10 +16,10 @@ IP deals in **packets**. Ethernet deals in **frames**. A frame is the envelope E
 A classic Ethernet frame looks like this:
 
 ```
-+----------+---------+---------+----------+-------------+-----+
-| Preamble | Dst MAC | Src MAC | EtherType|   Payload   | FCS |
-|  7 bytes | 6 bytes | 6 bytes |  2 bytes | 46-1500 B   | 4 B |
-+----------+---------+---------+----------+-------------+-----+
++----------+-----+---------+---------+----------+-------------+-----+
+| Preamble | SFD | Dst MAC | Src MAC | EtherType|   Payload   | FCS |
+|  7 bytes | 1 B | 6 bytes | 6 bytes |  2 bytes | 46-1500 B   | 4 B |
++----------+-----+---------+---------+----------+-------------+-----+
 ```
 
 The **destination MAC** and **source MAC** are 48-bit hardware addresses. The **EtherType** says what is inside — `0x0800` for IPv4, `0x86DD` for IPv6, `0x0806` for ARP. The **FCS** is a checksum: if the frame arrived corrupted, the receiver drops it silently. Ethernet detects errors; it does not retransmit them. That job belongs to TCP, or to whatever protocol above decided it cared.
@@ -88,5 +88,5 @@ It is a historical compromise from the era of shared Ethernet, large enough for 
 
 - The 48-bit MAC space is about 281 trillion addresses. Manufacturers burn through it slowly because each network card needs only one.
 - The first three bytes of a MAC are the OUI. Looking one up is a quick way to identify a device's vendor from a packet capture.
-- Ethernet was invented at Xerox PARC in 1973. Its original shared-cable design is why the frame format still carries a preamble, even though modern switched links do not need one.
+- Ethernet was invented at Xerox PARC in 1973. Its original shared-cable design is why the frame format still carries a preamble and a start-frame delimiter; even on a switched link, they give the receiver time to synchronize before the frame starts.
 - ARP has no port number and no connection. It is one of the last widely used protocols that is simply a broadcast question and a polite answer.

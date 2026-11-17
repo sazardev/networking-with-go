@@ -27,7 +27,7 @@ The obvious question is how a frame tells the switch which VLAN it belongs to. T
 
 The tag is four bytes: a type field (`0x8100`) that says "a VLAN tag follows", then a control field carrying a 12-bit VLAN ID and a priority value. Twelve bits allow IDs 1 through 4094; 0 and 4095 are reserved.
 
-A port configured as an **access port** belongs to one VLAN and usually sends untagged frames — the devices plugged into it know nothing about VLANs. A **trunk port** carries many VLANs between switches or to a router, and every frame on it carries a tag. That is how one cable between two switches can carry the whole campus.
+A port configured as an **access port** belongs to one VLAN and usually sends untagged frames — the devices plugged into it know nothing about VLANs. A **trunk port** carries many VLANs between switches or to a router, and every frame on it carries a tag except frames in the native VLAN. That is how one cable between two switches can carry the whole campus.
 
 The **native VLAN** is the one VLAN whose frames are sent untagged on a trunk. It exists for compatibility, and it is a classic source of trouble: if the two ends disagree about which VLAN is native, frames silently land in the wrong network.
 

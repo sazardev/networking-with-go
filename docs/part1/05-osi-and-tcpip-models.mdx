@@ -18,9 +18,9 @@ In 1984, an international standards body sat down and asked a genuinely ambitiou
 Read from the bottom, the way data actually leaves a machine, the layers are:
 
 1. **Physical** — cables, hubs, raw signals: voltage levels, light pulses, radio waves. The roads and wires themselves.
-2. **Data Link** — frames and MAC addresses, responsible for getting data reliably across a single physical link or local segment. The traffic lights and intersections that keep one street usable.
+2. **Data Link** — frames and MAC addresses, responsible for getting data across a single physical link or local segment, with error detection but not necessarily retransmission. The traffic lights and intersections that keep one street usable.
 3. **Network** — IP addresses and routers, responsible for finding a path across many interconnected networks at once. The GPS and the street names.
-4. **Transport** — TCP and UDP, ports, responsible for reliability, ordering, and knowing which application on a device should receive the data. The delivery trucks and their tracking numbers.
+4. **Transport** — TCP and UDP, ports, responsible for end-to-end delivery between applications; TCP adds reliability and ordering, UDP does not, and ports identify which application should receive the data. The delivery trucks and their tracking numbers.
 5. **Session** — the management of starting, maintaining, and cleanly ending a dialogue between two applications. The conversation itself, as distinct from anything said within it.
 6. **Presentation** — encryption, compression, and encoding, making sure both ends agree on the format the data is actually in. The translators and the gift wrap.
 7. **Application** — email, the web, file transfer: the layer your own programs actually touch and the only one most users ever consciously notice.
@@ -55,6 +55,8 @@ Where OSI was designed top-down, on paper, before most of its subject matter exi
 2. **Internet** — IP and routing: addresses and the maps between them.
 3. **Transport** — TCP and UDP: reliable delivery, or fast delivery, depending what you need.
 4. **Application** — HTTP, FTP, SMTP, DNS: the web, email, and everything built on top.
+
+Each layer adds its own header to the data it receives — **encapsulation** — and the receiving side removes them in reverse, **decapsulation**. The name of the data changes at each step: a transport-layer **segment** becomes an IP **packet**, an IP packet becomes a link-layer **frame**, and a frame becomes **bits** on the wire. When those words are used precisely, they tell you which layer's header is currently attached.
 
 ```
 +-------------------+

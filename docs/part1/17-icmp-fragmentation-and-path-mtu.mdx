@@ -42,7 +42,7 @@ Every link has a **Maximum Transmission Unit**, the largest frame payload it can
 Fragmentation splits the payload into pieces, each with its own IP header, a shared **identification** field, a **fragment offset**, and the **More Fragments** flag. The destination reassembles them. The pieces can take different paths and arrive out of order; the receiver uses the identification and offset to rebuild the original packet.
 
 ```
-Original packet:  [IP hdr][        1500 bytes of payload        ]
+Original packet:  [IP hdr][        3500 bytes of payload        ]
 Fragments:        [IP hdr][ 1480 B ][MF=1][offset 0]
                   [IP hdr][ 1480 B ][MF=1][offset 185]
                   [IP hdr][  540 B ][MF=0][offset 370]

@@ -17,7 +17,7 @@ Computer networking borrowed the metaphor for the exact same reason, and it took
 
 ## Firewalls: The First Line of Defense
 
-Think of a firewall as the wall and guarded gate around your digital city. Only visitors matching a specific description get through; everyone else is turned away without so much as an explanation. Formally, **a firewall monitors and controls incoming and outgoing network traffic based on a set of rules**, usually matched against the **5-tuple**: source IP, destination IP, source port, destination port, and protocol (TCP, UDP, and so on). Everything a firewall does, no matter how sophisticated, ultimately boils down to checking a packet against that five-part description and deciding: let it through, or don't.
+Think of a firewall as the wall and guarded gate around your digital city. Only visitors matching a specific description get through; everyone else is turned away without so much as an explanation. Formally, **a firewall monitors and controls incoming and outgoing network traffic based on a set of rules**, usually matched against the **5-tuple**: source IP, destination IP, source port, destination port, and protocol (TCP, UDP, and so on). A packet-filtering firewall boils down to checking a packet against that five-part description. Stateful firewalls add connection state, and application-layer firewalls inspect the payload; the five-tuple is the starting point, not the whole story.
 
 Firewalls come in a few flavors depending on *where* they stand guard:
 
@@ -30,6 +30,8 @@ And they differ just as much in *how closely* they look at what passes through:
 - **Stateless (packet-filtering) firewalls** evaluate each packet in isolation against static rules — fast, but blind to context: they cannot tell an established, welcome conversation from a fresh, unsolicited one using the same port.
 - **Stateful firewalls** track the condition of each connection — has a handshake completed? Is this part of a conversation we already allowed? — so they can permit reply traffic without a separate rule for every conceivable reply.
 - **Next-generation (NGFW) or application-layer firewalls** read the actual payload, not just the header, telling legitimate HTTPS traffic apart from a disguised, malicious protocol riding the same port 443.
+
+Two design habits matter more than the product name. **Default deny** — allow only what is explicitly permitted — beats a long list of blocks, and **egress filtering** matters as much as inbound rules: a compromised host that cannot call out is much less useful to an attacker. A **DMZ** is a separate segment for public-facing services, reachable from the internet but unable to initiate connections into the internal network. A **WAF** or reverse proxy in front of an application inspects HTTP rather than packets, which is a different layer of defense.
 
 ```
 [Internet] ---[Firewall]--- [Internal Network]
@@ -52,6 +54,8 @@ NAT shows up in a few common shapes:
 - **SNAT (source NAT)** rewrites the source address of outbound packets — what your home router does, silently, for every device inside it.
 - **DNAT (destination NAT)** rewrites the destination address of inbound packets — what lets a single public IP forward traffic to a specific internal server, such as port-forwarding to a home server.
 - **PAT (port address translation)**, the specific and very common case of NAT where many internal hosts share one public IP by also remapping port numbers, so the router can tell exactly which internal device each reply belongs to.
+
+Home routers add a distinction that matters for peer-to-peer: **full-cone**, **restricted-cone**, **port-restricted**, and **symmetric NAT**. Full-cone keeps one mapping for any external host; symmetric creates a different mapping per destination, which is why hole punching fails against symmetric NAT and a relay (TURN) is required. **Hairpinning** (NAT loopback) is whether an internal host can reach another internal host through the router's public address; many cheap routers get this wrong.
 
 ```
 [Private Devices]
@@ -79,12 +83,16 @@ A **full-tunnel VPN** routes every scrap of a device's traffic through the tunne
 
 | Protocol | Encryption | Typical Transport | Notes |
 |---|---|---|---|
-| WireGuard | ChaCha20 | UDP | Modern, minimal codebase, fast, simple to configure |
-| IPsec | Configurable (commonly AES) | UDP 500/4500 | Widely used for site-to-site VPNs; powerful but complex |
+| WireGuard | ChaCha20 | UDP 51820 (default) | Modern, minimal codebase, fast, simple to configure |
+| IPsec | Configurable (commonly AES) | ESP (IP 50), IKE UDP 500/4500 | Widely used for site-to-site VPNs; powerful but complex |
 | OpenVPN | AES (TLS-based) | TCP or UDP, commonly 1194 | Mature, flexible, open-source, moderate overhead |
-| PPTP | MPPE (weak by modern standards) | TCP 1723 | Legacy; considered insecure, best avoided today |
+| PPTP | MPPE (weak by modern standards) | TCP 1723 control, GRE (IP 47) data | Legacy; considered insecure, best avoided today |
 
 That last row has its own small history. PPTP, developed by a consortium that included Microsoft engineer Gurdeep Singh-Pall in the mid-1990s, was the first VPN protocol most ordinary people ever used, simply because Windows shipped built-in support for it — suddenly a small business could let an employee dial into the office network from home without leasing an expensive dedicated telephone line. It also turned out, over the following decade, to have serious cryptographic weaknesses, which is exactly why the table lists it as legacy: convenience got there first, and security caught up afterward, a pattern that repeats constantly in this field.
+
+The transport column separates control from data. IPsec's IKE negotiates on UDP 500/4500 while ESP carries the encrypted payload; PPTP's TCP 1723 carries only control, and the data rides GRE. That distinction matters when writing firewall rules, because allowing the control port and forgetting the data protocol produces a VPN that connects and then passes nothing.
+
+IPsec and TLS VPNs solve the same problem at different layers. IPsec is a Layer 3 tunnel: the operating system or router encrypts IP packets and the application is unaware. TLS VPNs (OpenVPN; WireGuard is its own protocol, but the same idea) run in user space above IP, which makes them easier to route through NAT and firewalls because they look like ordinary UDP or TCP traffic. IPsec has two modes: **transport** protects the payload of an IP packet end to end, while **tunnel** wraps the entire packet in a new IP header, which is what site-to-site VPNs use. IKE negotiates keys, ESP carries the encrypted data, and AH provides integrity without encryption (rarely used today).
 
 <Warning title="A VPN protects your traffic in transit — it doesn't make you anonymous">A very common misconception is that "using a VPN" is equivalent to "being untraceable." A VPN hides your traffic from your local network and your ISP, and it changes what IP address a destination sees — but the VPN provider itself can usually see everything your ISP used to see, just relocated to a different point along the path. It also does nothing about identifiers that travel *inside* the encrypted tunnel, like login cookies, browser fingerprints, or simply signing into an account tied to your real identity. A VPN is a confidentiality tool for the network path, not a general-purpose anonymity tool, and treating it as one is how people end up with a false sense of security.</Warning>
 

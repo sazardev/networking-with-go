@@ -64,7 +64,7 @@ Wireshark's own history is a small lesson in how open-source projects survive ge
 
 Sometimes the fastest way to find a problem is to stop asking a translator to do the talking and speak the protocol yourself.
 
-- **Try it:** `curl -v https://example.com` shows the DNS lookup, the TCP connect, the TLS handshake, and the HTTP exchange all in one command, with verbose timing for each stage — extremely useful for narrowing down exactly which layer of a "the website is broken" complaint is actually the guilty party.
+- **Try it:** `curl -v https://example.com` shows the DNS lookup, the TCP connect, the TLS handshake, and the HTTP exchange all in one command. Add `-w` with a timing template to get per-stage timings — extremely useful for narrowing down exactly which layer of a "the website is broken" complaint is actually the guilty party.
 
 <DeepDive title="Reading traceroute output usefully">A traceroute that shows steadily increasing latency evenly spread across many hops usually just reflects real geographic distance — nothing is wrong, the packet is simply crossing an ocean. What's actually diagnostic is a *sudden jump*: if hop 8 responds in 20ms and hop 9 suddenly takes 400ms, with everything after it also sitting around 400ms, you've likely found exactly where the delay is being introduced. Watch out for one common trap, though: some routers deliberately deprioritize or rate-limit the ICMP replies traceroute depends on, since generating those replies isn't their main job, so a hop showing `* * *` (no reply) isn't necessarily broken — it might simply be a router that doesn't bother answering, while everything past it continues to work perfectly fine.</DeepDive>
 

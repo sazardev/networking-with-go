@@ -40,7 +40,7 @@ A **default route** (`0.0.0.0/0`) is a special static route meaning "everything 
 
 OSPF is a **link-state** protocol. Every router floods information about its own links — who it is connected to, and at what cost — and every router builds the same map of the area. Each then runs Dijkstra's algorithm on that map to compute the shortest path to every destination.
 
-Cost is derived from bandwidth: by default, `cost = reference bandwidth / interface bandwidth`, so a 1 Gbps link costs 1 and a 100 Mbps link costs 10. The result is a tree rooted at each router, with the lowest total cost to each network.
+Cost is derived from bandwidth: `cost = reference bandwidth / interface bandwidth`. With the common 100 Mbps reference, a 100 Mbps link costs 1 and a 10 Mbps link costs 10; with a 1 Gbps reference, a 1 Gbps link costs 1 and a 100 Mbps link costs 10. The reference is an implementation choice, so check it before comparing costs across vendors. The result is a tree rooted at each router, with the lowest total cost to each network.
 
 OSPF scales by splitting a large network into **areas**. Area 0 is the backbone; other areas connect to it through **area border routers**. Routers inside an area only need the map of that area, not the whole organization, which keeps the database and the computation manageable.
 
